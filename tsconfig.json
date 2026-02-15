@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "lib": [
+            "esnext"
+        ],
+        "target": "es2017",
+        "moduleResolution": "node",
+        "outDir": "dist",
+        "baseUrl": ".",
+        "sourceMap": true,
+        "strict": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "noImplicitReturns": true,
+        "noImplicitAny": true,
+        "typeRoots": [
+            "node_modules/@types",
+            "src/types.d.ts"
+        ],
+        "allowSyntheticDefaultImports": true
+    },
+    "ts-node": {
+        "compilerOptions": {
+            "module": "commonjs"
+        }
+    },
+    "include": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ]
+}
