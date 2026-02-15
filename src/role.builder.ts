@@ -2,6 +2,7 @@ import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
 import { utilsEnergy } from "./utils.energy";
 import { micro } from "./MicroOptimizations";
+import { managerSigning } from "./manager.signing";
 
 export const roleBuilder = {
     run: function (creep: Creep) {
@@ -17,6 +18,7 @@ export const roleBuilder = {
         }
 
         if (creep.memory.working) {
+            managerSigning.run(creep); // Opportunistic signing
             // Use cached find for construction sites
             const targets = micro.find(creep.room, FIND_CONSTRUCTION_SITES);
             if (targets.length) {
