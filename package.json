@@ -1,0 +1,32 @@
+{
+  "name": "screeps",
+  "version": "1.0.0",
+  "description": "Screeps just for me.",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha -r ts-node/register test/**/*.test.ts",
+    "build": "rollup -c",
+    "watch": "rollup -c -w",
+    "upload": "node upload.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@types/chai": "^4.3.20",
+    "@types/lodash": "^4.17.23",
+    "@types/mocha": "^10.0.10",
+    "@types/screeps": "^3.3.8",
+    "chai": "^4.5.0",
+    "mocha": "^11.7.5",
+    "rollup": "^4.57.1",
+    "rollup-plugin-clear": "^2.0.7",
+    "screeps-api": "^1.16.1",
+    "ts-node": "^10.9.2",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3"
+  }
+}
