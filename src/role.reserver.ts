@@ -2,8 +2,9 @@ import { pathing } from "./pathing";
 
 export const roleReserver = {
     run: function (creep: Creep) {
-        if (creep.memory.targetRoom && creep.room.name !== creep.memory.targetRoom) {
-            pathing.run(creep, new RoomPosition(25, 25, creep.memory.targetRoom), 20);
+        const mem = creep.memory as any;
+        if (mem.targetRoom && creep.room.name !== mem.targetRoom) {
+            pathing.run(creep, new RoomPosition(25, 25, mem.targetRoom as string), 20);
             return;
         }
 

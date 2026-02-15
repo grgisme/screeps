@@ -36,7 +36,11 @@ export const pathing = {
             if (!creep.my) {
                 costs.set(creep.pos.x, creep.pos.y, 0xff);
             } else {
-                costs.set(creep.pos.x, creep.pos.y, 0xff);
+                // For our own creeps, don't make them absolute walls (0xff).
+                // If we do, PathFinder will often fail entirely in crowded rooms.
+                // Instead, make them an "expensive" tile so pathing prefers open space
+                // but can still find a path "through" a crowded area.
+                costs.set(creep.pos.x, creep.pos.y, 20);
             }
         });
 
@@ -51,7 +55,9 @@ export const pathing = {
         const dest = target instanceof RoomPosition ? target : target.pos;
 
         // CPU Yield Logic: If high CPU, delay pathfinding unless critical
-        if (Game.cpu.getUsed() > 25 && !creep.memory.emergency) {
+        // Use 50% of limit instead of hard-coded 25
+        const cpuLimit = (Game.cpu.limit || 20) * 0.5;
+        if (Game.cpu.getUsed() > cpuLimit && !creep.memory.emergency && (creep.memory as any)._stuckCount < 2) {
             return;
         }
 

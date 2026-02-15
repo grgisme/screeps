@@ -1,4 +1,5 @@
 import { managerIntel } from "./manager.intel";
+import { managerSigning } from "./manager.signing";
 
 export const roleScout = {
     run: function (creep: Creep) {
@@ -27,6 +28,7 @@ export const roleScout = {
             if (creep.room.name === targetRoomName) {
                 // Arrived!
                 this.updateRoomMemory(creep.room);
+                managerSigning.run(creep); // Sign new rooms!
                 creep.memory.targetId = undefined; // Done, pick next
             } else {
                 // Move to room

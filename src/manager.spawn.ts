@@ -1,6 +1,6 @@
 import { roleHarvester } from "./role.harvester";
-
 import { micro } from "./MicroOptimizations";
+import { managerQueue } from "./manager.queue";
 
 export const managerSpawn = {
     bodyBuilder: function (energy: number, template: BodyPartConstant[] = [WORK, CARRY, MOVE]): BodyPartConstant[] {
@@ -78,10 +78,15 @@ export const managerSpawn = {
         const roleBuilders = creeps.filter(c => c.memory.role === 'builder');
 
         // Config
-        let MAX_MINERS = sourcesWithContainers > 0 ? sourcesWithContainers : (roleMiners.length > 0 ? roleMiners.length : 0);
-        // If we have adopted miners but no containers, we still need haulers!
-        // Rule: 1 Hauler per Miner (Drop Mining) or 2 per Source (Container Mining)
-        let MAX_HAULERS = Math.max(sourcesWithContainers * 2, roleMiners.length);
+        // MAX_MINERS should be number of sources if we are RCL 2+
+        let MAX_MINERS = (room.controller && room.controller.level >= 2) ? sources.length : 0;
+
+        // If we have no containers, we might need MORE haulers for drop mining
+        let MAX_HAULERS = Math.max(sources.length * 2, roleMiners.length * 2);
+        if (hasContainers) {
+            // If we have containers, 1-2 per source is usually enough depending on distance
+            MAX_HAULERS = Math.max(sourcesWithContainers * 2, roleMiners.length);
+        }
 
         // Critical: Only phase out Harvesters if we have Miners AND Haulers
         // Reduced max harvesters to save energy. 2 per source is plenty if they are just walking.
@@ -89,7 +94,7 @@ export const managerSpawn = {
         // But 4 is too many if they are small.
         // Let's say: 2 per source (4 total) is MAX, but we only spawn them if energy is full-ish?
         // No, we need them to mine.
-        const MAX_HARVESTERS = (roleMiners.length > 0 && roleHaulers.length > 0) ? 0 : 4;
+        const MAX_HARVESTERS = (roleMiners.length >= sources.length && roleHaulers.length > 0) ? 0 : 4;
 
         let MAX_UPGRADERS = 1; // Default to 1 (maintenance)
         if (hasContainers || room.storage) {
@@ -140,6 +145,23 @@ export const managerSpawn = {
                 console.log(`♻️ REBALANCING: Converted ${excess.name} from Harvester to Upgrader.`);
             }
         }
+
+        // --- Register Energy Goal for Workers ---
+        // What is the next thing we WANT to spawn?
+        let nextPriorityCost = 0;
+        if (roleHarvesters.length === 0) {
+            nextPriorityCost = 200; // Minimal [W,C,M]
+        } else if (roleMiners.length < MAX_MINERS) {
+            nextPriorityCost = (room.energyCapacityAvailable >= 550) ? 550 : room.energyCapacityAvailable;
+        } else if (roleHaulers.length < MAX_HAULERS) {
+            nextPriorityCost = room.energyCapacityAvailable * 0.5; // Rough estimate for scaled hauler
+        } else if (roleHarvesters.length < MAX_HARVESTERS) {
+            nextPriorityCost = 200;
+        } else if (roleUpgraders.length < MAX_UPGRADERS) {
+            nextPriorityCost = room.energyCapacityAvailable * 0.5;
+        }
+
+        managerQueue.setGoal(room.name, nextPriorityCost);
 
         // Spawn Logic Priority
 

@@ -49,31 +49,28 @@ export const roleHarvester = {
         const container = containers.length > 0 ? containers[0] : null;
 
         if (container) {
-            // Static Mining Logic
+            // Static Mining Logic (Container)
             if (!creep.pos.isEqualTo(container.pos)) {
                 pathing.run(creep, container.pos, 0);
             } else {
-                // We are ON the container.
-                // Harvest loop
                 creep.harvest(source);
-                // If we have CARRY parts, we might need to drop?
-                // If we are on container, it automatically goes in? No, creep picks it up.
-                // We don't need to drop if we are on it? 
-                // Wait, if creep is full, harvest fails with ERR_FULL? No, it drops on ground if no carry, 
-                // but if we have carry, we fill up.
-                // If we fill up, we must transfer or drop.
                 if (creep.store.getFreeCapacity() === 0 && creep.store.getCapacity() > 0) {
-                    // Transfer to container ? (It's under us)
-                    // But if we are FULL, `harvest` returns ERR_FULL? 
-                    // No, actually harvest just drops it if CARRY is full?
-                    // No, if CARRY is present and full, harvest stops.
-                    // So we must empty.
                     creep.transfer(container, RESOURCE_ENERGY);
-                    // If container full? It drops.
+                }
+            }
+        } else if (creep.memory.role === 'miner') {
+            // Static Mining Logic (Drop Mining - No Container yet)
+            if (!creep.pos.isNearTo(source.pos)) {
+                pathing.run(creep, source.pos, 1);
+            } else {
+                creep.harvest(source);
+                // Drop if full to keep harvesting
+                if (creep.store.getFreeCapacity() === 0 && creep.store.getCapacity() > 0) {
+                    creep.drop(RESOURCE_ENERGY);
                 }
             }
         } else {
-            // Old Mobile Logic (RCL 1)
+            // Old Mobile Logic (RCL 1 Harvester)
             if (creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
                 creep.memory.working = false;
                 creep.say('🔄 harvest');
@@ -99,18 +96,13 @@ export const roleHarvester = {
                     if (res === ERR_NOT_IN_RANGE) {
                         pathing.run(creep, targets[0].pos, 1);
                     } else if (res === OK || res === ERR_FULL) {
-                        // Check if we are done (Empty or Target Full)
                         const storeStruct = targets[0] as AnyStoreStructure;
                         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0 || (storeStruct.store && storeStruct.store.getFreeCapacity(RESOURCE_ENERGY) === 0)) {
                             creep.memory.working = false;
-                            delete creep.memory.targetId; // Clear cached source ID
+                            delete creep.memory.targetId; // Re-target after delivery to balance
                         }
-                    } else {
-                        console.log(`Trying to dropoff failed: ${res}`);
                     }
                 } else {
-                    // Fallback: Upgrade Controller
-                    // If base is full, we shouldn't just sit there.
                     if (creep.room.controller) {
                         if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
                             pathing.run(creep, creep.room.controller.pos, 3);

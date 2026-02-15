@@ -1,5 +1,6 @@
 import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
+import { utilsEnergy } from "./utils.energy";
 
 export const roleBuilder = {
     run: function (creep: Creep) {
@@ -113,15 +114,57 @@ export const roleBuilder = {
             }
             // 3. Ruins (Low prio)
 
-            // 4. Containers
-            const container = utilsTargeting.findUnreserved(creep, FIND_STRUCTURES, filter => (filter.structureType === STRUCTURE_CONTAINER || filter.structureType === STRUCTURE_STORAGE) && filter.store[RESOURCE_ENERGY] > 50) as StructureContainer;
-            if (container) {
-                creep.memory.targetId = container.id;
-                if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, container.pos, 1);
+            // 1. Storage (Unreserved)
+            if (creep.room.storage && creep.room.storage.store[RESOURCE_ENERGY] > 0) {
+                creep.memory.targetId = creep.room.storage.id;
+                if (creep.withdraw(creep.room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    pathing.run(creep, creep.room.storage.pos, 1);
+                }
                 return;
             }
 
-            // 5. Spawn (Emergency)
+            // 2. Containers (Non-Source)
+            const sources = creep.room.find(FIND_SOURCES);
+            const container = utilsTargeting.findUnreserved(creep, FIND_STRUCTURES, filter =>
+                (filter.structureType === STRUCTURE_CONTAINER) &&
+                filter.store[RESOURCE_ENERGY] > 50 &&
+                sources.every(source => !filter.pos.isNearTo(source.pos))
+            ) as StructureContainer;
+
+            if (container) {
+                creep.memory.targetId = container.id;
+                if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    pathing.run(creep, container.pos, 1);
+                }
+                return;
+            }
+
+            // 4. Any available Container including Source containers (Fallback)
+            const anyContainer = utilsTargeting.findUnreserved(creep, FIND_STRUCTURES, filter =>
+                filter.structureType === STRUCTURE_CONTAINER && filter.store[RESOURCE_ENERGY] > 50
+            ) as StructureContainer;
+            if (anyContainer) {
+                creep.memory.targetId = anyContainer.id;
+                if (creep.withdraw(anyContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    pathing.run(creep, anyContainer.pos, 1);
+                }
+                return;
+            }
+
+            // 5. Spawn & Extensions (If Surplus)
+            if (utilsEnergy.isSurplus(creep.room)) {
+                const targets = utilsEnergy.getSurplusStructures(creep.room);
+                const closest = creep.pos.findClosestByPath(targets);
+                if (closest) {
+                    creep.memory.targetId = closest.id;
+                    if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        pathing.run(creep, closest.pos, 1);
+                    }
+                    return;
+                }
+            }
+
+            // 6. Spawn (Emergency Fallback - when not surplus but we are desperate)
             const spawn = creep.room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN && s.store[RESOURCE_ENERGY] > 250 })[0];
             if (spawn) {
                 if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, spawn.pos, 1);
@@ -129,7 +172,7 @@ export const roleBuilder = {
             }
 
             // 6. Harvest (Fallback)
-            const sources = creep.room.find(FIND_SOURCES);
+            // 6. Harvest (Fallback)
             const source = creep.pos.findClosestByPath(sources) || sources[0];
             // No strict locking on sources? Or yes? 
             // Usually multiple creeps can harvest source. So NO locking on sources.

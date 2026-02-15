@@ -15,12 +15,14 @@
         "noImplicitReturns": true,
         "noImplicitAny": true,
         "typeRoots": [
-            "node_modules/@types",
-            "src/types.d.ts"
+            "node_modules/@types"
         ],
         "allowSyntheticDefaultImports": true,
         "esModuleInterop": true
     },
+    "files": [
+        "src/types.d.ts"
+    ],
     "include": [
         "src/**/*.ts"
     ],

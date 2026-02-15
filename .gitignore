@@ -140,4 +140,6 @@ vite.config.ts.timestamp-*
 
 # Screeps
 .screeps.json
+screeps.json
+.mcp/
 .DS_Store
