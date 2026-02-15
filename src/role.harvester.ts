@@ -1,4 +1,5 @@
 import { pathing } from "./pathing";
+import { micro } from "./MicroOptimizations";
 
 export const roleHarvester = {
     run: function (creep: Creep) {

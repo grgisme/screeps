@@ -2,6 +2,7 @@ import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
 import { utilsEnergy } from "./utils.energy";
 import { managerSigning } from "./manager.signing";
+import { micro } from "./MicroOptimizations";
 
 export const roleUpgrader = {
     run: function (creep: Creep) {

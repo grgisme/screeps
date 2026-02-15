@@ -1,4 +1,5 @@
 import { pathing } from "./pathing";
+import { micro } from "./MicroOptimizations";
 import { utilsTargeting } from "./utils.targeting";
 
 export const roleHauler = {

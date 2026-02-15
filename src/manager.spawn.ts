@@ -38,14 +38,14 @@ export const managerSpawn = {
     },
 
     run: function (room: Room) {
-        const spawn = room.find(FIND_MY_SPAWNS)[0];
+        const spawn = micro.find(room, FIND_MY_SPAWNS)[0];
         if (!spawn) return;
         if (spawn.spawning) return;
 
-        const creeps = room.find(FIND_MY_CREEPS);
+        const creeps = micro.find(room, FIND_MY_CREEPS);
 
         // Evolve Logic: Check for Containers
-        const sources = room.find(FIND_SOURCES);
+        const sources = micro.find(room, FIND_SOURCES);
         let hasContainers = false;
         // Naive check: does ANY source have a container?
         // Better: count how many sources have containers.
@@ -102,7 +102,7 @@ export const managerSpawn = {
             MAX_UPGRADERS = 2; // Or dynamic based on storage level
         }
 
-        const activeConstruction = room.find(FIND_MY_CONSTRUCTION_SITES).length;
+        const activeConstruction = micro.find(room, FIND_MY_CONSTRUCTION_SITES).length;
         // Dynamic Builders: 1 per 15 sites (was 5).
         let targetBuilders = 0;
         if (activeConstruction > 0) {

@@ -17,6 +17,8 @@ nav:
       - Energy Logistics: managers/logistics.md
       - Defense & Military: managers/defense.md
       - Global Systems: managers/global.md
+  - Core Systems:
+      - CPU Optimization: core/performance.md
   - Roles:
       - Miners & Harvesters: roles/mining.md
       - Logistics & Hauling: roles/hauling.md

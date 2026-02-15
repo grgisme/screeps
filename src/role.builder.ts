@@ -1,6 +1,7 @@
 import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
 import { utilsEnergy } from "./utils.energy";
+import { micro } from "./MicroOptimizations";
 
 export const roleBuilder = {
     run: function (creep: Creep) {
@@ -16,8 +17,8 @@ export const roleBuilder = {
         }
 
         if (creep.memory.working) {
-            // ... Build Logic (omitted for brevity, keep existing logic) ...
-            const targets = creep.room.find(FIND_CONSTRUCTION_SITES);
+            // Use cached find for construction sites
+            const targets = micro.find(creep.room, FIND_CONSTRUCTION_SITES);
             if (targets.length) {
                 // Dynamic Priority
                 const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
@@ -51,10 +52,12 @@ export const roleBuilder = {
             } else {
                 // Idle State: No Construction Sites
                 // 1. Repair critical decay (Roads, Containers)
-                const repairs = creep.room.find(FIND_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax * 0.8) ||
-                        (s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax * 0.5)
-                });
+                // Note: Standard find here because of complex filter, but we could cache the list and filter locally
+                const structures = micro.find(creep.room, FIND_STRUCTURES);
+                const repairs = structures.filter(s =>
+                    (s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax * 0.8) ||
+                    (s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax * 0.5)
+                );
 
                 if (repairs.length > 0) {
                     // Prioritize lowest health

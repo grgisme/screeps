@@ -44,7 +44,7 @@ let firstRun = true;
 export const loop = function () {
     profiler.wrap(() => {
         if (firstRun) {
-            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.1 - DCC Signs] 🚨 <<<\n\n`);
+            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.2 - CPU Optimization] 🚨 <<<\n\n`);
 
             // Strict Re-Classification of ALL creeps on global reset
             for (const name in Game.creeps) {

@@ -11,6 +11,15 @@ export interface RoomIntel {
 
 export const managerIntel = {
     scanRoom: function (room: Room): RoomIntel {
+        // If we have recent intel with scores, skip terrain scan (Terrain never changes!)
+        if (Memory.intel && Memory.intel[room.name] && Memory.intel[room.name].terrainScore !== undefined) {
+            const existing = Memory.intel[room.name];
+            // Update dynamic data but keep terrain score
+            existing.controllerOwner = room.controller?.owner?.username;
+            existing.time = Game.time;
+            return existing;
+        }
+
         const sources = room.find(FIND_SOURCES).length;
 
         // Terrain Analysis (Expensive! Run rarely)

@@ -4,7 +4,11 @@ export const micro = {
     _findCache: {} as { [roomName: string]: { [type: number]: any[] } },
     _findCacheTick: -1,
 
-    // CostMatrix cache (persists longer?)
+    // Cache for Energy Reservations (per targetId)
+    _reserveCache: {} as { [roomName: string]: Map<string, number> },
+    _reserveCacheTick: -1,
+
+    // CostMatrix cache
     _cmCache: {} as { [key: string]: { cm: CostMatrix, time: number } },
 
     find: function <T extends FindConstant>(room: Room, type: T, opts?: FilterOptions<T>): Array<CheckTypes<T>> {
@@ -17,8 +21,7 @@ export const micro = {
             this._findCache[room.name] = {};
         }
 
-        // Only cache basic finds without complex opts filter (unless we hash opts?)
-        // For simplicity, only cache standard structural finds
+        // Only cache basic finds without complex opts filter
         if (opts) {
             return room.find(type, opts) as Array<CheckTypes<T>>;
         }
@@ -28,6 +31,34 @@ export const micro = {
         }
 
         return this._findCache[room.name][type] as Array<CheckTypes<T>>;
+    },
+
+    /**
+     * Calculates energy reservations for a specific room once per tick.
+     */
+    getRoomReservations: function (room: Room): Map<string, number> {
+        if (this._reserveCacheTick !== Game.time) {
+            this._reserveCache = {};
+            this._reserveCacheTick = Game.time;
+        }
+
+        if (this._reserveCache[room.name]) {
+            return this._reserveCache[room.name];
+        }
+
+        const map = new Map<string, number>();
+        const creeps = this.find(room, FIND_MY_CREEPS);
+
+        for (const creep of creeps) {
+            if (creep.memory.targetId) {
+                const current = map.get(creep.memory.targetId) || 0;
+                // Count how much energy this creep INTENDS to take
+                map.set(creep.memory.targetId, current + creep.store.getFreeCapacity(RESOURCE_ENERGY));
+            }
+        }
+
+        this._reserveCache[room.name] = map;
+        return map;
     },
 
     getCostMatrix: function (roomName: string, callback: () => CostMatrix): CostMatrix {
