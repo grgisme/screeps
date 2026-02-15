@@ -1,4 +1,5 @@
 import { Dictionary } from "lodash";
+import { managerCPU } from "./manager.cpu";
 
 export const pathing = {
     // Cache for CostMatrix to avoid recalculating every tick

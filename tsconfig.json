@@ -16,10 +16,13 @@
         "noImplicitAny": true,
         "typeRoots": [
             "node_modules/@types",
-            "src/types.d.ts"
+            "src"
         ],
         "allowSyntheticDefaultImports": true
     },
+    "files": [
+        "src/types.d.ts"
+    ],
     "ts-node": {
         "compilerOptions": {
             "module": "commonjs"

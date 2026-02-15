@@ -22,7 +22,7 @@ interface RoomMemory {
 
 interface Memory {
     remoteRooms: { [roomName: string]: RemoteRoomData };
-    intel: { [roomName: string]: import('./manager.intel').RoomIntel };
+    intel: { [roomName: string]: any };
     diplomacy: {
         whitelist: string[];
     };
@@ -51,7 +51,7 @@ interface FlagMemory {
     override: boolean; // For manual planning override
 }
 
-// Syntax for adding proprties to `global` (ex "global.log")
+// Syntax for adding properties to `global` (ex "global.log")
 declare namespace NodeJS {
     interface Global {
         log: any;
