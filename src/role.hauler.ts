@@ -16,8 +16,8 @@ export const roleHauler = {
         }
 
         if (creep.memory.working) {
-            // Deliver Logic (unchanged for now, multiple haulers can deliver to same storage)
-            const targets = creep.room.find(FIND_STRUCTURES, {
+            // Priority delivery targets
+            const structures = micro.find(creep.room, FIND_STRUCTURES, {
                 filter: (s) => {
                     return (s.structureType === STRUCTURE_SPAWN ||
                         s.structureType === STRUCTURE_EXTENSION ||
@@ -27,10 +27,9 @@ export const roleHauler = {
                 }
             });
 
-            // Priority: Spawn > Extension > Tower > Storage
-            if (targets.length > 0) {
-                targets.sort((a, b) => {
-                    // Weights
+            if (structures.length > 0) {
+                // Priority: Spawn > Extension > Tower > Storage
+                structures.sort((a, b) => {
                     const weight = (s: Structure) => {
                         if (s.structureType === STRUCTURE_SPAWN) return 1;
                         if (s.structureType === STRUCTURE_EXTENSION) return 2;
@@ -43,8 +42,24 @@ export const roleHauler = {
                     return weight(a) - weight(b);
                 });
 
-                if (creep.transfer(targets[0], RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, targets[0].pos, 1);
+                if (creep.transfer(structures[0], RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    pathing.run(creep, structures[0].pos, 1);
+                }
+            } else {
+                // FALLBACK: Deliver to Workers (Upgraders and Builders)
+                const workers = micro.find(creep.room, FIND_MY_CREEPS).filter(c =>
+                    (c.memory.role === 'upgrader' || c.memory.role === 'builder') &&
+                    c.store.getFreeCapacity(RESOURCE_ENERGY) > 20 // At least 20 free space
+                );
+
+                if (workers.length > 0) {
+                    // Deliver to closest worker
+                    const target = creep.pos.findClosestByRange(workers);
+                    if (target) {
+                        if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            pathing.run(creep, target.pos, 1);
+                        }
+                    }
                 }
             }
         } else {
