@@ -1,6 +1,6 @@
 {
   "name": "screeps",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Screeps just for me.",
   "main": "index.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "@types/lodash": "^4.17.23",
     "@types/mocha": "^10.0.10",
     "@types/screeps": "^3.3.8",
+    "@types/screeps-profiler": "^1.2.6",
     "chai": "^4.5.0",
     "mocha": "^11.7.5",
     "rollup": "^4.57.1",

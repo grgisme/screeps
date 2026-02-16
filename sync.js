@@ -31,6 +31,17 @@ const summary = process.argv[2] || "Update";
 const versionFileContent = `export const SCRIPT_VERSION = "${newVersion}";\nexport const SCRIPT_SUMMARY = "${summary}";\n`;
 fs.writeFileSync(path.join(__dirname, 'src', 'version.ts'), versionFileContent);
 
+// 1.6 Update docs/index.md
+console.log('📖 Updating docs/index.md...');
+const docsPath = path.join(__dirname, 'docs', 'index.md');
+if (fs.existsSync(docsPath)) {
+    let docsContent = fs.readFileSync(docsPath, 'utf8');
+    // Replace "## Recent Advancements (v...)" with current version
+    docsContent = docsContent.replace(/## Recent Advancements \(v[^)]+\)/, `## Recent Advancements (v${newVersion})`);
+    // Also handle specific version references if needed
+    fs.writeFileSync(docsPath, docsContent);
+}
+
 // 2. Build & Upload
 console.log('📤 Uploading to Screeps...');
 run('npm run upload');

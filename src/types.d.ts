@@ -65,4 +65,3 @@ declare namespace NodeJS {
     }
 }
 
-declare module 'screeps-profiler';

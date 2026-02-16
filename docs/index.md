@@ -13,7 +13,7 @@ The bot operates on a **Priority-First** basis, ensuring survival before optimiz
 5.  **Strategic Planning**: Automated bunker layouts for long-term scalability.
 6.  **Reporting & Tools**: Command-line oversight through `Status()`, `Plan()`, and periodic auto-logs.
 
-## Recent Advancements (v2.12 - v2.14)
+## Recent Advancements (v1.0.4)
 - **Road-Biased Pathing (v2.14)**: Custom pathing logic that treats roads as primary arteries (cost 1 vs plain 2), reducing infrastructure wear.
 - **Micro-Optimizations**: Per-tick caching for `Room.find` and energy reservations to minimize CPU overhead.
 - **Priority Energy Queue**: High-priority energy goals for spawns (like the RCL 1 -> RCL 2 "Force Save") ensure critical creeps are always next.
