@@ -3,31 +3,31 @@
 Welcome to the internal documentation for the Screeps bot. This guide provides a high-level, plain-English explanation of how the bot thinks, prioritizes tasks, and manages resources.
 
 ## Strategy Overview
-The bot operates on a **Priority-First** basis, ensuring survival before optimization.
+The bot operates on a **Kernel OS** architecture, using a multi-process scheduler to manage priorities and a hierarchical **Overlord** system for room management.
 
 ### Core Principles
-1.  **Survival First**: Maintaining a minimum of one harvester to recover from a full wipe.
-2.  **Infrastructure Priority**: Building containers and extensions to move from "Walking" to "Static Mining".
-3.  **Adaptive CPU Usage**: Dialing back low-priority tasks (like scouting or massive upgrading) when the CPU bucket is low.
-4.  **Resilient Memory**: Periodic sanity checks to prevent "ghost" creeps or logic failures.
-5.  **Strategic Planning**: Automated bunker layouts for long-term scalability.
-6.  **Reporting & Tools**: Command-line oversight through `Status()`, `Plan()`, and periodic auto-logs.
+1.  **Process Isolation**: The Kernel ensures logic failures in one module don't crash the entire bot.
+2.  **Survival First**: Maintaining a minimum of one harvester to recover from a full wipe.
+3.  **Hierarchical Ownership**: Each Colony (room) has dedicated Overlords for Mining, Infrastructure, and Defense.
+4.  **Traffic Management**: Advanced path caching and priority-based shoving to reduce congestion.
+5.  **Strategic Planning**: Automated bunker layouts based on Distance Transform logic.
 
-## Recent Advancements (v1.0.10)
-- **Road-Biased Pathing (v2.14)**: Custom pathing logic that treats roads as primary arteries (cost 1 vs plain 2), reducing infrastructure wear.
-- **Micro-Optimizations**: Per-tick caching for `Room.find` and energy reservations to minimize CPU overhead.
-- **Priority Energy Queue**: High-priority energy goals for spawns (like the RCL 1 -> RCL 2 "Force Save") ensure critical creeps are always next.
-- **War Economy (v2.11)**: Threat-imminent priority for Towers and early base fortification.
+## Recent Advancements (v1.0.11)
+- **Kernel OS Core**: Implemented a robust process scheduler with priority-based execution.
+- **Overlord Overhaul**: Transitioned from global managers to localized Overlords for better scalability.
+- **TrafficManager**: Centralized movement logic with path caching and creep shoving.
+- **RoomPlanner (v2.0)**: New automated bunker placement using distance transform for optimal anchor selection.
 
 ## Documentation Map
 
-### 🛠️ [Managers](managers/spawn.md)
+### 🛠️ [Overlords](core/kernel.md)
 *High-level room and global orchestration.*
+- **[Kernel & OS Architecture](core/kernel.md)**: The heart of the bot.
 - **[Spawn Management](managers/spawn.md)**: Priority queues and body scaling.
-- **[Base Planning](managers/planning.md)**: Bunker layouts and RCL roadmaps.
+- **[Infrastructure & Planning](managers/planning.md)**: Bunker layouts and RCL roadmaps.
 - **[Defense & Military](managers/defense.md)**: Towers, defenders, and safe mode.
-- **[Logistics & Market](managers/logistics.md)**: Resource balancing and trading.
-- **[Global Systems](managers/global.md)**: CPU, Memory hygiene, and Console Tools.
+- **[Logistics & Energy](managers/logistics.md)**: Resource distribution and withdrawal rules.
+- **[Global Systems](managers/global.md)**: Memory hygiene and Console Tools.
 
 ### 👥 [Creep Roles](roles/mining.md)
 *Specific behavioral logic for individual units.*

@@ -2,27 +2,28 @@
 
 The bot uses a sophisticated, goal-driven logistics system to ensure that energy is distributed efficiently without starving the spawn's ability to recover.
 
-## The Energy Allocation Queue
-Instead of using simple percentage-based thresholds, the bot uses an **Energy Allocation Queue** (`manager.queue`).
+# Energy Logistics
 
-1.  **Goal Setting**: The Spawn Manager calculates the exact energy needed for the next high-priority creep (e.g., 550 energy for a heavy miner).
-2.  **Surplus Detection**: Any energy currently in Spawns or Extensions that exceeds this goal is considered "Surplus".
-3.  **Worker Access**: Builders and Upgraders are permitted to withdraw energy from the Spawn pool only when Surplus is detected.
+The bot uses a decentralized, goal-driven logistics system managed by the **Colony** architecture to ensure efficient energy distribution.
 
 ## Energy Priority (Withdrawal)
-When a creep needs energy, it follows this priority list:
-1.  **Dropped Resources**: High priority to prevent decay.
-2.  **Tombstones**: Salvaging energy from dead creeps.
+When a creep (Builder, Upgrader, etc.) needs energy, it searches in this order:
+1.  **Dropped Resources**: Immediate pickup to prevent decay.
+2.  **Tombstones & Ruins**: Salvaging resources from history.
 3.  **Storage**: The primary "bank" of the room.
-4.  **Containers**: Specifically those not adjacent to sources (local buffers).
-5.  **Surplus Pool**: Spawns/Extensions (only if the Energy Goal is met).
-6.  **Harvesting**: The final fallback if no stored energy is available.
+4.  **Local Containers**: Buffers placed near sources or the controller.
+5.  **Surplus Pool (Spawns/Extensions)**: Only used when the room has reached its immediate energy goal.
+6.  **Harvesting (Fallback)**: Desperate measure if no storage exists.
 
-## Hauling Logic
-Haulers prioritize picking up energy from **Source Containers** (where miners drop it) and delivering it to:
-1.  **Spawns & Extensions**: Primary goal.
-2.  **Towers**: If they are low on ammo.
-3.  **Storage/Containers**: For long-term logistics.
+## Mining & Hauling Pipeline
+- **Miners**: Use Source Exclusivity logic to occupy a single source and fill an adjacent container.
+- **Haulers**: Monitor these containers and prioritize delivery to:
+    1.  **Spawns & Extensions**: Maintain room spawning capacity.
+    2.  **Towers**: Ensure defensive readiness.
+    3.  **Storage**: Centralizing surplus energy for industrial tasks.
+
+## Energy Throttling
+In the new architecture, the **Kernel** can throttle low-priority processes (like massive upgrading) if the room's energy levels drop below critical thresholds, ensuring that primary survival (Mining/Defense) always has resources.
 
 ---
 [⬅️ Back to Index](../index.md)

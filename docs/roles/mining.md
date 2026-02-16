@@ -11,11 +11,11 @@ The **Harvester** is the "jack-of-all-trades" creep. It is used in RCL 1 or when
 - **Behavior**: Travels to a source, harvests energy into its own store, and walks back to deliver it to the Spawn or Extension.
 - **Body**: Equal parts [WORK, CARRY, MOVE].
 
-## Static Miners (Mid & Late Game)
-Once a **Structure Container** is built adjacent to a source, the bot switches to **Static Miners**.
-- **Behavior**: Sits directly on top of the container and mines until the source is depleted. It never leaves its spot.
-- **Efficiency**: Since it doesn't need to walk, it can dedicate all its energy to `WORK` parts (standard: 5x WORK, 1x MOVE).
-- **Logistics**: Relies entirely on **Haulers** to move the energy from the container to the base.
+## Static Miners (MiningOverlord)
+The **Mining Overlord** manages high-efficiency energy extraction.
+- **Source Exclusivity**: Each source is assigned exactly one miner creep, preventing pathing overlap and "ghost" harvesting.
+- **Static Placement**: Miners occupy the container tile adjacent to a source.
+- **Mining Rate**: Bodies are scaled (5x WORK) to deplete a 3000-energy source exactly within its 300-tick regeneration window.
 
-## Source Choice
-Creeps use a **Reservation System** to ensure they don't crowd the same source. When multiple sources are available, they will pick the one with the most available "slots" or the one that isn't already being mined by a heavy miner.
+## Source Choice & Reservations
+Mining slots are reserved in the **MiningOverlord**'s memory. When a miner spawns, it is pre-assigned to a specific source ID, ensuring zero confusion or "ping-ponging" behavior between sources.

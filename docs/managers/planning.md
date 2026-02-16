@@ -1,30 +1,30 @@
 # Base Planning & Construction
 
-The **Building Manager** handles the automated placement of all structures, evolving the base from a simple campfire into a fortified bunker.
+# Infrastructure & Planning
 
-## The Bunker Center
-All major infrastructure revolves around a **Bunker Center**.
-- **Phase 1 (Bootstrap, RCL 1-3)**: The center is established at a clear 3x3 spot within range 5 of the initial Spawn.
-- **Phase 2 (Fortress, RCL 4+)**: The manager re-evaluates the entire room for a 5x5 clear area to facilitate a grander endgame layout.
-- **Manual Control**: Placing a flag named `CENTER` will force the bunker center to that exact position.
+The **Infrastructure Overlord** coordinates the construction of all structures, utilizing the **RoomPlanner** to evolve the base from a simple campfire into a fortified bunker.
 
-## Structure Roadmap by RCL
+## 📐 RoomPlanner (v2.0)
+The RoomPlanner uses a **Distance Transform** algorithm to identify the most efficient location for your base.
 
-| RCL | Structure | Priority & Placement Logic |
+1.  **Anchor Selection**: It identifies the "Deepest" spot in the room (farthest from walls) to serve as the **Bunker Anchor**.
+2.  **Distance Transform (DT)**: Calculates a score for every tile based on its distance from natural barriers.
+3.  **Bunker Stamp**: Applies a pre-defined 7x7 bunker template at the anchor, ensuring optimal placement of extensions, towers, and storage.
+
+- **`Planner.visualize(roomName)`**: Renders the DT heatmap and the planned bunker layout on your screen.
+- **`Planner.plan(roomName)`**: Lists exactly what structures are missing at the current RCL.
+
+## Structure Roadmap
+
+| RCL | Goal | Overlord Logic |
 | :--- | :--- | :--- |
-| **1** | Roads | **Skeleton**: Direct paths from Spawn to Sources and the Controller. |
-| **2** | Extensions | Placed in a **Checkerboard Spiral** around the Bunker Center. |
-| **2** | Containers | **Source Containers**: Placed 1 tile away from each Source to facilitate static mining. |
-| **3** | Tower | Placed at an offset (1,1) from the Bunker Center for maximum coverage. |
-| **3** | Ramparts | **Spawn & Tower Protection**: Placed immediately to secure the base core. |
-| **3** | Containers | **Controller Container**: Placed 2 tiles away from the Controller for Upgraders. |
-| **4** | Storage | Placed exactly at the **Bunker Center**. |
-| **4** | Ramparts | Placed protectively over the Storage and future critical nodes. |
+| **1-2** | Bootstrap | Placing paths to Sources and the Controller. Extensions checkboard around Anchor. |
+| **3** | Fortification | First Tower placement and core Rampart security. |
+| **4** | Central Storage | Storage placed exactly at the Anchor (DT peak) for logistics efficiency. |
+| **5-8** | Industrialization | Expanding the bunker footprint and fortifying the perimeter. |
 
-## Dynamic Path Awareness (v2.11)
-The Building Manager now performs a **Pathing Pass** before placing extensions. It identifies the "Ideal Lanes" between your Sources and the Bunker Hub (Spawn/Tower) and blacklists those tiles for structure placement. This ensures that even at max extensions, your core energy transport remains unblocked.
-- **`Plan()`**: Draws the yellow spiral and bunker dots on the map for your preview.
-- **`Replan()`**: Wipes the current plan and forces a re-scan of the room (e.g., if you want to shift the bunker after clearing terrain).
+## Dynamic Flow Awareness
+The Infrastructure Overlord ensures that your core lanes are never blocked. It cross-references the RoomPlanner's "Ideal Lanes" against current construction sites to ensure maximum throughput for Haulers.
 
 ## Construction Priority
 Builders use a weighted priority system to decide what to build first:

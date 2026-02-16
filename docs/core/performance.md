@@ -27,10 +27,15 @@ Instead of every creep looping through all global creeps to see who has "reserve
 Terrain scanning involves iterating through 2,500 coordinates (50x50). 
 - **Optimization**: This is done once per room when first scouted. The resulting scores are stored in `Memory.intel`. On subsequent visits, the bot reads the stored score instead of re-scanning.
 
-### Adaptive Pathing
-The bot uses the CPU bucket to determine how hard to search for paths.
-- **Critical Bucket (< 2000)**: Reduced `maxOps` for pathfinding and increased reuse of old paths.
-- **Stuck Detection**: If a creep doesn't move for 3 ticks, the path is deleted to prevent endless repetition of a blocked route.
+### 🚦 TrafficManager & Path Caching
+The movement engine has been fully centralized to minimize PathFinder calls.
+- **Directional Compression**: Paths are stored as strings of numbers (e.g., "12348") in the volatile Heap.
+- **Shove Algorithm**: High-priority creeps (like high-RCL miners) will automatically swap positions with lower-priority creeps (like haulers) to avoid deadlocks.
+- **Visual Debugging**: The `Traffic.visuals(true)` tool provides per-tick overlays of cached paths for monitoring congestion.
+
+### Adaptive Stalling
+- **Stuck Detection**: If a creep doesn't move for 3-5 ticks while on a path, it triggers an emergency re-path with increased `maxOps`.
+- **Bucket Aware**: PathFinder intensity scales automatically with your `Game.cpu.bucket`.
 
 ## Results
 By reducing the "Background CPU" (the overhead of just running the managers), the bot can support significantly more creeps per room without triggering CPU exhaust errors.
