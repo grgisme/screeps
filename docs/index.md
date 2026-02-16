@@ -13,10 +13,11 @@ The bot operates on a **Priority-First** basis, ensuring survival before optimiz
 5.  **Strategic Planning**: Automated bunker layouts for long-term scalability.
 6.  **Reporting & Tools**: Command-line oversight through `Status()`, `Plan()`, and periodic auto-logs.
 
-## Recent Advancements (v2.5 - v2.11)
-- **War Economy (v2.11)**: Threat Imminent priority for Towers and early base fortification with Ramparts at RCL 3.
-- **Memory Hygiene**: Automated stale room memory cleanup to maintain low CPU overhead.
-- **Efficient Infrastructure**: Path-aware extension placement and distance-based builder prioritization.
+## Recent Advancements (v2.12 - v2.14)
+- **Road-Biased Pathing (v2.14)**: Custom pathing logic that treats roads as primary arteries (cost 1 vs plain 2), reducing infrastructure wear.
+- **Micro-Optimizations**: Per-tick caching for `Room.find` and energy reservations to minimize CPU overhead.
+- **Priority Energy Queue**: High-priority energy goals for spawns (like the RCL 1 -> RCL 2 "Force Save") ensure critical creeps are always next.
+- **War Economy (v2.11)**: Threat-imminent priority for Towers and early base fortification.
 
 ## Documentation Map
 

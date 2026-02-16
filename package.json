@@ -1,13 +1,14 @@
 {
   "name": "screeps",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Screeps just for me.",
   "main": "index.js",
   "scripts": {
     "test": "mocha -r ts-node/register test/**/*.test.ts",
     "build": "rollup -c",
     "watch": "rollup -c -w",
-    "upload": "npm run build && node upload.js"
+    "upload": "npm run build && node upload.js",
+    "sync": "node sync.js"
   },
   "keywords": [],
   "author": "",

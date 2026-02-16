@@ -12,6 +12,7 @@ declare global {
         _pos?: { x: number, y: number, roomName: string }; // Last position for stuck detection
         _stuckCount?: number;
         emergency?: boolean;
+        targetRoom?: string;
     }
 
     interface RoomMemory {
