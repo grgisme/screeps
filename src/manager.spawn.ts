@@ -76,6 +76,7 @@ export const managerSpawn = {
         const roleHarvesters = creeps.filter(c => c.memory.role === 'harvester'); // Old school
         const roleUpgraders = creeps.filter(c => c.memory.role === 'upgrader');
         const roleBuilders = creeps.filter(c => c.memory.role === 'builder');
+        const roleDefenders = creeps.filter(c => c.memory.role === 'defender');
 
         // Config
         // MAX_MINERS should be number of sources if we are RCL 2+
@@ -163,10 +164,65 @@ export const managerSpawn = {
 
         managerQueue.setGoal(room.name, nextPriorityCost);
 
+        // --- ROOM STATUS DATA (Internal) ---
+        const roomStatus = {
+            energy: `${room.energyAvailable}/${room.energyCapacityAvailable}`,
+            creeps: creeps.length,
+            harvesters: `${roleHarvesters.length}/${MAX_HARVESTERS}`,
+            miners: `${roleMiners.length}/${MAX_MINERS}`,
+            haulers: `${roleHaulers.length}/${MAX_HAULERS}`,
+            upgraders: `${roleUpgraders.length}/${MAX_UPGRADERS}`,
+            builders: `${roleBuilders.length}/${MAX_BUILDERS}`,
+            defenders: `${roleDefenders.length}`,
+            nextGoal: nextPriorityCost,
+            forceSave: forceSave
+        };
+        (room as any)._spawnStatus = roomStatus;
+
+        // --- EMERGENCY DEFENSE PRIORITY ---
+        const hostiles = micro.find(room, FIND_HOSTILE_CREEPS);
+        if (hostiles.length > 0) {
+            // Find threatening hostiles (including claimers)
+            const isThreat = hostiles.some(c => c.getActiveBodyparts(ATTACK) > 0 ||
+                c.getActiveBodyparts(RANGED_ATTACK) > 0 ||
+                c.getActiveBodyparts(WORK) > 0 ||
+                c.getActiveBodyparts(CLAIM) > 0);
+
+            if (isThreat && roleDefenders.length === 0) {
+                // Register Goal
+                managerQueue.setGoal(room.name, 130); // [ATTACK, MOVE]
+
+                // Automatic Log on threat if cooldown hit
+                if (Game.time % 20 === 0) {
+                    console.log(this.getQueueReport(room));
+                }
+
+                // We need a defender!
+                // But only if we have at least 1 harvester so we don't stall.
+                if (roleHarvesters.length >= 1) {
+                    if (room.energyAvailable >= 130) {
+                        console.log(`🛡️ DEFENSE: Spawning emergency defender in ${room.name}!`);
+                        const body = this.bodyBuilder(room.energyAvailable, [ATTACK, MOVE]);
+                        this.spawnCreep(spawn, body, 'defender');
+                        return;
+                    } else {
+                        (room as any)._spawnPriority = "DEFENDER (Waiting for Energy 130)";
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Periodic maintenance log
+        if (Game.time % 100 === 0) {
+            console.log(this.getQueueReport(room));
+        }
+
         // Spawn Logic Priority
 
         // 1. Critical Recovery (If 0 creeps, spawn simple harvester)
         if (creeps.length === 0) {
+            (room as any)._spawnPriority = "HARVESTER (Critical Recovery)";
             this.spawnCreep(spawn, [WORK, CARRY, MOVE], 'harvester');
             return;
         }
@@ -180,6 +236,7 @@ export const managerSpawn = {
         // If forceSave is true, we skip other roles if we can't afford Miner.
 
         if (roleMiners.length < MAX_MINERS || (forceSave && roleMiners.length === 0)) {
+            (room as any)._spawnPriority = "MINER";
             // Body: 5 WORK, 1 MOVE (550 Energy)
             if (room.energyCapacityAvailable >= 550) {
                 if (room.energyAvailable >= 550) {
@@ -202,6 +259,7 @@ export const managerSpawn = {
 
         // 3. Haulers (Needed if Miners exist)
         if (roleMiners.length > 0 && roleHaulers.length < MAX_HAULERS) {
+            (room as any)._spawnPriority = "HAULER";
             // ... existing ... 
 
             // Body: CARRY, CARRY, MOVE, MOVE (Ratio 1:1)
@@ -213,6 +271,7 @@ export const managerSpawn = {
 
         // 4. Harvesters (Fallback for un-contained sources)
         if (roleHarvesters.length < MAX_HARVESTERS) {
+            (room as any)._spawnPriority = "HARVESTER";
             const body = this.bodyBuilder(room.energyAvailable, [WORK, CARRY, MOVE]);
             this.spawnCreep(spawn, body, 'harvester');
             return;
@@ -224,6 +283,7 @@ export const managerSpawn = {
         const targetUpgraders = energyFull ? MAX_UPGRADERS + 1 : MAX_UPGRADERS;
 
         if (roleUpgraders.length < targetUpgraders) {
+            (room as any)._spawnPriority = "UPGRADER";
             const body = this.bodyBuilder(room.energyAvailable, [WORK, CARRY, MOVE]);
             this.spawnCreep(spawn, body, 'upgrader');
             return;
@@ -231,6 +291,7 @@ export const managerSpawn = {
 
         // 6. Builders
         if (roleBuilders.length < MAX_BUILDERS) {
+            (room as any)._spawnPriority = "BUILDER";
             const body = this.bodyBuilder(room.energyAvailable, [WORK, CARRY, MOVE]);
             this.spawnCreep(spawn, body, 'builder');
             return;
@@ -247,6 +308,23 @@ export const managerSpawn = {
             memory: { role: role, room: spawn.room.name, working: false, state: 0, ...memoryOverride }
         });
     },
+
+    getQueueReport: function (room: Room): string {
+        const status = (room as any)._spawnStatus;
+        if (!status) return `❌ No spawn data for ${room.name}. Wait 1 tick.`;
+
+        let msg = `\n--- 🏭 SPAWN REPORT: ${room.name} ---\n`;
+        msg += `⚡ Energy: ${status.energy} (Goal: ${status.nextGoal}${status.forceSave ? " - FORCE SAVE" : ""})\n`;
+        msg += `👥 Population: ${status.creeps} total\n`;
+        msg += `   - Harvesters: ${status.harvesters}\n`;
+        msg += `   - Miners:     ${status.miners}\n`;
+        msg += `   - Haulers:    ${status.haulers}\n`;
+        msg += `   - Defenders:  ${status.defenders}\n`;
+        msg += `   - Upgraders:  ${status.upgraders}\n`;
+        msg += `   - Builders:   ${status.builders}\n`;
+        msg += `🎯 Next Priority: ${(room as any)._spawnPriority || "Maintenance"}\n`;
+        return msg;
+    }
 };
 
 

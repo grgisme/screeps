@@ -23,3 +23,6 @@ Haulers prioritize picking up energy from **Source Containers** (where miners dr
 1.  **Spawns & Extensions**: Primary goal.
 2.  **Towers**: If they are low on ammo.
 3.  **Storage/Containers**: For long-term logistics.
+
+---
+[⬅️ Back to Index](../index.md)

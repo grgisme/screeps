@@ -7,6 +7,10 @@ The Hauler is a purely logistical creep (no `WORK` parts).
 - **Primary Task**: Pick up energy from Source Containers or dropped piles.
 - **Secondary Task**: Fill Spawns and Extensions to enable spawning.
 - **Tertiary Task**: Fill Towers and Storage.
+- **Body Scaling**: 1:1 ratio of [CARRY, MOVE] for maximum efficiency on roads.
+
+---
+[⬅️ Back to Index](../index.md)
 
 ## Pickup Priorities
 When looking for energy, a Hauler evaluates targets in this order:

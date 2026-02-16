@@ -5,6 +5,7 @@ Builders and Upgraders are the room's "Civil Engineers," responsible for expandi
 ## Role: Builder
 Builders focus on construction and maintenance.
 - **Construction**: Actively build sites in the room. They follow a specific structure priority (Spawn -> Extensions -> Towers -> Everything else).
+- **Center-Out Build Order (v2.10)**: Within the same structure type, builders prioritize sites closest to the room's energy hub (Storage or Spawn). This minimizes distance traveled and ensures central infrastructure is finished first.
 - **Maintenance**: If no construction sites exist, they repair roads, containers, and ramparts.
 - **Upgrading Fallback**: If there is nothing to build or repair, they assist Upgraders.
 
@@ -18,3 +19,6 @@ Both roles utilize the **Surplus Pool** from Spawns/Extensions. They will only "
 1.  The Spawn Manager identifies energy above its current goal.
 2.  The Spawn is not currently busy spawning a critical creep.
 3.  The room energy is at 90%+ capacity (fallback check).
+
+---
+[⬅️ Back to Index](../index.md)

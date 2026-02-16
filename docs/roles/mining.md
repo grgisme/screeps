@@ -2,7 +2,11 @@
 
 The bot utilizes two distinct methods for harvesting energy, transitioning from a mobile workforce to a static infrastructure.
 
-## Harvesters (Early Game / Recovery)
+## Harvesters
+- **Harvesters**: Basic [WORK, CARRY, MOVE] creeps for early game or recovery.
+
+---
+[⬅️ Back to Index](../index.md)
 The **Harvester** is the "jack-of-all-trades" creep. It is used in RCL 1 or when a room is recovering from a full wipe.
 - **Behavior**: Travels to a source, harvests energy into its own store, and walks back to deliver it to the Spawn or Extension.
 - **Body**: Equal parts [WORK, CARRY, MOVE].

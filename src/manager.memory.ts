@@ -4,27 +4,49 @@ export const managerMemory = {
      */
     run: function () {
         // Run every 50 ticks to save CPU, or every tick if we are in a recovery state
-        if (Game.time % 50 !== 0) return;
+        if (Game.time % 50 === 0) {
+            this.cleanupCreeps();
+            this.cleanupRooms();
+        }
+    },
 
-        for (const name in Game.creeps) {
-            const creep = Game.creeps[name];
+    cleanupCreeps: function () {
+        for (const name in Memory.creeps) {
+            if (!(name in Game.creeps)) {
+                delete Memory.creeps[name];
+            } else {
+                const creep = Game.creeps[name];
+                // Ensure Role exists
+                if (!creep.memory.role) {
+                    this.recoverCreep(creep);
+                }
+                // Ensure mandatory state flags exist
+                if (creep.memory.working === undefined) {
+                    creep.memory.working = false;
+                }
+            }
+        }
+    },
 
-            // 1. Ensure memory object exists (Screeps usually handles this, but let's be safe)
-            if (!creep.memory) {
-                console.log(`🚨 ALERT: Creep ${creep.name} has NO memory object! Attempting to fix.`);
-                // In Screeps, Memory.creeps[name] is the source of truth
-                Memory.creeps[name] = Memory.creeps[name] || {};
+    cleanupRooms: function () {
+        for (const roomName in Memory.rooms) {
+            // Keep room memory if:
+            // 1. We have visibility AND (it's ours OR we have a reservation)
+            const room = Game.rooms[roomName];
+            if (room) {
+                const isMine = room.controller && room.controller.my;
+                const isReserved = room.controller && room.controller.reservation && room.controller.reservation.username === 'Me';
+                if (isMine || isReserved) continue;
             }
 
-            // 2. Ensure Role exists
-            if (!creep.memory.role) {
-                this.recoverCreep(creep);
-            }
+            // 2. We have creeps in it or headed to it
+            const hasPresence = Object.values(Game.creeps).some(c => c.pos.roomName === roomName || (c.memory as any).targetRoom === roomName);
+            if (hasPresence) continue;
 
-            // 3. Ensure mandatory state flags exist
-            if (creep.memory.working === undefined) {
-                creep.memory.working = false;
-            }
+            // 3. Special Case: Intel (Intel is separate, but if room memory is being used for scouting/planning)
+            // If it's not a primary room and no presence, PURGE.
+            console.log(`🧹 MEMORY: Purging stale room memory for ${roomName}`);
+            delete Memory.rooms[roomName];
         }
     },
 

@@ -7,11 +7,15 @@ In Screeps, CPU is more valuable than energy. This document outlines the strateg
 2.  **Room-Level Scoping**: Avoid global loops (like `Game.creeps`) whenever possible. Processes should be scoped to a single room.
 3.  **Intent Pre-checks**: Only call actions (`harvest`, `withdraw`, `move`) if they have a high probability of returning `OK`. Every intent call that isn't `ERR_NOT_IN_RANGE` costs 0.2 CPU.
 4.  **Distance Gating**: Use `findClosestByRange` (Chebyshev distance) for initial filters before committing to `findClosestByPath`.
+- **Global resets** (avoid them by avoiding top-level code that is expensive).
+
+---
+[⬅️ Back to Index](../index.md)
 
 ## Implementation Details
 
 ### Centralized Per-Tick Caching (`MicroOptimizations.ts`)
-The bot uses a centralized cache that resets every tick. 
+The bot uses a centralized cache that resets every tick.
 - **The Problem**: Multiple role managers (Builder, Upgrader, Hauler) often call `room.find(FIND_STRUCTURES)` in the same tick. Without caching, the server recalculates this list for every caller.
 - **The Solution**: `micro.find(room, type)` stores the result in a map keyed by `roomName` and `findType`. Subsequent callers in the same tick receive the cached array instantly.
 

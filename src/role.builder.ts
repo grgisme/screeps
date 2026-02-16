@@ -26,6 +26,9 @@ export const roleBuilder = {
                 const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
                 const isWar = hostiles.length > 0 && !creep.room.controller?.safeMode;
 
+                // Center-Out Priority: Structure Type > Distance to Hub (Spawn/Storage)
+                const hub = creep.room.storage || creep.room.find(FIND_MY_SPAWNS)[0] || creep;
+
                 targets.sort((a, b) => {
                     const priority = (s: ConstructionSite) => {
                         // WAR MODE
@@ -45,7 +48,13 @@ export const roleBuilder = {
                         if (s.structureType === STRUCTURE_TOWER) return 10;
                         return 20;
                     };
-                    return priority(a) - priority(b);
+
+                    const pA = priority(a);
+                    const pB = priority(b);
+                    if (pA !== pB) return pA - pB;
+
+                    // Same priority? Closest to hub wins
+                    return a.pos.getRangeTo(hub.pos) - b.pos.getRangeTo(hub.pos);
                 });
 
                 if (creep.build(targets[0]) === ERR_NOT_IN_RANGE) {

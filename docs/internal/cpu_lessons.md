@@ -1,11 +1,15 @@
 # AI Assistant Guide: CPU Optimization Lessons
 
+---
+[⬅️ Back to Index](../index.md)
+
 This document serves as a reference for future AI assistants working on this codebase. It captures the high-performance patterns discovered during the v2.2 optimization sweep.
 
 ## Critical Bottlenecks to Watch For
 1.  **Nested Global Loops**: Never iterate over `Game.creeps` or `Game.rooms` inside a per-creep or per-room logic block. This creates O(N^2) complexity that kills CPU in large empires.
 2.  **`Room.find` with Filters**: `room.find(FIND_STRUCTURES, {filter: ...})` is significantly slower than `room.find(FIND_STRUCTURES).filter(...)`. Always use the latter if the list is cached.
 3.  **Pathfinding Gating**: `PathFinder.search` is one of the most expensive operations in the API. Ensure it is only called when a creep is out of range AND has no valid `_path` string in memory.
+*   GCL is the real progress bar. CPU is just the speed at which you fill it.
 
 ## Recommended Patterns
 

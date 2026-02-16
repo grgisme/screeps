@@ -1,5 +1,14 @@
 export const toolsPlanner = {
-    plan: function (roomName: string) {
+    plan: function (roomName?: string) {
+        if (!roomName) {
+            roomName = Object.keys(Game.rooms).find(n => Game.rooms[n].controller && Game.rooms[n].controller!.my);
+        }
+
+        if (!roomName) {
+            console.log(`❌ No room name provided and no owned rooms found.`);
+            return;
+        }
+
         const room = Game.rooms[roomName];
         if (!room) {
             console.log(`❌ Room ${roomName} not found or not visible.`);

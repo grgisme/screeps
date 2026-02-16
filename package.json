@@ -7,7 +7,7 @@
     "test": "mocha -r ts-node/register test/**/*.test.ts",
     "build": "rollup -c",
     "watch": "rollup -c -w",
-    "upload": "node upload.js"
+    "upload": "npm run build && node upload.js"
   },
   "keywords": [],
   "author": "",

@@ -1,28 +1,25 @@
 import { pathing } from "./pathing";
+import { micro } from "./MicroOptimizations";
 
 export const roleDefender = {
     run: function (creep: Creep) {
-        const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+        const hostiles = micro.find(creep.room, FIND_HOSTILE_CREEPS);
         if (hostiles.length > 0) {
-            // Attack closest?
-            const target = creep.pos.findClosestByRange(hostiles);
+            // Target priority: Controller campers > Closest
+            let target: AnyCreep | undefined = hostiles.find(h => creep.room.controller && h.pos.inRangeTo(creep.room.controller.pos, 3));
+            if (!target) target = creep.pos.findClosestByRange(hostiles) || undefined;
+
             if (target) {
                 if (creep.attack(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target);
-                    // OR pathing.run(creep, target.pos, 1);
-                    // Allow default moveTo for military as it handles moving targets better than static path sometimes?
-                    // But our pathing has stuck detection.
-                    // pathing.run(creep, target.pos, 1); 
-                    // Actually, move to target implies range 1.
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ff0000' } });
                 }
             }
         } else {
-            // Idle: Recycle or wait at bunker
-            const center = (creep.room.memory as any).planning?.bunkerCenter;
-            if (center) {
-                pathing.run(creep, new RoomPosition(center.x, center.y, creep.room.name), 3);
+            // Idle: wait at spawn or controller
+            const targetPos = creep.room.controller?.pos || (micro.find(creep.room, FIND_MY_SPAWNS)[0]?.pos);
+            if (targetPos) {
+                pathing.run(creep, targetPos, 3);
             }
-            // Or recycle if no hostiles for X ticks?
         }
     }
 };

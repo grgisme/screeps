@@ -26,25 +26,51 @@ profiler.enable();
 let firstRun = true;
 
 // Tools Initialization (Run once on Global Reset)
-(global as any).Sim = toolsSimulation;
-(global as any).Inspect = toolsInspector.inspect;
-(global as any).Plan = toolsPlanner.plan;
-(global as any).Replan = (roomName: string) => {
-    const room = Game.rooms[roomName];
-    if (!room) {
-        console.log(`❌ Room ${roomName} not found.`);
-        return;
+const tools = {
+    Sim: toolsSimulation,
+    Inspect: toolsInspector.inspect,
+    Plan: toolsPlanner.plan,
+    Status: () => {
+        const ownedRooms = Object.values(Game.rooms).filter(r => r.controller && r.controller.my);
+        if (ownedRooms.length === 0) return "❌ No owned rooms found.";
+
+        for (const room of ownedRooms) {
+            console.log(managerSpawn.getQueueReport(room));
+        }
+        return "Report generated.";
+    },
+    Replan: (roomName?: string) => {
+        if (!roomName) {
+            roomName = Object.keys(Game.rooms).find(n => Game.rooms[n].controller && Game.rooms[n].controller!.my);
+        }
+        if (!roomName) return "❌ No room name provided.";
+
+        const room = Game.rooms[roomName];
+        if (!room) {
+            console.log(`❌ Room ${roomName} not found.`);
+            return;
+        }
+        delete (room.memory as any).planning;
+        delete (room.memory as any).roadsInitialized;
+        (room.memory as any).forceBuildingRun = true;
+        console.log(`🔄 REPLAN TRIGGERED for ${roomName}. The Building Manager will run IMMEDIATElY next tick.`);
+        return "Replan successful.";
     }
-    delete (room.memory as any).planning;
-    delete (room.memory as any).roadsInitialized;
-    (room.memory as any).forceBuildingRun = true;
-    console.log(`🔄 REPLAN TRIGGERED for ${roomName}. The Building Manager will run IMMEDIATElY next tick.`);
 };
+
+// Assign to global
+for (const [key, value] of Object.entries(tools)) {
+    Object.defineProperty(global, key, {
+        value: value,
+        configurable: true,
+        writable: true
+    });
+}
 
 export const loop = function () {
     profiler.wrap(() => {
         if (firstRun) {
-            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.4 - Hauler Delivery Fix] 🚨 <<<\n\n`);
+            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.10 - Builder Optimization] 🚨 <<<\n\n`);
 
             // Strict Re-Classification of ALL creeps on global reset
             for (const name in Game.creeps) {
@@ -86,11 +112,6 @@ export const loop = function () {
 
         // 2. Memory Cleanup & Sanity
         managerMemory.run();
-        for (const name in Memory.creeps) {
-            if (!(name in Game.creeps)) {
-                delete Memory.creeps[name];
-            }
-        }
 
         // 3. Run Rooms (Managers)
         for (const roomName in Game.rooms) {
