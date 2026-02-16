@@ -18,6 +18,7 @@ export const managerRemote = {
                 if (exits) {
                     for (const dir in exits) {
                         const neighborName = exits[dir as any as ExitConstant]!;
+                        if (!Memory.intel) Memory.intel = {};
                         const intel = Memory.intel[neighborName];
 
                         // Reserve if good room and not occupied
