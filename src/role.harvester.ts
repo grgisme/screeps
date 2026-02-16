@@ -47,7 +47,19 @@ export const roleHarvester = {
             filter: s => s.structureType === STRUCTURE_CONTAINER
         });
 
-        const container = containers.length > 0 ? containers[0] : null;
+        const container = containers.length > 0 ? containers[0] as StructureContainer : null;
+
+        // --- OVERFLOW PROTECTION (v2.16) ---
+        if (container && container.store.getFreeCapacity() === 0) {
+            const nearbyDropped = container.pos.findInRange(FIND_DROPPED_RESOURCES, 1, {
+                filter: r => r.resourceType === RESOURCE_ENERGY
+            }).reduce((acc, r) => acc + r.amount, 0);
+
+            if (nearbyDropped > 500) {
+                if (Game.time % 10 === 0) creep.say('🛑 Full!');
+                return; // Stop harvesting
+            }
+        }
 
         if (container) {
             // Static Mining Logic (Container)

@@ -88,26 +88,51 @@ export const roleHauler = {
                 }
             }
 
-            // Find New Target (Unreserved)
-            // 1. Dropped Resources (if big enough)
-            const dropped = utilsTargeting.findUnreserved(creep, FIND_DROPPED_RESOURCES,
-                r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
-            ) as Resource;
+            // Find New Target (Demand-Based Priority Scoring v2.16)
+            const sourceContainers = micro.find(creep.room, FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            }) as StructureContainer[];
 
-            if (dropped) {
-                creep.memory.targetId = dropped.id;
-                if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) pathing.run(creep, dropped.pos, 1);
-                return;
-            }
+            const droppedEnergy = micro.find(creep.room, FIND_DROPPED_RESOURCES, {
+                filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+            }) as Resource[];
 
-            // 2. Containers (Source containers)
-            const container = utilsTargeting.findUnreserved(creep, FIND_STRUCTURES,
-                s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
-            ) as StructureContainer;
+            // Combine and Score
+            const targets: { id: string, score: number, pos: RoomPosition, type: 'resource' | 'structure' }[] = [];
 
-            if (container) {
-                creep.memory.targetId = container.id;
-                if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, container.pos, 1);
+            sourceContainers.forEach(c => {
+                // Formula: (Container.energy / Container.capacity) + (NearbyDropped / 100)
+                const nearbyDropped = c.pos.findInRange(FIND_DROPPED_RESOURCES, 1, {
+                    filter: r => r.resourceType === RESOURCE_ENERGY
+                }).reduce((acc, r) => acc + r.amount, 0);
+
+                const score = (c.store[RESOURCE_ENERGY] / c.store.getCapacity()) + (nearbyDropped / 100);
+                targets.push({ id: c.id, score, pos: c.pos, type: 'structure' });
+            });
+
+            droppedEnergy.forEach(r => {
+                // Pure dropped energy priority: (Amount / 100) + 0.5 (Base boost for potential decay)
+                const score = (r.amount / 100) + 0.5;
+                targets.push({ id: r.id, score, pos: r.pos, type: 'resource' });
+            });
+
+            if (targets.length > 0) {
+                // Sort by best score descending, then by distance (if score is close)
+                targets.sort((a, b) => {
+                    if (Math.abs(a.score - b.score) > 0.2) return b.score - a.score;
+                    return creep.pos.getRangeTo(a.pos) - creep.pos.getRangeTo(b.pos);
+                });
+
+                const best = targets[0];
+                creep.memory.targetId = best.id as any;
+
+                if (best.type === 'resource') {
+                    const res = Game.getObjectById(best.id as Id<Resource>);
+                    if (res && creep.pickup(res) === ERR_NOT_IN_RANGE) pathing.run(creep, best.pos, 1);
+                } else {
+                    const struct = Game.getObjectById(best.id as Id<StructureContainer>);
+                    if (struct && creep.withdraw(struct, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, best.pos, 1);
+                }
                 return;
             }
 

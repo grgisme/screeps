@@ -82,11 +82,42 @@ export const managerSpawn = {
         // MAX_MINERS should be number of sources if we are RCL 2+
         let MAX_MINERS = (room.controller && room.controller.level >= 2) ? sources.length : 0;
 
-        // If we have no containers, we might need MORE haulers for drop mining
-        let MAX_HAULERS = Math.max(sources.length * 2, roleMiners.length * 2);
-        if (hasContainers) {
-            // If we have containers, 1-2 per source is usually enough depending on distance
-            MAX_HAULERS = Math.max(sourcesWithContainers * 2, roleMiners.length);
+        // --- PROPORTIONAL SPAWNING (v2.16) ---
+        // Calculate required CARRY parts based on distance and throughput
+        let totalCarryRequired = 0;
+
+        sources.forEach(source => {
+            // Estimate round-trip distance (Path caching would be better but this is fine for spawn logic)
+            const path = spawn.pos.findPathTo(source, { ignoreCreeps: true });
+            const distance = path.length || 25; // Fallback to 25 if path failed
+            const throughput = 10; // 5 WORK parts = 10 energy/tick
+
+            // Formula: (Throughput * Round_Trip_Distance) / 50 (CARRY capacity)
+            const carryPartsNeeded = (throughput * (distance * 2)) / 50;
+            totalCarryRequired += carryPartsNeeded;
+        });
+
+        // Current total carry parts in the room
+        const currentCarryParts = roleHaulers.reduce((acc, c) => acc + c.getActiveBodyparts(CARRY), 0);
+
+        // Target haulers: If we need 20 CARRY parts and 1 hauler has 5, we need 4 haulers.
+        const haulerTemplate = [CARRY, CARRY, MOVE, MOVE];
+        const carryPerTemplate = 2; // parts
+        const maxEnergy = room.energyCapacityAvailable;
+        const templateCost = 150; // (50*2 + 50*1) wait, CARRY=50, MOVE=50. [C,C,M,M] = 200.
+        // Actually bodyBuilder scales the template.
+        const maxTemplates = Math.floor(maxEnergy / 200);
+        const carryPerHauler = Math.min(maxTemplates * carryPerTemplate, 25); // cap at 50 parts total
+
+        let MAX_HAULERS = Math.ceil(totalCarryRequired / (carryPerHauler || 1));
+
+        // Safety: Minimum haulers for recovery
+        if (roleMiners.length > 0) {
+            MAX_HAULERS = Math.max(MAX_HAULERS, sources.length);
+        }
+
+        if (!hasContainers) {
+            MAX_HAULERS = Math.max(MAX_HAULERS, sources.length * 2);
         }
 
         // Critical: Only phase out Harvesters if we have Miners AND Haulers
