@@ -6,6 +6,21 @@ import { micro } from "./MicroOptimizations";
 
 export const roleUpgrader = {
     run: function (creep: Creep) {
+        // --- EMERGENCY PIVOT (v2.15) ---
+        const safeMode = creep.room.controller?.safeMode || 0;
+        if (safeMode > 0 && safeMode < 1500) {
+            const urgentSites = micro.find(creep.room, FIND_MY_CONSTRUCTION_SITES).filter(s =>
+                s.structureType === STRUCTURE_TOWER || s.structureType === STRUCTURE_RAMPART
+            );
+
+            if (urgentSites.length > 0) {
+                creep.memory.role = 'builder';
+                delete creep.memory.targetId;
+                creep.say('🧱 Pivot!');
+                return;
+            }
+        }
+
         if (creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
             creep.memory.working = false;
             delete creep.memory.targetId; // Clear target
@@ -64,8 +79,17 @@ export const roleUpgrader = {
                 return;
             }
 
-            // 3. Other Non-Source Containers
+            // 3. Other Non-Source Containers (With Energy Throttle)
             const sources = creep.room.find(FIND_SOURCES);
+            const energyFullPct = creep.room.energyAvailable / creep.room.energyCapacityAvailable;
+            const hasUrgentBuild = micro.find(creep.room, FIND_MY_CONSTRUCTION_SITES).length > 0;
+
+            // ENERGY THROTTLE (v2.15): Yield to builders if < 80% energy and things need building
+            if (energyFullPct < 0.8 && hasUrgentBuild) {
+                if (Game.time % 10 === 0) creep.say('⏳ Throttle');
+                return;
+            }
+
             const container = utilsTargeting.findUnreserved(creep, FIND_STRUCTURES,
                 s => s.structureType === STRUCTURE_CONTAINER &&
                     s.store[RESOURCE_ENERGY] > 50 &&

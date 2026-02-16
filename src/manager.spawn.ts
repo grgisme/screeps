@@ -97,25 +97,43 @@ export const managerSpawn = {
         // No, we need them to mine.
         const MAX_HARVESTERS = (roleMiners.length >= sources.length && roleHaulers.length > 0) ? 0 : 4;
 
-        let MAX_UPGRADERS = 1; // Default to 1 (maintenance)
-        if (hasContainers || room.storage) {
-            // If we have infrastructure, we can support more
-            MAX_UPGRADERS = 2; // Or dynamic based on storage level
+        // --- DYNAMIC WORKER PIVOT (v2.15) ---
+        const activeConstruction = micro.find(room, FIND_MY_CONSTRUCTION_SITES);
+        const towerSite = activeConstruction.find(s => s.structureType === STRUCTURE_TOWER);
+        const hasFunctionalTower = micro.find(room, FIND_MY_STRUCTURES).some(s => s.structureType === STRUCTURE_TOWER && s.isActive());
+        const towerEnergy = room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_TOWER
+        }).reduce((acc, s) => acc + (s as StructureTower).store[RESOURCE_ENERGY], 0);
+
+        let MAX_UPGRADERS = 1; // Default: Maintenance
+        let MAX_BUILDERS = 0;
+
+        if (activeConstruction.length > 0) {
+            // Rule 1: Tower Site priority
+            if (towerSite) {
+                MAX_UPGRADERS = 0; // Suspend Upgraders
+                MAX_BUILDERS = 3; // Triple Builders
+                console.log(`🏗️ TOWER RUSH: Upgraders suspended in ${room.name}.`);
+            } else if (activeConstruction.length > 2) {
+                // Rule 2: 3:1 Ratio
+                MAX_BUILDERS = 3;
+                MAX_UPGRADERS = 1;
+            } else {
+                MAX_BUILDERS = 1;
+                MAX_UPGRADERS = (hasContainers || room.storage) ? 2 : 1;
+            }
+        } else {
+            // Standard Upgrading
+            MAX_UPGRADERS = (hasContainers || room.storage) ? 2 : 1;
         }
 
-        const activeConstruction = micro.find(room, FIND_MY_CONSTRUCTION_SITES).length;
-        // Dynamic Builders: 1 per 15 sites (was 5).
-        let targetBuilders = 0;
-        if (activeConstruction > 0) {
-            targetBuilders = Math.min(Math.ceil(activeConstruction / 15), 3); // Max 3
+        // Rule 3: RCL 3 Bottleneck (Maintenance only until Tower is functional and fueled)
+        if (room.controller && room.controller.level >= 3) {
+            if (!hasFunctionalTower || towerEnergy < 500) {
+                MAX_UPGRADERS = Math.min(MAX_UPGRADERS, 1);
+                if (activeConstruction.length > 0) MAX_BUILDERS = Math.max(MAX_BUILDERS, 2);
+            }
         }
-
-        // Cap builders if struggling
-        if (!hasContainers && room.energyCapacityAvailable < 550) {
-            targetBuilders = Math.min(targetBuilders, 2);
-        }
-
-        const MAX_BUILDERS = targetBuilders;
 
 
         // --- FORCE SAVE MODE ---
