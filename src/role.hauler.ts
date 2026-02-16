@@ -1,4 +1,4 @@
-import { pathing } from "./pathing";
+import { trafficManager } from "./movement/TrafficManager";
 import { micro } from "./MicroOptimizations";
 import { utilsTargeting } from "./utils.targeting";
 
@@ -43,7 +43,7 @@ export const roleHauler = {
                 });
 
                 if (creep.transfer(structures[0], RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, structures[0].pos, 1);
+                    trafficManager.travelTo(creep, structures[0].pos, { range: 1 });
                 }
             } else {
                 // FALLBACK: Deliver to Workers (Upgraders and Builders)
@@ -57,7 +57,7 @@ export const roleHauler = {
                     const target = creep.pos.findClosestByRange(workers);
                     if (target) {
                         if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                            pathing.run(creep, target.pos, 1);
+                            trafficManager.travelTo(creep, target.pos, { range: 1 });
                         }
                     }
                 }
@@ -78,9 +78,9 @@ export const roleHauler = {
 
                 if (valid && target) {
                     if (target instanceof Resource) {
-                        if (creep.pickup(target) === ERR_NOT_IN_RANGE) pathing.run(creep, target.pos, 1);
+                        if (creep.pickup(target) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, target.pos, { range: 1 });
                     } else {
-                        if (creep.withdraw(target as Structure, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, target.pos, 1);
+                        if (creep.withdraw(target as Structure, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, target.pos, { range: 1 });
                     }
                     return; // Continue pursuing this target
                 } else {
@@ -128,10 +128,10 @@ export const roleHauler = {
 
                 if (best.type === 'resource') {
                     const res = Game.getObjectById(best.id as Id<Resource>);
-                    if (res && creep.pickup(res) === ERR_NOT_IN_RANGE) pathing.run(creep, best.pos, 1);
+                    if (res && creep.pickup(res) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, best.pos, { range: 1 });
                 } else {
                     const struct = Game.getObjectById(best.id as Id<StructureContainer>);
-                    if (struct && creep.withdraw(struct, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, best.pos, 1);
+                    if (struct && creep.withdraw(struct, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, best.pos, { range: 1 });
                 }
                 return;
             }
@@ -140,7 +140,7 @@ export const roleHauler = {
             delete creep.memory.targetId;
             const centerPos = (creep.room.memory as any).planning?.bunkerCenter;
             if (centerPos) {
-                pathing.run(creep, new RoomPosition(centerPos.x, centerPos.y, creep.room.name), 3);
+                trafficManager.travelTo(creep, new RoomPosition(centerPos.x, centerPos.y, creep.room.name), { range: 3 });
             }
         }
     }

@@ -1,5 +1,6 @@
 import { managerIntel } from "./manager.intel";
 import { managerSigning } from "./manager.signing";
+import { trafficManager } from "./movement/TrafficManager";
 
 export const roleScout = {
     run: function (creep: Creep) {
@@ -36,7 +37,7 @@ export const roleScout = {
                 if (exitDir !== ERR_NO_PATH && exitDir !== ERR_INVALID_ARGS) {
                     const exit = creep.pos.findClosestByRange(exitDir as ExitConstant);
                     if (exit) {
-                        creep.moveTo(exit);
+                        trafficManager.travelTo(creep, exit);
                     }
                 }
             }

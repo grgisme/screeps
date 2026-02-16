@@ -1,4 +1,4 @@
-import { pathing } from "./pathing";
+import { trafficManager } from "./movement/TrafficManager";
 import { micro } from "./MicroOptimizations";
 
 export const roleHarvester = {
@@ -64,7 +64,7 @@ export const roleHarvester = {
         if (container) {
             // Static Mining Logic (Container)
             if (!creep.pos.isEqualTo(container.pos)) {
-                pathing.run(creep, container.pos, 0);
+                trafficManager.travelTo(creep, container.pos, { range: 0 });
             } else {
                 creep.harvest(source);
                 if (creep.store.getFreeCapacity() === 0 && creep.store.getCapacity() > 0) {
@@ -74,7 +74,7 @@ export const roleHarvester = {
         } else if (creep.memory.role === 'miner') {
             // Static Mining Logic (Drop Mining - No Container yet)
             if (!creep.pos.isNearTo(source.pos)) {
-                pathing.run(creep, source.pos, 1);
+                trafficManager.travelTo(creep, source.pos, { range: 1 });
             } else {
                 creep.harvest(source);
                 // Drop if full to keep harvesting
@@ -107,7 +107,7 @@ export const roleHarvester = {
                 if (targets.length > 0) {
                     const res = creep.transfer(targets[0], RESOURCE_ENERGY);
                     if (res === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, targets[0].pos, 1);
+                        trafficManager.travelTo(creep, targets[0].pos, { range: 1 });
                     } else if (res === OK || res === ERR_FULL) {
                         const storeStruct = targets[0] as AnyStoreStructure;
                         if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0 || (storeStruct.store && storeStruct.store.getFreeCapacity(RESOURCE_ENERGY) === 0)) {
@@ -118,14 +118,14 @@ export const roleHarvester = {
                 } else {
                     if (creep.room.controller) {
                         if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                            pathing.run(creep, creep.room.controller.pos, 3);
+                            trafficManager.travelTo(creep, creep.room.controller.pos, { range: 3 });
                         }
                     }
                 }
             } else {
                 // Harvesting
                 if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, source.pos, 1);
+                    trafficManager.travelTo(creep, source.pos, { range: 1 });
                 }
             }
         }

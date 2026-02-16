@@ -1,6 +1,6 @@
-import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
 import { utilsEnergy } from "./utils.energy";
+import { trafficManager } from "./movement/TrafficManager";
 import { micro } from "./MicroOptimizations";
 import { managerSigning } from "./manager.signing";
 
@@ -86,7 +86,7 @@ export const roleBuilder = {
 
                 creep.memory.targetId = target.id;
                 if (creep.build(target) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, target.pos, 3);
+                    trafficManager.travelTo(creep, target.pos, { range: 3 });
                 } else {
                     // Successfully building or in range? Opportunistic sign.
                     managerSigning.run(creep);
@@ -102,7 +102,7 @@ export const roleBuilder = {
                     const target = creep.pos.findClosestByRange(towers);
                     if (target) {
                         if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                            pathing.run(creep, target.pos, 1);
+                            trafficManager.travelTo(creep, target.pos, { range: 1 });
                         }
                         return;
                     }
@@ -120,13 +120,13 @@ export const roleBuilder = {
                     // Prioritize lowest health
                     repairs.sort((a, b) => a.hits - b.hits);
                     if (creep.repair(repairs[0]) === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, repairs[0].pos, 2);
+                        trafficManager.travelTo(creep, repairs[0].pos, { range: 2 });
                     }
                 } else {
                     // 2. Auxiliary Upgrader
                     if (creep.room.controller) {
                         if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                            pathing.run(creep, creep.room.controller.pos, 3);
+                            trafficManager.travelTo(creep, creep.room.controller.pos, { range: 3 });
                         }
                     }
                 }
@@ -146,11 +146,11 @@ export const roleBuilder = {
 
                 if (valid && target) {
                     if (target instanceof Resource) {
-                        if (creep.pickup(target) === ERR_NOT_IN_RANGE) pathing.run(creep, target.pos, 1);
+                        if (creep.pickup(target) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, target.pos, { range: 1 });
                     } else if (target instanceof Source) {
-                        if (creep.harvest(target) === ERR_NOT_IN_RANGE) pathing.run(creep, target.pos, 1);
+                        if (creep.harvest(target) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, target.pos, { range: 1 });
                     } else {
-                        if (creep.withdraw(target as Structure, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, target.pos, 1);
+                        if (creep.withdraw(target as Structure, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, target.pos, { range: 1 });
                     }
                     return;
                 } else {
@@ -162,14 +162,14 @@ export const roleBuilder = {
             const dropped = utilsTargeting.findUnreserved(creep, FIND_DROPPED_RESOURCES, filter => filter.resourceType === RESOURCE_ENERGY && filter.amount > 50) as Resource;
             if (dropped) {
                 creep.memory.targetId = dropped.id;
-                if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) pathing.run(creep, dropped.pos, 1);
+                if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, dropped.pos, { range: 1 });
                 return;
             }
             // 2. Tombstones
             const tomb = utilsTargeting.findUnreserved(creep, FIND_TOMBSTONES, filter => filter.store[RESOURCE_ENERGY] > 0) as Tombstone;
             if (tomb) {
                 creep.memory.targetId = tomb.id as any;
-                if (creep.withdraw(tomb, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, tomb.pos, 1);
+                if (creep.withdraw(tomb, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, tomb.pos, { range: 1 });
                 return;
             }
             // 3. Ruins (Low prio)
@@ -178,7 +178,7 @@ export const roleBuilder = {
             if (creep.room.storage && creep.room.storage.store[RESOURCE_ENERGY] > 0) {
                 creep.memory.targetId = creep.room.storage.id;
                 if (creep.withdraw(creep.room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, creep.room.storage.pos, 1);
+                    trafficManager.travelTo(creep, creep.room.storage.pos, { range: 1 });
                 }
                 return;
             }
@@ -194,7 +194,7 @@ export const roleBuilder = {
             if (container) {
                 creep.memory.targetId = container.id;
                 if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, container.pos, 1);
+                    trafficManager.travelTo(creep, container.pos, { range: 1 });
                 }
                 return;
             }
@@ -206,7 +206,7 @@ export const roleBuilder = {
             if (anyContainer) {
                 creep.memory.targetId = anyContainer.id;
                 if (creep.withdraw(anyContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, anyContainer.pos, 1);
+                    trafficManager.travelTo(creep, anyContainer.pos, { range: 1 });
                 }
                 return;
             }
@@ -218,7 +218,7 @@ export const roleBuilder = {
                 if (closest) {
                     creep.memory.targetId = closest.id;
                     if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, closest.pos, 1);
+                        trafficManager.travelTo(creep, closest.pos, { range: 1 });
                     }
                     return;
                 }
@@ -227,7 +227,7 @@ export const roleBuilder = {
             // 6. Spawn (Emergency Fallback - when not surplus but we are desperate)
             const spawn = creep.room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN && s.store[RESOURCE_ENERGY] > 250 })[0];
             if (spawn) {
-                if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) pathing.run(creep, spawn.pos, 1);
+                if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) trafficManager.travelTo(creep, spawn.pos, { range: 1 });
                 return;
             }
 
@@ -237,10 +237,10 @@ export const roleBuilder = {
             // No strict locking on sources? Or yes? 
             // Usually multiple creeps can harvest source. So NO locking on sources.
             if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                pathing.run(creep, source.pos, 1);
+                trafficManager.travelTo(creep, source.pos, { range: 1 });
             } else if (creep.harvest(source) === ERR_NOT_ENOUGH_RESOURCES) {
                 const otherSource = sources.find(s => s.energy > 0);
-                if (otherSource) pathing.run(creep, otherSource.pos, 1);
+                if (otherSource) trafficManager.travelTo(creep, otherSource.pos, { range: 1 });
             }
         }
     }

@@ -1,4 +1,4 @@
-import { pathing } from "./pathing";
+import { trafficManager } from "./movement/TrafficManager";
 import { micro } from "./MicroOptimizations";
 
 export const roleDefender = {
@@ -11,14 +11,14 @@ export const roleDefender = {
 
             if (target) {
                 if (creep.attack(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ff0000' } });
+                    trafficManager.travelTo(creep, target.pos);
                 }
             }
         } else {
             // Idle: wait at spawn or controller
             const targetPos = creep.room.controller?.pos || (micro.find(creep.room, FIND_MY_SPAWNS)[0]?.pos);
             if (targetPos) {
-                pathing.run(creep, targetPos, 3);
+                trafficManager.travelTo(creep, targetPos, { range: 3 });
             }
         }
     }

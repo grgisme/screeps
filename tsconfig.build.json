@@ -10,6 +10,8 @@
         "baseUrl": ".",
         "sourceMap": true,
         "strict": true,
+        "removeComments": true,
+        "declaration": false,
         "experimentalDecorators": true,
         "emitDecoratorMetadata": true,
         "noImplicitReturns": true,

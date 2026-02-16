@@ -1,7 +1,7 @@
-import { pathing } from "./pathing";
 import { utilsTargeting } from "./utils.targeting";
 import { utilsEnergy } from "./utils.energy";
 import { managerSigning } from "./manager.signing";
+import { trafficManager } from "./movement/TrafficManager";
 import { micro } from "./MicroOptimizations";
 
 export const roleUpgrader = {
@@ -36,7 +36,7 @@ export const roleUpgrader = {
             managerSigning.run(creep); // Opportunistic signing
             if (creep.room.controller) {
                 if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, creep.room.controller.pos, 3);
+                    trafficManager.travelTo(creep, creep.room.controller.pos, { range: 3 });
                 }
             }
         } else {
@@ -47,7 +47,7 @@ export const roleUpgrader = {
                 const target = Game.getObjectById(creep.memory.targetId) as Structure | null;
                 if (target && (target as any).store && (target as any).store[RESOURCE_ENERGY] > 0) {
                     if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, target.pos, 1);
+                        trafficManager.travelTo(creep, target.pos, { range: 1 });
                     }
                     return;
                 } else {
@@ -64,7 +64,7 @@ export const roleUpgrader = {
                 if (controllerContainer) {
                     creep.memory.targetId = controllerContainer.id;
                     if (creep.withdraw(controllerContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, controllerContainer.pos, 1);
+                        trafficManager.travelTo(creep, controllerContainer.pos, { range: 1 });
                     }
                     return;
                 }
@@ -74,7 +74,7 @@ export const roleUpgrader = {
             if (creep.room.storage && creep.room.storage.store[RESOURCE_ENERGY] > 100) {
                 creep.memory.targetId = creep.room.storage.id;
                 if (creep.withdraw(creep.room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, creep.room.storage.pos, 1);
+                    trafficManager.travelTo(creep, creep.room.storage.pos, { range: 1 });
                 }
                 return;
             }
@@ -99,7 +99,7 @@ export const roleUpgrader = {
             if (container) {
                 creep.memory.targetId = container.id;
                 if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, container.pos, 1);
+                    trafficManager.travelTo(creep, container.pos, { range: 1 });
                 }
                 return;
             }
@@ -111,7 +111,7 @@ export const roleUpgrader = {
                 if (closest) {
                     creep.memory.targetId = closest.id;
                     if (creep.withdraw(closest, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        pathing.run(creep, closest.pos, 1);
+                        trafficManager.travelTo(creep, closest.pos, { range: 1 });
                     }
                     return;
                 }
@@ -120,7 +120,7 @@ export const roleUpgrader = {
             // 5. Harvest (Emergency Fallback)
             const source = sources[0];
             if (source && creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                pathing.run(creep, source.pos, 1);
+                trafficManager.travelTo(creep, source.pos, { range: 1 });
             }
         }
     }
