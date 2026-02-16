@@ -70,7 +70,7 @@ for (const [key, value] of Object.entries(tools)) {
 export const loop = function () {
     profiler.wrap(() => {
         if (firstRun) {
-            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.10 - Builder Optimization] 🚨 <<<\n\n`);
+            console.log(`\n\n>>> 🚨 NEW CODE LOADED / GLOBAL RESET (Tick ${Game.time}) [v2.14 - Road Pathing] 🚨 <<<\n\n`);
 
             // Strict Re-Classification of ALL creeps on global reset
             for (const name in Game.creeps) {

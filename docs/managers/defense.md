@@ -5,11 +5,13 @@ Security is paramount. The **Defense Manager** and **Defense Roles** ensure the 
 ## Room Defense
 6.  **Tower Management**: Towers prioritize attacking the weakest hostile creep in the room. If no hostiles are present, they repair critical structures or heal friendly creeps.
 7.  **Emergency Defense Priority (v2.5)**: If hostiles are detected, the **Spawn Manager** pivots to a "War Economy." It prioritizes spawning a `defender` immediately after critical harvesters are secured, pausing non-essential infrastructure.
-8.  **Controller Proximity Targeting**: Defenders are optimized to seek out and engage hostiles camping near the Room Controller (Range 3), preventing claim-blocking or controller harassment.
-9.  **Safe Mode**: The room will trigger Safe Mode automatically if the controller or critical structures are under heavy threat.
+8.  **Threat Imminent Priority (v2.11)**: Even in peacetime, if a Tower construction site exists and the room's **SafeMode is below 2,000 ticks**, builders will drop all other tasks to finish the Tower immediately.
+9.  **Controller Proximity Targeting**: Defenders are optimized to seek out and engage hostiles camping near the Room Controller (Range 3), preventing claim-blocking or controller harassment.
+10. **Early Fortification (RCL 3)**: Ramparts are now deployed at RCL 3 specifically to protect the Spawn and Tower, ensuring the base remains functional even under heavy harassment.
 
 ## Maintenance & Repairs
 Builders take on the role of maintenance crews when not building new structures:
+- **Tower Bootstrapping**: Immediately after a Tower is built, builders will deliver energy to it before moving on to other tasks.
 - **Decay Prevention**: Roads and Containers are repaired once they drop below a health threshold.
 - **Wall/Rampart Strengthening**: In later stages, idle builders dedicate energy to reinforcing defensive barriers.
 

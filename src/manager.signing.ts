@@ -29,15 +29,11 @@ export const managerSigning = {
         const quote = this.quotes[Math.floor(Math.random() * this.quotes.length)];
 
         if (creep.signController(controller, quote) === ERR_NOT_IN_RANGE) {
-            // DETOUR LOGIC:
-            // If the sign is NOT one of ours, we MUST fix it.
-            const currentSign = controller.sign?.text;
-            if (!currentSign || !this.quotes.includes(currentSign)) {
-                // Detour to sign!
-                creep.moveTo(controller);
-                return true;
-            }
+            // DETOUR LOGIC REMOVED: 
+            // We no longer call creep.moveTo(controller) here. 
+            // Signing is now 100% opportunistic. If you're not there, you don't sign.
+            return false;
         }
-        return false;
+        return true;
     }
 };

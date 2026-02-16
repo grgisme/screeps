@@ -16,18 +16,25 @@ export const pathing = {
 
         if (!room) return costs;
 
+        // USER REQUEST: Prioritize Road Efficiency
         room.find(FIND_STRUCTURES).forEach(struct => {
             if (struct.structureType === STRUCTURE_ROAD) {
+                // Road cost: 1 (Always better than plain: 2)
                 costs.set(struct.pos.x, struct.pos.y, 1);
             } else if (struct.structureType === STRUCTURE_CONTAINER) {
-                costs.set(struct.pos.x, struct.pos.y, 1); // Walkable, but preferred? maybe slightly higher than road? 1 is fine.
+                // Container cost: 1 (Walkable, effectively a road)
+                costs.set(struct.pos.x, struct.pos.y, 1);
             } else if (struct.structureType !== STRUCTURE_RAMPART || !(struct as StructureRampart).my) {
+                // Impassable
                 costs.set(struct.pos.x, struct.pos.y, 0xff);
             }
         });
 
+        // Road Construction Sites: 1 (Encourage usage of planned paths)
         room.find(FIND_CONSTRUCTION_SITES).forEach(site => {
-            if (site.structureType !== STRUCTURE_ROAD && site.structureType !== STRUCTURE_CONTAINER && site.structureType !== STRUCTURE_RAMPART) {
+            if (site.structureType === STRUCTURE_ROAD || site.structureType === STRUCTURE_CONTAINER) {
+                costs.set(site.pos.x, site.pos.y, 1);
+            } else if (site.structureType !== STRUCTURE_RAMPART) {
                 costs.set(site.pos.x, site.pos.y, 0xff);
             }
         });
@@ -36,10 +43,7 @@ export const pathing = {
             if (!creep.my) {
                 costs.set(creep.pos.x, creep.pos.y, 0xff);
             } else {
-                // For our own creeps, don't make them absolute walls (0xff).
-                // If we do, PathFinder will often fail entirely in crowded rooms.
-                // Instead, make them an "expensive" tile so pathing prefers open space
-                // but can still find a path "through" a crowded area.
+                // Friendly creeps: Avoidable but not impassable
                 costs.set(creep.pos.x, creep.pos.y, 20);
             }
         });
@@ -53,38 +57,6 @@ export const pathing = {
         if (creep.fatigue > 0) return;
 
         const dest = target instanceof RoomPosition ? target : target.pos;
-
-        // CPU Yield Logic: If high CPU, delay pathfinding unless critical
-        // Use 50% of limit instead of hard-coded 25
-        const cpuLimit = (Game.cpu.limit || 20) * 0.5;
-        if (Game.cpu.getUsed() > cpuLimit && !creep.memory.emergency && (creep.memory as any)._stuckCount < 2) {
-            return;
-        }
-
-        // Global Routing
-        if (dest.roomName !== creep.room.name) {
-            const route = Game.map.findRoute(creep.room.name, dest.roomName, {
-                routeCallback(roomName) {
-                    if (Memory.remoteRooms && Memory.remoteRooms[roomName]) {
-                        if (Memory.remoteRooms[roomName].state === 'hostile') return Infinity;
-                    }
-                    return 1;
-                }
-            });
-
-            if (route !== ERR_NO_PATH) {
-                const exit = creep.pos.findClosestByRange(route[0].exit);
-                if (exit) {
-                    creep.moveTo(exit);
-                    return;
-                }
-            }
-        }
-
-        if (creep.pos.inRangeTo(dest, range)) {
-            delete (creep.memory as any)._path;
-            return;
-        }
 
         // Stuck Detection
         const mem = creep.memory as any;
@@ -108,7 +80,6 @@ export const pathing = {
         }
 
         // Binary Path Execution
-        // Stored as string of digits: "1334..."
         if (mem._path && typeof mem._path === 'string') {
             const pathStr = mem._path as string;
             const dir = parseInt(pathStr[0], 10) as DirectionConstant;
@@ -122,35 +93,48 @@ export const pathing = {
             return;
         }
 
-        // Calculate Path
-        // Calculate Path
-        // THROTTLING: If Critical/Recovering, increase ReusePath
-        const strategy = managerCPU.getStrategy(); // Need to import or pass?
-        // Importing modules in pathing.ts might cause cycle?
-        // Let's use Game.cpu.bucket directly to avoid circular dependency
+        // Global Routing: Find the exit tile and move to it using the CUSTOM PATHING
+        if (dest.roomName !== creep.room.name) {
+            const route = Game.map.findRoute(creep.room.name, dest.roomName, {
+                routeCallback(roomName) {
+                    if (Memory.remoteRooms && Memory.remoteRooms[roomName]) {
+                        if (Memory.remoteRooms[roomName].state === 'hostile') return Infinity;
+                    }
+                    return 1;
+                }
+            });
 
-        let shouldSearch = true;
-        if (Game.cpu.bucket < 2000 && !creep.memory.emergency) {
-            // Reuse existing path if possible?
-            // Actually PathFinder.search doesn't reuse.
-            // We can check creep.memory._path validity?
-            // But if we are here, binary execution failed or ran out.
-
-            // If critical, return incomplete path?
-            // Or optimize search ops:
-            // limit maxOps
+            if (route !== ERR_NO_PATH && route.length > 0) {
+                const exit = creep.pos.findClosestByRange(route[0].exit);
+                if (exit) {
+                    // RECURSIVE CALL: Navigate to the exit using road-aware logic
+                    this.run(creep, exit, 0);
+                    return;
+                }
+            }
         }
 
-        const maxOps = Game.cpu.bucket < 2000 ? 500 : 2000;
+        if (creep.pos.inRangeTo(dest, range)) {
+            delete (creep.memory as any)._path;
+            return;
+        }
 
+        // CPU Yield Logic
+        const cpuLimit = (Game.cpu.limit || 20) * 0.5;
+        if (Game.cpu.getUsed() > cpuLimit && !creep.memory.emergency && (creep.memory as any)._stuckCount < 2) {
+            return;
+        }
+
+        // Calculate Path with Road Bias
+        const maxOps = Game.cpu.bucket < 2000 ? 500 : 2000;
         const ret = PathFinder.search(
             creep.pos,
             { pos: dest, range: range },
             {
-                plainCost: 2,
-                swampCost: 10,
-                roomCallback: (roomName) => this.getCostMatrix(roomName),
-                maxOps: maxOps
+                plainCost: 2,  // Plain tiles are 2x as expensive as roads
+                swampCost: 10, // Swamps are 10x as expensive as roads
+                maxOps: maxOps,
+                roomCallback: (roomName) => this.getCostMatrix(roomName)
             }
         );
 
@@ -167,8 +151,10 @@ export const pathing = {
             // Move first step
             if (pathStr.length > 0) {
                 const dir = parseInt(pathStr[0], 10) as DirectionConstant;
-                creep.move(dir);
-                mem._path = pathStr.substring(1);
+                if (creep.move(dir) === OK) {
+                    mem._path = pathStr.substring(1);
+                    if (mem._path.length === 0) delete mem._path;
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ In Screeps, CPU is more valuable than energy. This document outlines the strateg
 2.  **Room-Level Scoping**: Avoid global loops (like `Game.creeps`) whenever possible. Processes should be scoped to a single room.
 3.  **Intent Pre-checks**: Only call actions (`harvest`, `withdraw`, `move`) if they have a high probability of returning `OK`. Every intent call that isn't `ERR_NOT_IN_RANGE` costs 0.2 CPU.
 4.  **Distance Gating**: Use `findClosestByRange` (Chebyshev distance) for initial filters before committing to `findClosestByPath`.
+- **Road Efficiency (v2.14)**: The pathing engine strictly prioritizes built roads and road construction sites (Cost 1) over plain terrain (Cost 2) and swamps (Cost 10). This ensures maximum move speed and minimum fatigue for all creeps.
 - **Global resets** (avoid them by avoiding top-level code that is expensive).
 
 ---

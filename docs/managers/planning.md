@@ -16,12 +16,13 @@ All major infrastructure revolves around a **Bunker Center**.
 | **2** | Extensions | Placed in a **Checkerboard Spiral** around the Bunker Center. |
 | **2** | Containers | **Source Containers**: Placed 1 tile away from each Source to facilitate static mining. |
 | **3** | Tower | Placed at an offset (1,1) from the Bunker Center for maximum coverage. |
+| **3** | Ramparts | **Spawn & Tower Protection**: Placed immediately to secure the base core. |
 | **3** | Containers | **Controller Container**: Placed 2 tiles away from the Controller for Upgraders. |
 | **4** | Storage | Placed exactly at the **Bunker Center**. |
-| **4** | Ramparts | Placed protectively over the Spawn, Storage, and Towers. |
-| **Any** | Roads | **Dynamic Heatmap**: Roads are automatically placed on tiles with high travel volume. |
+| **4** | Ramparts | Placed protectively over the Storage and future critical nodes. |
 
-## Specialized Commands
+## Dynamic Path Awareness (v2.11)
+The Building Manager now performs a **Pathing Pass** before placing extensions. It identifies the "Ideal Lanes" between your Sources and the Bunker Hub (Spawn/Tower) and blacklists those tiles for structure placement. This ensures that even at max extensions, your core energy transport remains unblocked.
 - **`Plan()`**: Draws the yellow spiral and bunker dots on the map for your preview.
 - **`Replan()`**: Wipes the current plan and forces a re-scan of the room (e.g., if you want to shift the bunker after clearing terrain).
 

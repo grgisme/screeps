@@ -121,9 +121,20 @@ export const managerBuilding = {
             const towerSites = room.find(FIND_MY_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER });
             if (towers.length + towerSites.length < 1) {
                 // Place Tower near Center (offset)
-                // Offset by 1,1
                 room.createConstructionSite(center.x + 1, center.y + 1, STRUCTURE_TOWER);
             }
+
+            // USER REQUEST: Ramparts over Spawn/Tower at RCL 3
+            const critical = room.find(FIND_MY_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_TOWER
+            });
+            critical.forEach(s => {
+                const rampart = s.pos.lookFor(LOOK_STRUCTURES).find(st => st.structureType === STRUCTURE_RAMPART);
+                const rampartSite = s.pos.lookFor(LOOK_CONSTRUCTION_SITES).find(st => st.structureType === STRUCTURE_RAMPART);
+                if (!rampart && !rampartSite) {
+                    room.createConstructionSite(s.pos.x, s.pos.y, STRUCTURE_RAMPART);
+                }
+            });
 
             // Controller Container
             if (room.controller) {
@@ -256,6 +267,30 @@ export const managerBuilding = {
         const sites = room.find(FIND_MY_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTENSION });
         if (structures.length + sites.length >= maxExtensions) return;
 
+        // USER REQUEST: Efficiency Check (Avoid blocking paths between Sources and Tower/Spawn)
+        const sources = room.find(FIND_SOURCES);
+        const towers = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER });
+        const spawn = room.find(FIND_MY_SPAWNS)[0];
+        const criticalTargets = [...towers, spawn].filter(t => t);
+
+        const pathsToAvoid: RoomPosition[] = [];
+        if (criticalTargets.length > 0) {
+            sources.forEach(source => {
+                criticalTargets.forEach(target => {
+                    const ret = PathFinder.search(source.pos, { pos: target!.pos, range: 1 }, {
+                        plainCost: 2, swampCost: 4, // Encourage following existing roads or clear paths
+                        roomCallback: (roomName) => {
+                            let costs = new PathFinder.CostMatrix;
+                            // Pre-existing structures should be obstacles, BUT we want the "ideal" path
+                            // So we don't add structures here unless they are walls.
+                            return costs;
+                        }
+                    });
+                    if (!ret.incomplete) pathsToAvoid.push(...ret.path);
+                });
+            });
+        }
+
         let radius = 1;
         while (radius < 12) {
             for (let dx = -radius; dx <= radius; dx++) {
@@ -272,6 +307,9 @@ export const managerBuilding = {
                     if (x < 2 || x > 48 || y < 2 || y > 48) continue;
                     const terrain = room.getTerrain();
                     if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+
+                    // Path Blocking Check (5th-10th extensions specifically mentioned, but good for all)
+                    if (pathsToAvoid.some(p => p.x === x && p.y === y)) continue;
 
                     const structs = room.lookForAt(LOOK_STRUCTURES, x, y);
                     if (structs.length > 0) continue;

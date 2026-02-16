@@ -5,9 +5,11 @@ Builders and Upgraders are the room's "Civil Engineers," responsible for expandi
 ## Role: Builder
 Builders focus on construction and maintenance.
 - **Construction**: Actively build sites in the room. They follow a specific structure priority (Spawn -> Extensions -> Towers -> Everything else).
+- **Threat Imminent Priority (v2.11)**: If a Tower site exists and SafeMode < 2000, builders pivot exclusively to the Tower.
 - **Center-Out Build Order (v2.10)**: Within the same structure type, builders prioritize sites closest to the room's energy hub (Storage or Spawn). This minimizes distance traveled and ensures central infrastructure is finished first.
 - **Maintenance**: If no construction sites exist, they repair roads, containers, and ramparts.
-- **Upgrading Fallback**: If there is nothing to build or repair, they assist Upgraders.
+- **Tower Maintenance**: Builders will fill Towers with energy if they are empty or low, especially immediately after construction.
+- **Efficiency: Superior Target Locking (v2.13)**: Builders now "lock on" to their current project more aggressively. They will only switch targets if the current one is completed or if a strictly higher-priority site (like a Tower during an attack) is found. This eliminates jitter when moving between sites of equal priority.
 
 ## Role: Upgrader
 Upgraders focus exclusively on the Room Controller.

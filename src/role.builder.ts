@@ -18,50 +18,96 @@ export const roleBuilder = {
         }
 
         if (creep.memory.working) {
-            managerSigning.run(creep); // Opportunistic signing
             // Use cached find for construction sites
-            const targets = micro.find(creep.room, FIND_CONSTRUCTION_SITES);
+            let targets = micro.find(creep.room, FIND_CONSTRUCTION_SITES);
             if (targets.length) {
                 // Dynamic Priority
                 const hostiles = creep.room.find(FIND_HOSTILE_CREEPS);
+                const safeMode = creep.room.controller?.safeMode || 0;
+                const towerSite = targets.find(s => s.structureType === STRUCTURE_TOWER);
+
+                // USER REQUEST: Threat Imminent (SafeMode < 2000 + Tower Site exists)
+                const isThreatImminent = towerSite && safeMode < 2000;
                 const isWar = hostiles.length > 0 && !creep.room.controller?.safeMode;
 
-                // Center-Out Priority: Structure Type > Distance to Hub (Spawn/Storage)
-                const hub = creep.room.storage || creep.room.find(FIND_MY_SPAWNS)[0] || creep;
+                if (isThreatImminent && towerSite) {
+                    targets = [towerSite]; // FOCUS ALL BUILDERS ON TOWER
+                    creep.say('🚨 TOWER!');
+                }
+
+                // Center-Out Priority: Structure Type > Distance to Hub (Spawn, Storage, or Controller)
+                const hub = creep.room.storage || creep.room.find(FIND_MY_SPAWNS)[0] || creep.room.controller || creep;
+
+                const getPriority = (s: ConstructionSite) => {
+                    // WAR MODE
+                    if (isWar) {
+                        if (s.structureType === STRUCTURE_TOWER) return 0;
+                        if (s.structureType === STRUCTURE_RAMPART) return 1;
+                        if (s.structureType === STRUCTURE_WALL) return 2;
+                        if (s.structureType === STRUCTURE_SPAWN) return 3;
+                        return 20;
+                    }
+                    // PEACE MODE
+                    if (s.structureType === STRUCTURE_SPAWN) return 0;
+                    if (s.structureType === STRUCTURE_EXTENSION) return 1;
+                    if (s.structureType === STRUCTURE_CONTAINER) return 2;
+                    if (s.structureType === STRUCTURE_STORAGE) return 3;
+                    if (s.structureType === STRUCTURE_ROAD) return 4;
+                    if (s.structureType === STRUCTURE_TOWER) return 10;
+                    return 20;
+                };
 
                 targets.sort((a, b) => {
-                    const priority = (s: ConstructionSite) => {
-                        // WAR MODE
-                        if (isWar) {
-                            if (s.structureType === STRUCTURE_TOWER) return 0;
-                            if (s.structureType === STRUCTURE_RAMPART) return 1;
-                            if (s.structureType === STRUCTURE_WALL) return 2;
-                            if (s.structureType === STRUCTURE_SPAWN) return 3;
-                            return 20;
-                        }
-                        // PEACE MODE
-                        if (s.structureType === STRUCTURE_SPAWN) return 0;
-                        if (s.structureType === STRUCTURE_EXTENSION) return 1;
-                        if (s.structureType === STRUCTURE_CONTAINER) return 2;
-                        if (s.structureType === STRUCTURE_STORAGE) return 3;
-                        if (s.structureType === STRUCTURE_ROAD) return 4;
-                        if (s.structureType === STRUCTURE_TOWER) return 10;
-                        return 20;
-                    };
-
-                    const pA = priority(a);
-                    const pB = priority(b);
+                    const pA = getPriority(a);
+                    const pB = getPriority(b);
                     if (pA !== pB) return pA - pB;
-
                     // Same priority? Closest to hub wins
                     return a.pos.getRangeTo(hub.pos) - b.pos.getRangeTo(hub.pos);
                 });
 
-                if (creep.build(targets[0]) === ERR_NOT_IN_RANGE) {
-                    pathing.run(creep, targets[0].pos, 3);
+                // STICKY TARGET LOGIC (v2.13 SUPERIOR): 
+                // We ONLY switch if our current target is gone or a STRICTLY BETTER priority type appears.
+                let target = targets[0];
+                if (creep.memory.targetId) {
+                    const currentTarget = Game.getObjectById(creep.memory.targetId) as ConstructionSite | null;
+                    if (currentTarget && currentTarget instanceof ConstructionSite) {
+                        const currentPri = getPriority(currentTarget);
+                        const bestPri = getPriority(target);
+
+                        // v2.13 Logic: If current target is HIGHER or EQUAL priority, we KEEP it.
+                        // We do NOT switch just because another site of the same priority is closer.
+                        if (currentPri <= bestPri) {
+                            target = currentTarget;
+                        } else {
+                            creep.say('📢 Switch!');
+                        }
+                    }
+                }
+
+                creep.memory.targetId = target.id;
+                if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                    pathing.run(creep, target.pos, 3);
+                } else {
+                    // Successfully building or in range? Opportunistic sign.
+                    managerSigning.run(creep);
                 }
             } else {
                 // Idle State: No Construction Sites
+                // USER REQUEST: Fill newly built Towers if energy is low
+                const towers = creep.room.find(FIND_MY_STRUCTURES, {
+                    filter: s => s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 200
+                }) as StructureTower[];
+
+                if (towers.length > 0) {
+                    const target = creep.pos.findClosestByRange(towers);
+                    if (target) {
+                        if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                            pathing.run(creep, target.pos, 1);
+                        }
+                        return;
+                    }
+                }
+
                 // 1. Repair critical decay (Roads, Containers)
                 // Note: Standard find here because of complex filter, but we could cache the list and filter locally
                 const structures = micro.find(creep.room, FIND_STRUCTURES);

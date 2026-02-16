@@ -13,10 +13,10 @@ The bot operates on a **Priority-First** basis, ensuring survival before optimiz
 5.  **Strategic Planning**: Automated bunker layouts for long-term scalability.
 6.  **Reporting & Tools**: Command-line oversight through `Status()`, `Plan()`, and periodic auto-logs.
 
-## Recent Advancements (v2.5 - v2.10)
--   **War Economy**: Emergency defense priorities and controller camping protection.
--   **Memory Hygiene**: Automated stale room memory cleanup to maintain low CPU overhead.
--   **Efficient Infrastructure**: Distance-based builder prioritization for logical base growth.
+## Recent Advancements (v2.5 - v2.11)
+- **War Economy (v2.11)**: Threat Imminent priority for Towers and early base fortification with Ramparts at RCL 3.
+- **Memory Hygiene**: Automated stale room memory cleanup to maintain low CPU overhead.
+- **Efficient Infrastructure**: Path-aware extension placement and distance-based builder prioritization.
 
 ## Documentation Map
 
