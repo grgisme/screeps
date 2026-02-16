@@ -25,6 +25,12 @@ pkg.version = newVersion;
 fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 console.log(`✅ Version bumped to ${newVersion}`);
 
+// 1.5 Update src/version.ts
+console.log('📝 Updating src/version.ts...');
+const summary = process.argv[2] || "Update";
+const versionFileContent = `export const SCRIPT_VERSION = "${newVersion}";\nexport const SCRIPT_SUMMARY = "${summary}";\n`;
+fs.writeFileSync(path.join(__dirname, 'src', 'version.ts'), versionFileContent);
+
 // 2. Build & Upload
 console.log('📤 Uploading to Screeps...');
 run('npm run upload');
