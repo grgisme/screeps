@@ -36,10 +36,10 @@ export class Colony {
 
         if (this.room) {
             this.scan();
-            this.logistics = new LogisticsNetwork();
+            this.logistics = new LogisticsNetwork(this);
             this.initOverlords();
         } else {
-            this.logistics = new LogisticsNetwork();
+            this.logistics = new LogisticsNetwork(this);
         }
     }
 
