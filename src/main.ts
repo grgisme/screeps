@@ -158,6 +158,11 @@ function handleKernelPanic(): void {
 // Main Loop
 // -------------------------------------------------------------------------
 
+import { GlobalManager } from "./core/GlobalManager";
+import { SegmentManager } from "./core/memory/SegmentManager";
+
+// ... (existing imports)
+
 export const loop = ErrorMapper.wrapLoop(() => {
     // --- 1. Clean dead creep memory ---
     for (const name in Memory.creeps) {
@@ -166,7 +171,10 @@ export const loop = ErrorMapper.wrapLoop(() => {
         }
     }
 
-    // --- 2. Kernel init / restore ---
+    // --- 2. Global Manager Init (Warm Start) ---
+    GlobalManager.init();
+
+    // --- 3. Kernel init / restore ---
     const isReset = GlobalCache.isGlobalReset();
     let kernel: Kernel;
 
@@ -182,29 +190,40 @@ export const loop = ErrorMapper.wrapLoop(() => {
         }
     }
 
-    // --- 3. Bootstrap initial processes if the table is empty ---
+    // --- 4. Bootstrap initial processes if the table is empty ---
     if (kernel.processCount === 0) {
         bootstrapProcesses(kernel);
     }
 
-    // --- 4. Ensure profiler process exists (using processId for dedup) ---
+    // --- 5. Ensure profiler process exists ---
     ensureProfiler(kernel);
 
-    // --- 5. Foundation Status on global reset ---
+    // --- 6. Foundation Status on global reset ---
     if (isReset) {
         printFoundationStatus(kernel);
     }
 
-    // --- 6. Run the scheduler ---
+    // --- 7. Run the scheduler ---
     kernel.run();
 
-    // --- 7. Handle kernel panic (idle non-essential creeps) ---
+    // --- 8. Handle kernel panic ---
     if (kernel.isPanicActive()) {
         handleKernelPanic();
     }
 
-    // --- 8. Persist minimal state to Memory ---
-    kernel.serialize();
+    // --- 9. Persist state (Heap-First) ---
+    kernel.serialize(); // Updates Kernel memory structure (but implies heap modification)
+
+    // Commit all heap-first managers
+    GlobalManager.run();
+    SegmentManager.commit(); // Set active segments for next tick
+
+    // Memory Usage Report (Console)
+    if (Game.time % 100 === 0) {
+        const heapUsed = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const bucket = Game.cpu.bucket;
+        console.log(`<span style='color:#a6a6a6'>[System] Heap: ${heapUsed} MB | Bucket: ${bucket}</span>`);
+    }
 });
 
 // -------------------------------------------------------------------------

@@ -57,6 +57,8 @@ interface Memory {
     creeps: { [name: string]: CreepMemory };
     /** Log verbosity level (0=DEBUG, 1=INFO, 2=WARNING, 3=ERROR) */
     logLevel?: number;
+    /** Arbitrary heap-persistent data storage */
+    heap?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,8 @@ interface HeapCache {
     _kernelInstance: any;
     _cache: Map<string, unknown>;
     _pathCache: Map<string, { path: string; tick: number }>;
+    _dirty?: Set<string>; // Keys that need saving to Memory
+    _serializers?: Map<string, () => unknown>; // How to save each key
 }
 
 /**
