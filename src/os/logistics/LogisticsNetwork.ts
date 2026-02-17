@@ -69,7 +69,7 @@ export class LogisticsNetwork {
         this.buffers.push(target);
     }
 
-    getEffectiveAmount(target: Structure | Resource, resourceType: ResourceConstant): number {
+    getEffectiveAmount(target: Structure | Resource, resourceType: ResourceConstant, predictionDistance: number = 0): number {
         let amount = 0;
         if ('store' in target) {
             amount = (target as any).store[resourceType] || 0;
@@ -80,7 +80,25 @@ export class LogisticsNetwork {
         const incoming = this.incomingReservations.get(target.id) || 0;
         const outgoing = this.outgoingReservations.get(target.id) || 0;
 
-        return amount + incoming - outgoing;
+        let predictedGain = 0;
+        // Logic: If target is a Source Container, predict gain during travel time
+        // We need to know if it's near a source. 
+        // Heuristic: If it increases automatically? Or just check range to Sources?
+        // For efficiency, maybe cache this? For now, simplistic check.
+        if ('structureType' in target && target.structureType === STRUCTURE_CONTAINER && resourceType === RESOURCE_ENERGY) {
+            const sources = target.pos.findInRange(FIND_SOURCES, 1);
+            if (sources.length > 0) {
+                const source = sources[0];
+                const productionPerTick = source.energyCapacity / 300; // 10 or 20 (keen/invader)
+                // If source is empty/regen, production is 0? 
+                // Assuming active mining:
+                if (source.energy > 0) {
+                    predictedGain = productionPerTick * predictionDistance;
+                }
+            }
+        }
+
+        return amount + incoming - outgoing + predictedGain;
     }
 
     registerAllocation(source: Structure | Resource, target: Structure, amount: number): void {
@@ -96,10 +114,26 @@ export class LogisticsNetwork {
         let reservedEnergy = 0;
 
         // Buffer Logic
+        // Buffer Logic (State Aware)
         if (this.colony.room.storage) {
             const storage = this.colony.room.storage;
-            if (storage.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+            const energy = storage.store.getUsedCapacity(RESOURCE_ENERGY);
+
+            // Surplus Mode: Storage acts as Provider
+            if (energy > 100000) {
                 this.providers.push(storage);
+            }
+
+            // Deficit Mode: Storage acts as Requester
+            // Only if we have providers that are NOT the storage itself (miners/containers)
+            // This allows 'draining' containers into storage when storage is low.
+            if (energy < 100000) {
+                // We don't want to double register if it's already a provider?
+                // Logic: If < 100k, we WANT energy.
+                // But generally miners push to storage via separate logic? 
+                // "The User says: If Storage.store < 100,000, it acts as a Requester (accept energy from miners)."
+                // So we add it to requesters.
+                this.requestInput(storage, { amount: 100000 - energy, priority: 1 }); // Low priority fill
             }
         }
 
@@ -151,29 +185,69 @@ export class LogisticsNetwork {
     }
 
     requestTask(zerg: Zerg): MatchedRequest | null {
-        // Finds the best task for the zerg (closest)
+        // Finds the best task for the zerg (Heuristic Score)
         let bestRequest: MatchedRequest | null = null;
-        let minCost = Infinity;
+        let maxScore = -Infinity;
         let bestIndex = -1;
 
         for (let i = 0; i < this.unassignedRequests.length; i++) {
             const req = this.unassignedRequests[i];
-            // Simple cost function: Range to provider
-            const cost = zerg.pos.getRangeTo(req.provider.pos);
 
-            // Priority multiplier? (Lower cost is better)
-            // Higher priority should reduce cost? Or just take highest priority first?
-            // The list is already sorted by priority. So we should pick the first one that is "reasonably" close.
-            // Or just pick the absolute closest one to save CPU/travel.
-            // Let's pick closest for now.
-            if (cost < minCost) {
-                minCost = cost;
+            const distance = zerg.pos.getRangeTo(req.provider.pos);
+            const distSq = Math.max(1, distance * distance);
+
+            // Resource Density: Request Amount / Zerg Capacity
+            // High density (full load) > Low density (partial load)
+            const capacity = zerg.creep.store.getCapacity(req.resourceType) || 1;
+            const resourceDensity = Math.min(req.amount, capacity) / capacity;
+
+            // Score = Priority / (Distance^2 * (1 + ResourceDensity))
+            // Problem: Priority is static (e.g. 5). Distance^2 grows fast.
+            // Adjust: Priority * Density / Distance ? Or Priority * (1 + Density) / Distance?
+            // User Formula: Priority / (Distance^2 * (1 + ResourceDensity))
+            // Let's interpret "resource density" in denominator or numerator?
+            // "favors full loads slightly further away".
+            // If Density is in denominator, higher density -> lower score? NO.
+            // Current user formula: Priority / (D^2 * (1+RD)). This means Higher RD (Full load) -> Smaller denominator -> Higher Score. YES.
+
+            // Score = (Priority * (1 + resourceDensity)) / distSq;
+            // WAIT. If RD is high (1), denominator is D^2 * 2. If RD is low (0), D^2 * 1.
+            // Higher RD makes denominator LARGER? That reduces score.
+            // "favors full loads" means score should be HIGHER for full loads.
+            // So RD should DECREASE denominator.
+            // Formula in prompt: Priority / (Distance^2 * (1 + ResourceDensity))
+            // Let's assume prompt meant: Score = (Priority * (1 + ResourceDensity)) / Distance^2
+            // OR the prompt meant "Low density penalty".
+            // Let's use standard: Score = (Priority * DensityFactor) / DistanceFactor.
+
+            // Re-reading prompt: "Score = Priority / (Distance^2 * (1 + ResourceDensity))"
+            // If RD=1, Denom = 2 D^2. Score is HALVED?
+            // If RD=0, Denom = 1 D^2. Score is NORMAL?
+            // This favors EMPTY loads?
+            // I will invert the density logic to match the GOAL "favors full loads".
+            // Score = (Priority * (1 + resourceDensity)) / distSq;
+
+            const adjustedScore = (req.priority * (1 + resourceDensity)) / distSq;
+
+            if (adjustedScore > maxScore) {
+                maxScore = adjustedScore;
                 bestRequest = req;
                 bestIndex = i;
             }
         }
 
         if (bestRequest && bestIndex !== -1) {
+            const provider = bestRequest.provider;
+            const currentAmount = this.getEffectiveAmount(provider, bestRequest.resourceType);
+            // We can check predicted amount here for logging?
+            // Prediction only useful if we KNEW travel time.
+            const dist = zerg.pos.getRangeTo(provider);
+            const predictedAmount = this.getEffectiveAmount(provider, bestRequest.resourceType, dist);
+
+            const providerName = 'structureType' in provider ? provider.structureType : 'resource';
+
+            console.log(`Predictive Match: Dispatched hauler to ${providerName}@${provider.pos.x},${provider.pos.y} (Current: ${currentAmount}, Predicted: ${predictedAmount.toFixed(1)}, Score: ${maxScore.toFixed(2)})`);
+
             this.unassignedRequests.splice(bestIndex, 1); // Remove from pool
             return bestRequest;
         }

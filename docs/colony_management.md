@@ -44,9 +44,11 @@ The `LogisticsNetwork` acts as a centralized broker for resource transport withi
 
 - **Role**:
     -   **Registry**: Maintains transient lists of `providers` (supply), `requesters` (demand), and `buffers` (storage).
-    -   **Matching**: Pairs `providers` to `requesters` based on priority and distance to minimize travel time.
-    -   **State**: Tracks incoming and outgoing resource reservations using a ledger system to prevent "Energy Racing" (double-booking).
-    -   **Buffer Management**: Automatically utilizes Storage as a provider when in surplus.
+    -   **Matching**: Pairs `providers` to `requesters` using **Advanced Heuristics** and **Predictive Supply Chain Management**.
+    -   **Predictive Logic**: `getEffectiveAmount` calculates supply based on current store + incoming reservations + **Predicted Gain**. For mining containers, it predicts energy production during travel time.
+    -   **Heuristic Scoring**: Tasks are assigned to haulers based on a score: `(Priority * (1 + ResourceDensity)) / Distance^2`. This favors full loads and high priority while penalizing distance.
+    -   **State**: Tracks incoming and outgoing resource reservations using a ledger system to prevent "Energy Racing".
+    -   **Buffer Management**: Storage acts as a provider in **Surplus Mode** (>100k) and a requester in **Deficit Mode** (<100k).
 
 ### 3. Overlords (`src/processes/overlords/*.ts`)
 An **Overlord** is a specialized manager for a specific aspect of the Colony. It automates testing, creeping, and tasks.
@@ -83,10 +85,12 @@ The Hauler Fleet executes the logistics plan.
 
 *   **Role**: `Transporter` (Zerg).
 *   **Manager**: `TransporterOverlord` (Overlord).
-*   **Architecture**: "Pull-based"
-    *   Transporters are stateless regarding long-term assignments.
-    *   **Idle State**: They query `LogisticsNetwork.requestTask(zerg)` to find the optimal task (closest valid match).
-    *   **Action State**: They execute the task (Pickup -> Deliver) using cached `MatchedRequest` data.
+*   **Architecture**: "Pull-based" with **Predictive Dispatching**.
+    *   Transporters query `LogisticsNetwork.requestTask(zerg)`.
+    *   **Scoring Heuristic**: `Score = (Priority * (1 + ResourceDensity)) / Distance^2`.
+        *   `ResourceDensity`: `amountNeeded / haulerCapacity`.
+    *   **Predictive Match**: Dispatches haulers to source containers based on projected energy levels at time of arrival.
+*   **Action State**: They execute the task (Pickup -> Deliver) using cached `MatchedRequest` data.
 *   **Lifecycle**:
     *   **Spawning**: The `TransporterOverlord` calculates the "Transport Deficit" (Total requested energy) vs the fleet's "Haul Potential" (Total carry capacity). If deficit > potential, it requests a spawn.
     *   **Body Composition**: 1:1 CARRY:MOVE ratio for standard road speed.

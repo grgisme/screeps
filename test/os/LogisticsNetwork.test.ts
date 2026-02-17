@@ -15,7 +15,13 @@ describe("LogisticsNetwork", () => {
         structure = {
             id: "struct1" as Id<Structure>,
             structureType: STRUCTURE_CONTAINER,
-            pos: new RoomPosition(10, 10, "W1N1"),
+            pos: {
+                findInRange: () => [],
+                x: 10,
+                y: 10,
+                roomName: "W1N1",
+                getRangeTo: (_other: any) => 5 // Default for simple tests
+            },
             room: room,
             store: {
                 getUsedCapacity: () => 500,
@@ -27,7 +33,8 @@ describe("LogisticsNetwork", () => {
 
         mockColony = {
             room: room,
-            name: "W1N1"
+            name: "W1N1",
+            logistics: null // Will be set or use separate network
         };
     });
 
@@ -61,7 +68,11 @@ describe("LogisticsNetwork", () => {
         // Requester: Structure needing 100 energy
         const requester = {
             id: "req1",
-            pos: new RoomPosition(10, 15, "W1N1"), // 5 tiles away
+            pos: {
+                x: 10, y: 15, roomName: "W1N1",
+                getRangeTo: (_other: any) => 5,
+                findInRange: () => []
+            },
             store: { energy: 0 }
         } as unknown as Structure;
         network.requestInput(requester, { amount: 100 });
@@ -82,7 +93,11 @@ describe("LogisticsNetwork", () => {
 
         const requester = {
             id: "req1",
-            pos: new RoomPosition(10, 15, "W1N1"),
+            pos: {
+                x: 10, y: 15, roomName: "W1N1",
+                getRangeTo: (_other: any) => 5,
+                findInRange: () => []
+            },
             store: { energy: 0 }
         } as unknown as Structure;
         network.requestInput(requester, { amount: 100 });
@@ -103,7 +118,11 @@ describe("LogisticsNetwork", () => {
         // Requester 1: Needs 400
         const req1 = {
             id: "req1",
-            pos: new RoomPosition(10, 11, "W1N1"),
+            pos: {
+                x: 10, y: 11, roomName: "W1N1",
+                getRangeTo: (_other: any) => 1,
+                findInRange: () => []
+            },
             store: { energy: 0 }
         } as unknown as Structure;
         network.requestInput(req1, { amount: 400, priority: 10 });
@@ -111,7 +130,11 @@ describe("LogisticsNetwork", () => {
         // Requester 2: Needs 400 (should only get 100 matched or 0 if we are strict)
         const req2 = {
             id: "req2",
-            pos: new RoomPosition(10, 12, "W1N1"),
+            pos: {
+                x: 10, y: 12, roomName: "W1N1",
+                getRangeTo: (_other: any) => 2,
+                findInRange: () => []
+            },
             store: { energy: 0 }
         } as unknown as Structure;
         network.requestInput(req2, { amount: 400, priority: 5 }); // Lower priority
@@ -133,5 +156,93 @@ describe("LogisticsNetwork", () => {
         expect(matches[1].amount).to.equal(100);
 
         expect(network.outgoingReservations.get(provider.id)).to.equal(500);
+    });
+
+    it("should predict energy gain for source containers", () => {
+        // Mock a source and container
+        const source = {
+            pos: new RoomPosition(10, 9, "W1N1"), // Next to container
+            energy: 1000,
+            energyCapacity: 3000
+        } as Source;
+
+        const container = {
+            id: "cont1",
+            structureType: STRUCTURE_CONTAINER,
+            pos: {
+                findInRange: () => [source],
+                x: 10,
+                y: 10,
+                roomName: "W1N1"
+            }, // Mock pos with findInRange
+            store: { energy: 0, getUsedCapacity: () => 0 }
+        } as unknown as Structure;
+
+        // Mock room.find to return our source when called by findInRange? 
+        // findInRange is method on RoomPosition. We mocked the structure's pos object above.
+
+        const network = new LogisticsNetwork(mockColony);
+
+        // Distance 10. Gain = (3000/300) * 10 = 100.
+        const effective = network.getEffectiveAmount(container, RESOURCE_ENERGY, 10);
+
+        expect(effective).to.equal(100);
+    });
+
+    it("should prioritize requests based on heuristic score", () => {
+        const network = new LogisticsNetwork(mockColony);
+        const provider = structure; // 500 energy
+        network.requestOutput(provider);
+
+        // High distance, High Priority, Full Load
+        const req1 = {
+            id: "req1",
+            pos: {
+                x: 10, y: 20, roomName: "W1N1",
+                getRangeTo: (_other: any) => 10,
+                findInRange: () => []
+            },
+            store: { energy: 0 },
+            amount: 50
+        } as unknown as Structure;
+        network.requestInput(req1, { amount: 50, priority: 10 });
+
+        // Short distance, Low Priority, Partial Load
+        const req2 = {
+            id: "req2",
+            pos: {
+                x: 10, y: 12, roomName: "W1N1",
+                getRangeTo: (_other: any) => 2,
+                findInRange: () => []
+            },
+            store: { energy: 40, getCapacity: () => 50 }, // Needs 10
+            amount: 10
+        } as unknown as Structure;
+        network.requestInput(req2, { amount: 10, priority: 1 });
+
+        network.match();
+
+        const zerg = {
+            pos: {
+                x: 10, y: 25, roomName: "W1N1",
+                getRangeTo: (_other: any) => {
+                    // Provider is at 10,10. Zerg at 10,25. Range is 15.
+                    return 15;
+                }
+            },
+            creep: {
+                store: {
+                    getCapacity: () => 50
+                }
+            }
+        } as any;
+
+        // Req1: Priority 10. Density 50/50=1. Dist to Provider 15. Score = 10*(1+1)/15^2 = 20/225 = 0.08
+        // Req2: Priority 1. Density 10/50=0.2. Dist 15. Score = 1*(1.2)/225 = 0.005.
+        // Req1 wins massively.
+
+        const task = network.requestTask(zerg);
+        expect(task).to.not.be.null;
+        expect(task!.target).to.equal(req1);
     });
 });
