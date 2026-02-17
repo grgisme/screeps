@@ -76,3 +76,35 @@ An **Overlord** is a specialized manager for a specific aspect of the Colony. It
 The codebase contains some standalone processes (e.g., `MiningProcess.ts`) from an earlier architecture.
 -   **New Code**: Should use the `Overlord` pattern within a `Colony`.
 -   **Legacy Code**: `MiningProcess`, `UpgradeProcess`. These are effective but less integrated. The goal is to migrate these logic blocks into Overlords.
+
+### 2.6. Hauler Fleet ("The Hands") - Phase 3
+
+The Hauler Fleet executes the logistics plan.
+
+*   **Role**: `Transporter` (Zerg).
+*   **Manager**: `TransporterOverlord` (Overlord).
+*   **Architecture**: "Pull-based"
+    *   Transporters are stateless regarding long-term assignments.
+    *   **Idle State**: They query `LogisticsNetwork.requestTask(zerg)` to find the optimal task (closest valid match).
+    *   **Action State**: They execute the task (Pickup -> Deliver) using cached `MatchedRequest` data.
+*   **Lifecycle**:
+    *   **Spawning**: The `TransporterOverlord` calculates the "Transport Deficit" (Total requested energy) vs the fleet's "Haul Potential" (Total carry capacity). If deficit > potential, it requests a spawn.
+    *   **Body Composition**: 1:1 CARRY:MOVE ratio for standard road speed.
+
+---
+
+## Reservation System (Detailed)
+
+To prevent multiple transporters from racing to complete the same request ("Energy Racing"), the `LogisticsNetwork` uses a reservation system.
+1.  **Incoming Reservations**: Tracks energy promised to a target.
+2.  **Outgoing Reservations**: Tracks energy reserved from a provider.
+3.  **Effective Amount**: `Store Amount + Incoming - Outgoing`.
+    *   `match()` only considers providers with positive *effective* amount.
+    *   `match()` stops assigning to a requester once its *effective* amount meets its needs.
+
+## Buffer Management
+
+Storage structures act as buffers.
+*   **Supply Mode**: If storage has energy, it registers as a Provider.
+*   **Demand Mode**: If storage is low (future implementation), it registers as a Requester.
+*   This allows the network to automatically balance between immediate consumption and long-term storage.

@@ -163,7 +163,8 @@ src/
 ├── processes/
 │   ├── overlords/             # Colony Task Managers
 │   │   ├── MiningOverlord.ts  # Source harvesting
-│   │   └── ConstructionOverlord.ts # Base building
+│   │   ├── ConstructionOverlord.ts # Base building
+│   │   └── TransporterOverlord.ts # Logistics fleet manager
 │   ├── MiningProcess.ts       # (Legacy) Standalone miner
 │   ├── UpgradeProcess.ts      # (Legacy) Standalone upgrader
 │   └── ProfilerProcess.ts     # CPU usage monitor (priority 0)
@@ -182,7 +183,8 @@ src/
 ├── os/logistics/
 │   └── LogisticsNetwork.ts    # Centralized resource broker
 └── zerg/
-    └── Zerg.ts                # Creep wrapper + path cache
+    ├── Zerg.ts                # Creep wrapper + path cache
+    └── Transporter.ts         # Logistics worker (Phase 3)
 ```
 
 ### New Modules (Automated Planning)
