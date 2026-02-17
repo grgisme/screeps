@@ -108,6 +108,13 @@ class MockRoomPosition {
     ): Array<{ x: number; y: number; dx: number; dy: number; direction: number }> {
         return [{ x: _target.x, y: _target.y, dx: 1, dy: 0, direction: 3 }];
     }
+
+    inRangeTo(target: RoomPosition | { pos: RoomPosition }, range: number): boolean {
+        const pos = "pos" in target ? target.pos : target;
+        const dx = Math.abs(this.x - pos.x);
+        const dy = Math.abs(this.y - pos.y);
+        return dx <= range && dy <= range;
+    }
 }
 
 (globalThis as any).RoomPosition = MockRoomPosition;
@@ -145,6 +152,33 @@ class MockRoom {
 }
 
 (globalThis as any).Room = MockRoom;
+
+// ---------------------------------------------------------------------------
+// Creep (minimal)
+// ---------------------------------------------------------------------------
+
+class MockCreep {
+    name: string;
+    room: MockRoom | null = null;
+    memory: any = {};
+    pos: MockRoomPosition = new MockRoomPosition(0, 0, "room");
+    store: any = { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 };
+    ticksToLive: number = 1500;
+
+    constructor(id: string) {
+        this.name = id;
+    }
+
+    moveTo(_target: RoomPosition | { pos: RoomPosition }): number {
+        return 0; // OK
+    }
+
+    harvest(_target: Source): number {
+        return 0; // OK
+    }
+}
+
+(globalThis as any).Creep = MockCreep;
 
 // ---------------------------------------------------------------------------
 // _heap global init

@@ -9,6 +9,7 @@ import { Kernel } from "./kernel/Kernel";
 import { MiningProcess } from "./processes/MiningProcess";
 import { UpgradeProcess } from "./processes/UpgradeProcess";
 import { ProfilerProcess } from "./processes/ProfilerProcess";
+import { ColonyProcess } from "./os/processes/ColonyProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
 
 const log = new Logger("OS");
@@ -230,6 +231,19 @@ export const loop = ErrorMapper.wrapLoop(() => {
 // Bootstrap — create initial processes for each owned room
 // -------------------------------------------------------------------------
 
+Kernel.registerProcess(
+    "colony",
+    (pid, priority, parentPID, data) => {
+        return new ColonyProcess(pid, priority, parentPID, data.colonyName as string);
+    }
+);
+
+// ... (existing profiler registration)
+
+// -------------------------------------------------------------------------
+// Bootstrap — create initial processes for each owned room
+// -------------------------------------------------------------------------
+
 function bootstrapProcesses(kernel: Kernel): void {
     for (const roomName in Game.rooms) {
         const room = Game.rooms[roomName];
@@ -237,40 +251,14 @@ function bootstrapProcesses(kernel: Kernel): void {
             continue;
         }
 
-        log.info(`Bootstrapping processes for room ${roomName}`);
-
-        const sources = room.find(FIND_SOURCES);
-        for (const source of sources) {
-            const procId = `mining:${roomName}:${source.id}`;
-            if (kernel.hasProcessId(procId)) {
-                continue; // Already exists — skip
-            }
-            const proc = new MiningProcess(
-                0,
-                10,
-                null,
-                source.id,
-                roomName,
-                1
-            );
-            kernel.addProcess(proc);
-            log.info(
-                `→ MiningProcess for source ${source.id} (PID ${proc.pid})`
-            );
+        const procId = `colony:${roomName}`;
+        if (kernel.hasProcessId(procId)) {
+            continue;
         }
 
-        const upgradeId = `upgrade:${roomName}`;
-        if (!kernel.hasProcessId(upgradeId)) {
-            const upgrader = new UpgradeProcess(
-                0,
-                20,
-                null,
-                roomName,
-                1
-            );
-            kernel.addProcess(upgrader);
-            log.info(`→ UpgradeProcess (PID ${upgrader.pid})`);
-        }
+        const proc = new ColonyProcess(0, 5, null, roomName);
+        kernel.addProcess(proc);
+        log.info(`→ Bootstrapped ColonyProcess for ${roomName} (PID ${proc.pid})`);
     }
 }
 
