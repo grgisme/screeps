@@ -20,7 +20,7 @@ const log = new Logger("OS");
 // Console Commands — exposed on global for the Screeps console
 // -------------------------------------------------------------------------
 
-(globalThis as any).setLogLevel = (level: string): string => {
+(global as any).setLogLevel = (level: string): string => {
     Logger.setLevelByName(level);
     return `Log level set to: ${level}`;
 };
@@ -29,7 +29,7 @@ const log = new Logger("OS");
  * Force an error from deep inside a process-style call stack.
  * Used to verify source map resolution shows the correct .ts file + line.
  */
-(globalThis as any).testError = (): string => {
+(global as any).testError = (): string => {
     function deepNestedCall(): never {
         throw new Error("TEST: Deliberate error from deeply nested code path");
     }

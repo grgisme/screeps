@@ -19,7 +19,7 @@ export class RoomPlannerProcess extends Process {
         this.colonyName = colonyName;
         // Resolve colony reference (unsafe in constructor? usually fine if we don't use it yet)
         // Better to resolve in run()
-        this.colony = (globalThis as any).ColonyProcess?.getColony(colonyName);
+        this.colony = (global as any).ColonyProcess?.getColony(colonyName);
         // Note: ColonyProcess might not be globally available like this. 
         // We might need a registry or pass it. 
         // For now, let's assume we can look it up or pass it in data.

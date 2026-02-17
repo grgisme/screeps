@@ -16,7 +16,7 @@ const log = new Logger("GlobalCache");
 
 function ensureHeap(): HeapCache {
     if (typeof _heap === "undefined" || !_heap) {
-        (globalThis as any)._heap = {
+        (global as any)._heap = {
             _initialized: false,
             _kernelInstance: undefined,
             _cache: new Map<string, unknown>(),
