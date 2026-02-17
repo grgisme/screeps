@@ -1,8 +1,8 @@
 
-import "../mock.setup";
+import "../../../mock.setup";
 import { expect } from "chai";
-import { LogisticsNetwork } from "../../src/os/logistics/LogisticsNetwork";
-import { TransporterOverlord } from "../../src/processes/overlords/TransporterOverlord";
+import { LogisticsNetwork } from "../../../../src/os/logistics/LogisticsNetwork";
+import { TransporterOverlord } from "../../../../src/os/processes/overlords/TransporterOverlord";
 
 describe("TransporterOverlord", () => {
     let mockColony: any;

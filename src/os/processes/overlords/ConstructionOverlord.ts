@@ -2,10 +2,10 @@
 // ConstructionOverlord — Manages automated construction
 // ============================================================================
 
-import { Overlord } from "../../os/processes/Overlord";
-import { Colony } from "../../os/Colony";
-import { BunkerLayout } from "../../os/infrastructure/BunkerLayout";
-import { Logger } from "../../utils/Logger";
+import { Overlord } from "../Overlord";
+import { Colony } from "../../Colony";
+import { BunkerLayout } from "../../infrastructure/BunkerLayout";
+import { Logger } from "../../../utils/Logger";
 
 const log = new Logger("ConstructionOverlord");
 

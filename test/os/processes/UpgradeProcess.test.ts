@@ -2,10 +2,10 @@
 // UpgradeProcess.test.ts — Unit tests for the upgrade overlord
 // ============================================================================
 
-import "../mock.setup";
-import { resetMocks } from "../mock.setup";
+import "../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { UpgradeProcess } from "../../src/processes/UpgradeProcess";
+import { UpgradeProcess } from "../../../src/os/processes/UpgradeProcess";
 
 describe("UpgradeProcess", () => {
     beforeEach(() => {

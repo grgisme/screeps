@@ -15,17 +15,17 @@ This document describes the internal architecture of the Screeps bot's Operating
 └─────────────────────────────────────────────────┘
          │
          ▼
-```
 ┌─────────────────────────────────────────────────┐
 │                    Kernel                        │
 │  ProcessTable: Map<PID, Process>                │
 └─────────────────────────────────────────────────┘
          │
-         ▼
-┌───────────────────┐      ┌─────────────────────────┐
-│  ColonyProcess    │      │  Legacy Processes       │
-│  (1 per Room)     │      │  (Mining/Upgrade)       │
-└───────────────────┘      └─────────────────────────┘
+         ├───────────────────────────┐
+         ▼                           ▼
+┌───────────────────┐  ┌──────────────────────────┐
+│  ColonyProcess    │  │  Kernel Processes         │
+│  (1 per Room)     │  │  (Mining/Upgrade/Profiler)│
+└───────────────────┘  └──────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────┐
@@ -33,15 +33,16 @@ This document describes the internal architecture of the Screeps bot's Operating
 │  Hub for Overlords & State                      │
 └─────────────────────────────────────────────────┘
          │
-         ▼
-┌──────────────────┐  ┌──────────────────┐
-│ MiningOverlord   │  │ ConstructOverlord│
-└──────────────────┘  └──────────────────┘
-         │                    │
-         ▼                    ▼
+         ├──────────────────┬──────────────────┐
+         ▼                  ▼                  ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│ MiningOverlord   │ │ ConstructOverlord│ │TransportOverlord │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+         │                  │                  │
+         ▼                  ▼                  ▼
 ┌─────────────────────────────────────────────────┐
 │                    Zerg                          │
-│  Creep wrapper with heap-cached pathing         │
+│  Creep wrapper with task execution & pathing    │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -160,35 +161,40 @@ src/
 │   ├── Kernel.ts              # Scheduler + profiling + process table
 │   ├── Process.ts             # Abstract process base
 │   └── ProcessStatus.ts       # Runtime status constants
-├── processes/
-│   ├── overlords/             # Colony Task Managers
-│   │   ├── MiningOverlord.ts  # Source harvesting
-│   │   ├── ConstructionOverlord.ts # Base building
-│   │   └── TransporterOverlord.ts # Logistics fleet manager
-│   ├── MiningProcess.ts       # (Legacy) Standalone miner
-│   ├── UpgradeProcess.ts      # (Legacy) Standalone upgrader
-│   └── ProfilerProcess.ts     # CPU usage monitor (priority 0)
+├── os/
+│   ├── Colony.ts              # Per-room hub for Overlords & State
+│   ├── colony/
+│   │   ├── Hatchery.ts        # Spawn manager with priority queue
+│   │   └── MiningSite.ts      # Source mining site data
+│   ├── infrastructure/
+│   │   ├── BunkerLayout.ts    # Base layout templates
+│   │   ├── TrafficManager.ts  # Priority-based movement resolution
+│   │   └── Zerg.ts            # Creep wrapper with task execution
+│   ├── logistics/
+│   │   └── LogisticsNetwork.ts # Centralized resource broker
+│   ├── processes/
+│   │   ├── ColonyProcess.ts   # Kernel adapter for Colony lifecycle
+│   │   ├── MiningProcess.ts   # Standalone source harvesting process
+│   │   ├── UpgradeProcess.ts  # Standalone controller upgrader
+│   │   ├── ProfilerProcess.ts # CPU usage monitor (priority 0)
+│   │   ├── Overlord.ts        # Abstract overlord base class
+│   │   ├── RoomPlannerProcess.ts # Room planning automation
+│   │   ├── economy/
+│   │   │   └── MiningOverlord.ts # Colony-level mine management
+│   │   └── overlords/
+│   │       ├── ConstructionOverlord.ts # Base building automation
+│   │       └── TransporterOverlord.ts # Logistics fleet manager
+│   └── zerg/
+│       ├── Miner.ts           # Specialized miner creep
+│       └── Transporter.ts     # Logistics worker creep
 ├── utils/
 │   ├── ErrorMapper.ts         # Source-map stack trace mapping
 │   ├── GlobalCache.ts         # Heap-first state + reset detection
 │   ├── Algorithms.ts          # Distance Transform & geometries
-│   └── Logger.ts              # Structured logging with levels
-├── core/
-│   ├── GlobalManager.ts       # Warm start / Colony rehydration
-│   └── memory/
-│       └── SegmentManager.ts  # RawMemory segment management
-├── os/infrastructure/
-│   ├── BunkerLayout.ts        # Base layout templates
-│   └── TrafficManager.ts      # (Experimental) Priority-based movement
-├── os/logistics/
-│   └── LogisticsNetwork.ts    # Centralized resource broker
-└── zerg/
-    ├── Zerg.ts                # Creep wrapper + path cache
-    └── Transporter.ts         # Logistics worker (Phase 3)
+│   ├── Logger.ts              # Structured logging with levels
+│   └── RoomPosition.ts        # RoomPosition prototype extensions
+└── core/
+    ├── GlobalManager.ts       # Warm start / Colony rehydration
+    └── memory/
+        └── SegmentManager.ts  # RawMemory segment management
 ```
-
-### New Modules (Automated Planning)
-
-- **RoomPlannerProcess**: `src/os/processes/RoomPlannerProcess.ts`
-- **ConstructionOverlord**: `src/processes/overlords/ConstructionOverlord.ts`
-- **BunkerLayout**: `src/os/infrastructure/BunkerLayout.ts`

@@ -7,7 +7,7 @@ import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
 import { Zerg } from "../../src/os/infrastructure/Zerg";
 import { TrafficManager } from "../../src/os/infrastructure/TrafficManager";
-import "../../src/prototypes/RoomPosition"; // Ensure prototype is loaded
+import "../../src/utils/RoomPosition"; // Ensure prototype is loaded
 
 describe("Movement Optimization", () => {
     let zerg: Zerg;

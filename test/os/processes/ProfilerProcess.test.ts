@@ -2,12 +2,12 @@
 // ProfilerProcess.test.ts — Unit tests for the CPU profiler
 // ============================================================================
 
-import "../mock.setup";
-import { resetMocks } from "../mock.setup";
+import "../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { ProfilerProcess } from "../../src/processes/ProfilerProcess";
-import { Kernel } from "../../src/kernel/Kernel";
-import { GlobalCache } from "../../src/utils/GlobalCache";
+import { ProfilerProcess } from "../../../src/os/processes/ProfilerProcess";
+import { Kernel } from "../../../src/kernel/Kernel";
+import { GlobalCache } from "../../../src/utils/GlobalCache";
 
 describe("ProfilerProcess", () => {
     let logOutput: string[];

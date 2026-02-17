@@ -2,9 +2,9 @@
 // ProfilerProcess — Real-time CPU & scheduler monitoring
 // ============================================================================
 
-import { Process } from "../kernel/Process";
-import { Kernel, SchedulerReport } from "../kernel/Kernel";
-import { GlobalCache } from "../utils/GlobalCache";
+import { Process } from "../../kernel/Process";
+import { Kernel, SchedulerReport } from "../../kernel/Kernel";
+import { GlobalCache } from "../../utils/GlobalCache";
 
 /**
  * Critical process (Priority 0) that tracks cumulative CPU usage per

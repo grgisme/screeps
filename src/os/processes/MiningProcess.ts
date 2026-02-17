@@ -2,8 +2,8 @@
 // MiningProcess — Overlord-pattern source harvesting
 // ============================================================================
 
-import { Process } from "../kernel/Process";
-import { Zerg } from "../zerg/Zerg";
+import { Process } from "../../kernel/Process";
+import { Zerg } from "../infrastructure/Zerg";
 
 /**
  * Manages all mining operations for a single energy source.

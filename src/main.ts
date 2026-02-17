@@ -3,13 +3,13 @@
 // ============================================================================
 
 import { ErrorMapper } from "./utils/ErrorMapper";
-import "./prototypes/RoomPosition";
+import "./utils/RoomPosition";
 import { GlobalCache } from "./utils/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
-import { MiningProcess } from "./processes/MiningProcess";
-import { UpgradeProcess } from "./processes/UpgradeProcess";
-import { ProfilerProcess } from "./processes/ProfilerProcess";
+import { MiningProcess } from "./os/processes/MiningProcess";
+import { UpgradeProcess } from "./os/processes/UpgradeProcess";
+import { ProfilerProcess } from "./os/processes/ProfilerProcess";
 import { ColonyProcess } from "./os/processes/ColonyProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
 import { TrafficManager } from "./os/infrastructure/TrafficManager";

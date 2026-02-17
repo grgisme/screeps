@@ -1,4 +1,4 @@
-import { Zerg } from "../../zerg/Zerg";
+import { Zerg } from "../infrastructure/Zerg";
 import { MiningSite } from "../colony/MiningSite";
 
 export class Miner extends Zerg {

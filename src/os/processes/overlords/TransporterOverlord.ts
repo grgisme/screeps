@@ -1,7 +1,7 @@
-import { Overlord } from "../../os/processes/Overlord";
-import { Colony } from "../../os/Colony";
-import { Transporter } from "../../os/zerg/Transporter";
-import { Zerg } from "../../os/infrastructure/Zerg";
+import { Overlord } from "../Overlord";
+import { Colony } from "../../Colony";
+import { Transporter } from "../../zerg/Transporter";
+import { Zerg } from "../../infrastructure/Zerg";
 
 export class TransporterOverlord extends Overlord {
 

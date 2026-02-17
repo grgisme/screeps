@@ -1,7 +1,7 @@
 import { Overlord } from "./processes/Overlord";
 import { Zerg } from "./infrastructure/Zerg";
 import { MiningOverlord } from "./processes/economy/MiningOverlord";
-import { ConstructionOverlord } from "../processes/overlords/ConstructionOverlord";
+import { ConstructionOverlord } from "./processes/overlords/ConstructionOverlord";
 import { BunkerLayout } from "./infrastructure/BunkerLayout";
 import { LogisticsNetwork } from "./logistics/LogisticsNetwork";
 import { Hatchery } from "./colony/Hatchery";

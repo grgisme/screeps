@@ -2,10 +2,10 @@
 // MiningProcess.test.ts — Unit tests for the mining overlord
 // ============================================================================
 
-import "../mock.setup";
-import { resetMocks } from "../mock.setup";
+import "../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { MiningProcess } from "../../src/processes/MiningProcess";
+import { MiningProcess } from "../../../src/os/processes/MiningProcess";
 
 describe("MiningProcess", () => {
     beforeEach(() => {

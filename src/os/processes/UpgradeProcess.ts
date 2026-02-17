@@ -2,8 +2,8 @@
 // UpgradeProcess — Overlord-pattern controller upgrading
 // ============================================================================
 
-import { Process } from "../kernel/Process";
-import { Zerg } from "../zerg/Zerg";
+import { Process } from "../../kernel/Process";
+import { Zerg } from "../infrastructure/Zerg";
 
 /**
  * Manages upgrader creeps for a single room's controller.
