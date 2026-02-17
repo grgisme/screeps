@@ -41,6 +41,7 @@ export class MiningProcess extends Process {
         this.sourceId = sourceId;
         this.roomName = roomName;
         this.targetMiners = targetMiners;
+        this.processId = `mining:${roomName}:${sourceId}`;
     }
 
     // -----------------------------------------------------------------------

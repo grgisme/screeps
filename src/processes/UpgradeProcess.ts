@@ -34,6 +34,7 @@ export class UpgradeProcess extends Process {
         super(pid, priority, parentPID);
         this.roomName = roomName;
         this.targetUpgraders = targetUpgraders;
+        this.processId = `upgrade:${roomName}`;
     }
 
     // -----------------------------------------------------------------------

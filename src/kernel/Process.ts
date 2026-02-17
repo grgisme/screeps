@@ -17,6 +17,19 @@ export abstract class Process {
     public parentPID: number | null;
     public status: ProcessStatusType;
 
+    /**
+     * Stable, purpose-derived identifier for deduplication and lookup.
+     * Examples: "mining:E1S1:src123", "upgrade:E1S1", "profiler:global"
+     * Set by subclasses in their constructor.
+     */
+    public processId: string = "";
+
+    /**
+     * Game.time at which this process should auto-wake from sleep.
+     * `null` means the process is not on a timed sleep.
+     */
+    public sleepUntil: number | null = null;
+
     /** Human-readable identifier used for serialization / logging */
     public abstract readonly processName: string;
 
@@ -36,11 +49,23 @@ export abstract class Process {
         this.status = ProcessStatus.SLEEP;
     }
 
-    /** Resume a sleeping process. */
+    /** Resume a sleeping process, clearing any timed sleep. */
     resume(): void {
         if (this.status === ProcessStatus.SLEEP) {
             this.status = ProcessStatus.ALIVE;
+            this.sleepUntil = null;
         }
+    }
+
+    /**
+     * Put this process to sleep for a specified number of ticks.
+     * The Kernel will automatically wake it when `Game.time >= sleepUntil`.
+     * This is far cheaper than running a process that does nothing — the
+     * Kernel skips sleeping processes entirely without any CPU overhead.
+     */
+    sleep(ticks: number): void {
+        this.sleepUntil = Game.time + ticks;
+        this.status = ProcessStatus.SLEEP;
     }
 
     /** Mark this process for removal on the next scheduler sweep. */
@@ -51,6 +76,18 @@ export abstract class Process {
     /** Returns `true` when the process should be executed this tick. */
     isAlive(): boolean {
         return this.status === ProcessStatus.ALIVE;
+    }
+
+    /**
+     * Returns `true` if this process is sleeping and should be woken up.
+     * Called by the Kernel before the main scheduler loop.
+     */
+    shouldWake(): boolean {
+        return (
+            this.status === ProcessStatus.SLEEP &&
+            this.sleepUntil !== null &&
+            Game.time >= this.sleepUntil
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -81,7 +118,9 @@ export abstract class Process {
             priority: this.priority,
             parentPID: this.parentPID,
             processName: this.processName,
+            processId: this.processId,
             status: this.status,
+            sleepUntil: this.sleepUntil ?? undefined,
             data: this.serialize(),
         };
     }

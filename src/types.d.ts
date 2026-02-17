@@ -17,7 +17,11 @@ interface ProcessDescriptor {
     priority: number;
     parentPID: number | null;
     processName: string;
+    /** Stable, purpose-derived identifier (e.g., "mining:E1S1:src123") */
+    processId?: string;
     status: number;
+    /** Game.time at which a sleeping process should auto-wake */
+    sleepUntil?: number;
     /** Minimal serializable state for Memory persistence */
     data: Record<string, unknown>;
 }

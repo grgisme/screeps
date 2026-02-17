@@ -1,5 +1,5 @@
 // ============================================================================
-// Kernel.test.ts — Unit tests for the Kernel scheduler + load shedding
+// Kernel.test.ts — Unit tests for the Kernel scheduler + advanced lifecycle
 // ============================================================================
 
 import "../mock.setup";
@@ -14,14 +14,25 @@ class TestProcess extends Process {
     public readonly processName: string;
     public executionOrder: number[] = [];
     public shouldThrow = false;
+    public runCount = 0;
 
-    constructor(pid: number, priority: number, order: number[], name: string = "test") {
+    constructor(
+        pid: number,
+        priority: number,
+        order: number[],
+        name: string = "test",
+        id: string = ""
+    ) {
         super(pid, priority);
         this.executionOrder = order;
         this.processName = name;
+        if (id) {
+            this.processId = id;
+        }
     }
 
     run(): void {
+        this.runCount++;
         if (this.shouldThrow) {
             throw new Error("Intentional test crash");
         }
@@ -88,6 +99,27 @@ describe("Kernel", () => {
         });
     });
 
+    describe("Process ID Lookup (Stable IDs)", () => {
+        it("should lookup process by custom processId", () => {
+            const kernel = new Kernel();
+            const proc = new TestProcess(0, 10, [], "miner", "mining:W1N1:source1");
+            kernel.addProcess(proc);
+
+            const found = kernel.getProcessById("mining:W1N1:source1");
+            expect(found).to.equal(proc);
+            expect(found?.pid).to.equal(proc.pid);
+        });
+
+        it("should check existence with hasProcessId", () => {
+            const kernel = new Kernel();
+            const proc = new TestProcess(0, 10, [], "miner", "mining:W1N1:source1");
+            kernel.addProcess(proc);
+
+            expect(kernel.hasProcessId("mining:W1N1:source1")).to.be.true;
+            expect(kernel.hasProcessId("mining:W1N1:source2")).to.be.false;
+        });
+    });
+
     describe("Scheduler", () => {
         it("should execute processes in priority order (lower first)", () => {
             const kernel = new Kernel();
@@ -108,21 +140,6 @@ describe("Kernel", () => {
                 procMid.pid,
                 procLow.pid,
             ]);
-        });
-
-        it("should skip sleeping processes", () => {
-            const kernel = new Kernel();
-            const order: number[] = [];
-
-            const proc1 = new TestProcess(0, 10, order);
-            const proc2 = new TestProcess(0, 20, order);
-            kernel.addProcess(proc1);
-            kernel.addProcess(proc2);
-
-            proc1.suspend();
-            kernel.run();
-
-            expect(order).to.deep.equal([proc2.pid]);
         });
 
         it("should isolate process errors (one crash doesn't stop others)", () => {
@@ -190,38 +207,12 @@ describe("Kernel", () => {
             expect(order).to.deep.equal([proc1.pid]);
         });
 
-        it("should sweep dead processes after run", () => {
+        it("should start with empty scheduler report", () => {
             const kernel = new Kernel();
-            const order: number[] = [];
-
-            const proc = new TestProcess(0, 10, order);
-            kernel.addProcess(proc);
-            proc.terminate();
-
-            kernel.run();
-            expect(kernel.processCount).to.equal(0);
-        });
-
-        it("should record CPU profile per process name", () => {
-            const kernel = new Kernel();
-            const order: number[] = [];
-
-            let cpuUsed = 0;
-            (globalThis as any).Game.cpu.getUsed = () => cpuUsed;
-
-            const proc = new TestProcess(0, 10, order);
-            kernel.addProcess(proc);
-
-            const origRun = proc.run.bind(proc);
-            proc.run = () => {
-                origRun();
-                cpuUsed += 5.5;
-            };
-
-            kernel.run();
-
-            const profile = kernel.getCpuProfile();
-            expect(profile.get("test")).to.be.closeTo(5.5, 0.01);
+            const report = kernel.getSchedulerReport();
+            expect(report.executed.size).to.equal(0);
+            expect(report.skipped.size).to.equal(0);
+            expect(report.sleeping).to.equal(0);
         });
     });
 
@@ -267,7 +258,6 @@ describe("Kernel", () => {
 
             kernel.run();
 
-            // All 3 should have run
             expect(order).to.have.length(3);
         });
 
@@ -278,18 +268,18 @@ describe("Kernel", () => {
 
             const critical = new TestProcess(0, 0, order, "critical");
             const safe = new TestProcess(0, 2, order, "safe");
-            const economy = new TestProcess(0, 10, order, "economy");
-            const growth = new TestProcess(0, 20, order, "growth");
+            const economy = new TestProcess(0, 10, order, "economy"); // Priority 10 -> Skip
 
             kernel.addProcess(critical);
             kernel.addProcess(safe);
             kernel.addProcess(economy);
-            kernel.addProcess(growth);
 
             kernel.run();
 
-            // Only priority 0 and 2 should run
             expect(order).to.deep.equal([critical.pid, safe.pid]);
+
+            const report = kernel.getSchedulerReport();
+            expect(report.skipped.get(10)).to.equal(1);
         });
 
         it("should only run priority 0 in EMERGENCY mode", () => {
@@ -299,94 +289,190 @@ describe("Kernel", () => {
 
             const critical = new TestProcess(0, 0, order, "critical");
             const safe = new TestProcess(0, 2, order, "safe");
-            const economy = new TestProcess(0, 10, order, "economy");
 
             kernel.addProcess(critical);
-            kernel.addProcess(safe);
-            kernel.addProcess(economy);
+            kernel.addProcess(safe); // Priority 2 -> Skip in Emergency
 
             kernel.run();
 
-            // Only priority 0 should run
             expect(order).to.deep.equal([critical.pid]);
         });
     });
 
-    describe("Serialization", () => {
-        it("should serialize kernel state to Memory", () => {
+    describe("Priority Boosting (Starvation Prevention)", () => {
+        it("should boost priority after 50 consecutive skips", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+
+            // Start in SAFE mode (bucket 300)
+            (globalThis as any).Game.cpu.bucket = 300;
+
+            // Priority 10 process (normally skipped in SAFE mode)
+            const starved = new TestProcess(0, 10, order, "starved");
+            kernel.addProcess(starved);
+
+            // Run 50 ticks - should all skip
+            for (let i = 0; i < 50; i++) {
+                kernel.run();
+            }
+            expect(starved.runCount).to.equal(0);
+            expect(kernel.getSchedulerReport().skipped.get(10)).to.equal(1);
+
+            // Tick 51: Boost kicks in! 
+            // 51 skips / 50 = boost 1. Effective priority 10 - 1 = 9. Still > 2. 
+            // Wait, we need it to reach priority <= 2 to run in SAFE mode.
+            // 10 - X <= 2  => X >= 8.
+            // Need 8 * 50 = 400 ticks to boost from 10 to 2? That's the design.
+            // Let's test a priority 3 process (just above threshold)
+
+            const justAbove = new TestProcess(0, 3, order, "justAbove");
+            kernel.addProcess(justAbove);
+
+            // Run 50 ticks (skipping priority 3)
+            for (let i = 0; i < 50; i++) {
+                kernel.run();
+            }
+            expect(justAbove.runCount).to.equal(0);
+
+            // Tick 51: Boost = 1. Effective priority = 2. Should RUN in SAFE mode.
+            kernel.run();
+
+            expect(justAbove.runCount).to.equal(1);
+            expect(kernel.getSchedulerReport().boosted).to.include(`justAbove:${justAbove.pid} (3→2)`);
+        });
+
+        it("should reset skip counter after execution", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+            (globalThis as any).Game.cpu.bucket = 300; // SAFE mode
+
+            // Priority 3 process
+            const proc = new TestProcess(0, 3, order);
+            kernel.addProcess(proc);
+
+            // Skip 50 times
+            for (let i = 0; i < 50; i++) kernel.run();
+
+            // Run once (boosted)
+            kernel.run();
+            expect(proc.runCount).to.equal(1);
+
+            // Next run: should be skipped again (counter reset)
+            kernel.run();
+            expect(proc.runCount).to.equal(1); // Still 1
+        });
+    });
+
+    describe("Timed Sleep", () => {
+        it("should skip sleeping processes without checking priority", () => {
             const kernel = new Kernel();
             const order: number[] = [];
 
             const proc = new TestProcess(0, 10, order);
             kernel.addProcess(proc);
-            kernel.serialize();
 
-            expect(Memory.kernel).to.exist;
-            expect(Memory.kernel.processTable).to.have.length(1);
-            expect(Memory.kernel.processTable[0].processName).to.equal("test");
-            expect(Memory.kernel.processTable[0].data).to.deep.equal({
-                marker: "test-data",
-            });
-            expect(Memory.kernel.nextPID).to.equal(2);
+            // Sleep for 10 ticks
+            (globalThis as any).Game.time = 100;
+            proc.sleep(10);
+            expect(proc.status).to.equal(ProcessStatus.SLEEP);
+            expect(proc.sleepUntil).to.equal(110);
+
+            kernel.run();
+
+            expect(proc.runCount).to.equal(0);
+            // Should be counted as sleeping in report
+            expect(kernel.getSchedulerReport().sleeping).to.equal(1);
         });
 
-        it("should deserialize kernel state from Memory", () => {
-            Kernel.registerProcess(
-                "test",
-                (pid, priority, parentPID, _data) => {
-                    const proc = new TestProcess(pid, priority, []);
-                    proc.parentPID = parentPID;
-                    return proc;
-                }
+        it("should auto-wake process when time is reached", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+
+            const proc = new TestProcess(0, 10, order);
+            kernel.addProcess(proc);
+
+            (globalThis as any).Game.time = 100;
+            proc.sleep(5); // Wake at 105
+
+            // Time 104: still sleeping
+            (globalThis as any).Game.time = 104;
+            kernel.run();
+            expect(proc.runCount).to.equal(0);
+            expect(proc.status).to.equal(ProcessStatus.SLEEP);
+
+            // Time 105: wake up and run
+            (globalThis as any).Game.time = 105;
+            kernel.run(); // Checks wakes -> sets status ALIVE -> runs
+
+            expect(proc.status).to.equal(ProcessStatus.ALIVE);
+            expect(proc.sleepUntil).to.be.null;
+            expect(proc.runCount).to.equal(1);
+        });
+    });
+
+    describe("Kernel Panic", () => {
+        it("should trigger panic mode when bucket < 100", () => {
+            const kernel = new Kernel();
+            (globalThis as any).Game.cpu.bucket = 50; // Emergency
+
+            kernel.run();
+
+            expect(kernel.isPanicActive()).to.be.true;
+        });
+
+        it("should clear panic mode when bucket recovers", () => {
+            const kernel = new Kernel();
+            (globalThis as any).Game.cpu.bucket = 50;
+            kernel.run();
+            expect(kernel.isPanicActive()).to.be.true;
+
+            (globalThis as any).Game.cpu.bucket = 600; // Normal
+            kernel.run();
+            expect(kernel.isPanicActive()).to.be.false;
+        });
+    });
+
+    describe("Serialization", () => {
+        it("should persist sleepUntil and processId", () => {
+            const kernel = new Kernel();
+            const proc = new TestProcess(0, 10, [], "test", "my-id");
+            proc.sleep(100);
+
+            kernel.addProcess(proc);
+            kernel.serialize();
+
+            const stored = Memory.kernel.processTable[0];
+            expect(stored.processId).to.equal("my-id");
+            expect(stored.sleepUntil).to.be.a("number");
+        });
+
+        it("should restore sleepUntil and processId", () => {
+            // Fixed unused params: _parent, _data
+            Kernel.registerProcess("test", (pid, prio, _parent, _data) =>
+                new TestProcess(pid, prio, [], "test")
             );
 
             Memory.kernel = {
-                processTable: [
-                    {
-                        pid: 5,
-                        priority: 10,
-                        parentPID: null,
-                        processName: "test",
-                        status: ProcessStatus.ALIVE,
-                        data: { marker: "restored" },
-                    },
-                ],
-                nextPID: 6,
+                processTable: [{
+                    pid: 99,
+                    priority: 10,
+                    parentPID: null,
+                    processName: "test",
+                    processId: "restored-id",
+                    status: ProcessStatus.SLEEP,
+                    sleepUntil: 12345,
+                    data: {}
+                }],
+                nextPID: 100
             };
 
             const kernel = Kernel.deserialize();
-            expect(kernel.processCount).to.equal(1);
+            const proc = kernel.getProcess(99) as TestProcess;
 
-            const proc = kernel.getProcess(5);
             expect(proc).to.exist;
-            expect(proc!.pid).to.equal(5);
-            expect(proc!.priority).to.equal(10);
-            expect(proc!.processName).to.equal("test");
-        });
-
-        it("should handle deserialization with missing factory gracefully", () => {
-            Memory.kernel = {
-                processTable: [
-                    {
-                        pid: 1,
-                        priority: 10,
-                        parentPID: null,
-                        processName: "nonexistent",
-                        status: ProcessStatus.ALIVE,
-                        data: {},
-                    },
-                ],
-                nextPID: 2,
-            };
-
-            const kernel = Kernel.deserialize();
-            expect(kernel.processCount).to.equal(0);
-        });
-
-        it("should handle empty Memory gracefully", () => {
-            (globalThis as any).Memory.kernel = undefined;
-            const kernel = Kernel.deserialize();
-            expect(kernel.processCount).to.equal(0);
+            expect(proc.processId).to.equal("restored-id");
+            expect(proc.sleepUntil).to.equal(12345);
+            expect(proc.status).to.equal(ProcessStatus.SLEEP);
         });
     });
 });

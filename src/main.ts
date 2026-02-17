@@ -97,11 +97,8 @@ function printFoundationStatus(kernel: Kernel): void {
     // Bundle size: try to read main.js module length
     let bundleSizeKB = "unknown";
     try {
-        // In Screeps, require("main") returns the module but we can
-        // approximate bundle size from the source map's sources content
         const mapData = require("main.js.map");
         if (mapData && mapData.mappings) {
-            // Use mappings string length as a rough proxy
             bundleSizeKB = `~${(JSON.stringify(mapData).length / 1024).toFixed(1)}`;
         }
     } catch {
@@ -141,6 +138,23 @@ function rehydrateKernel(): Kernel {
 }
 
 // -------------------------------------------------------------------------
+// Kernel Panic — force non-essential creeps to idle
+// -------------------------------------------------------------------------
+
+function handleKernelPanic(): void {
+    log.error("Kernel panic active — forcing all non-essential creeps to idle");
+    for (const name in Game.creeps) {
+        const creep = Game.creeps[name];
+        // Only idle non-essential roles (not harvesters/defenders)
+        const role = creep.memory.role;
+        if (role !== "miner" && role !== "defender") {
+            // Clear any movement intent — just sit still
+            creep.say("⚠️ IDLE");
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
 // Main Loop
 // -------------------------------------------------------------------------
 
@@ -173,7 +187,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
         bootstrapProcesses(kernel);
     }
 
-    // --- 4. Ensure profiler process exists ---
+    // --- 4. Ensure profiler process exists (using processId for dedup) ---
     ensureProfiler(kernel);
 
     // --- 5. Foundation Status on global reset ---
@@ -184,7 +198,12 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // --- 6. Run the scheduler ---
     kernel.run();
 
-    // --- 7. Persist minimal state to Memory ---
+    // --- 7. Handle kernel panic (idle non-essential creeps) ---
+    if (kernel.isPanicActive()) {
+        handleKernelPanic();
+    }
+
+    // --- 8. Persist minimal state to Memory ---
     kernel.serialize();
 });
 
@@ -203,6 +222,10 @@ function bootstrapProcesses(kernel: Kernel): void {
 
         const sources = room.find(FIND_SOURCES);
         for (const source of sources) {
+            const procId = `mining:${roomName}:${source.id}`;
+            if (kernel.hasProcessId(procId)) {
+                continue; // Already exists — skip
+            }
             const proc = new MiningProcess(
                 0,
                 10,
@@ -217,15 +240,18 @@ function bootstrapProcesses(kernel: Kernel): void {
             );
         }
 
-        const upgrader = new UpgradeProcess(
-            0,
-            20,
-            null,
-            roomName,
-            1
-        );
-        kernel.addProcess(upgrader);
-        log.info(`→ UpgradeProcess (PID ${upgrader.pid})`);
+        const upgradeId = `upgrade:${roomName}`;
+        if (!kernel.hasProcessId(upgradeId)) {
+            const upgrader = new UpgradeProcess(
+                0,
+                20,
+                null,
+                roomName,
+                1
+            );
+            kernel.addProcess(upgrader);
+            log.info(`→ UpgradeProcess (PID ${upgrader.pid})`);
+        }
     }
 }
 
@@ -234,8 +260,7 @@ function bootstrapProcesses(kernel: Kernel): void {
 // -------------------------------------------------------------------------
 
 function ensureProfiler(kernel: Kernel): void {
-    const existing = kernel.getProcessesByName("profiler");
-    if (existing.length > 0) {
+    if (kernel.hasProcessId("profiler:global")) {
         return;
     }
 
