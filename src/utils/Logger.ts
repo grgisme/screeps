@@ -65,6 +65,10 @@ export class Logger {
         this.log(LogLevel.ERROR, msg);
     }
 
+    alert(msg: string): void {
+        this.log(LogLevel.ERROR, `<span style='color:#ff0000; font-weight:bold'>[ALERT]</span> ${msg}`);
+    }
+
     // -----------------------------------------------------------------------
     // Core
     // -----------------------------------------------------------------------

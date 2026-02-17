@@ -31,6 +31,45 @@ export class RemoteMiningOverlord extends Overlord {
         const room = Game.rooms[this.targetRoom];
         if (!room) return; // No visibility yet
 
+        // 0. Defense Protocol: Detect Invaders
+        const hostiles = room.find(FIND_HOSTILE_CREEPS).filter(c =>
+            c.body.some(p => p.type === ATTACK || p.type === RANGED_ATTACK)
+        );
+
+        if (hostiles.length > 0) {
+            if (!Memory.rooms[room.name].isDangerous) {
+                log.alert(`Invader detected in ${this.targetRoom}! Suspending mining operations.`);
+                Memory.rooms[room.name].isDangerous = true;
+            }
+            Memory.rooms[room.name].dangerUntil = Game.time + 100; // Extend danger period
+        } else {
+            // Check if danger expired
+            if (Memory.rooms[room.name].isDangerous && Game.time > (Memory.rooms[room.name].dangerUntil || 0)) {
+                delete Memory.rooms[room.name].isDangerous;
+                delete Memory.rooms[room.name].dangerUntil;
+                log.info(`Remote room ${this.targetRoom} is safe now. Resuming operations.`);
+            }
+        }
+
+        // If dangerous, suspend spawning and infra maintenance (but keep existing creeps alive/fleeing)
+        if (Memory.rooms[room.name].isDangerous) {
+            // Still populate creep lists so they can run (fly home)
+            this.miners = this.zergs
+                .filter(z => (z.memory as any).role === "miner")
+                .map(z => {
+                    const mem = (z.memory as any);
+                    if (!mem.state || !mem.state.siteId) return null;
+                    return new Miner(z.creep, this.sites.find(s => s.source.id === mem.state.siteId));
+                })
+                .filter(m => m !== null) as Miner[];
+
+            this.haulers = this.zergs
+                .filter(z => (z.memory as any).role === "hauler")
+                .map(z => new Transporter(z.creep, this));
+
+            return;
+        }
+
         // 1. Instantiate Sites if not done
         if (this.sites.length === 0) {
             const sources = room.find(FIND_SOURCES);

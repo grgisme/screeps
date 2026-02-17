@@ -165,4 +165,61 @@ export class Zerg {
             }
         }
     }
+    /**
+     * Check for threats and flee if necessary.
+     * Returns true if the creep is fleeing and should abort other logic.
+     */
+    avoidDanger(): boolean {
+        const room = this.creep.room;
+        const mem = Memory.rooms[room.name];
+
+        // 1. Check Danger Signs
+        let dangerous = false;
+        if (mem && mem.isDangerous) {
+            dangerous = true;
+        } else {
+            // Instant check for visible hostiles
+            const hostiles = this.pos.findInRange(FIND_HOSTILE_CREEPS, 5, {
+                filter: (c) => c.body.some(p => p.type === ATTACK || p.type === RANGED_ATTACK)
+            });
+            if (hostiles.length > 0) {
+                dangerous = true;
+            }
+        }
+
+        // 2. Flee if Dangerous
+        if (dangerous) {
+            // Drop current task
+            this.task = null;
+            this.creep.say("😨 FLEE");
+
+            // Flee to Home Room (Storage or Spawn)
+            const homeName = this.creep.memory.homeRoom;
+            if (homeName) {
+                // If we are already in home room and it's dangerous, maybe move to Spawn/Controller/Rampart?
+                // But typically this logic is for remote creeps.
+
+                const homeRoom = Game.rooms[homeName];
+                let target: RoomPosition | undefined;
+
+                if (homeRoom) {
+                    if (homeRoom.storage) target = homeRoom.storage.pos;
+                    else {
+                        const spawns = homeRoom.find(FIND_MY_SPAWNS);
+                        if (spawns.length > 0) target = spawns[0].pos;
+                    }
+                } else {
+                    // Home room not visible? Just move to coords 25,25 of home room (blind)
+                    target = new RoomPosition(25, 25, homeName);
+                }
+
+                if (target) {
+                    this.travelTo(target, 5); // Stand near storage
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }

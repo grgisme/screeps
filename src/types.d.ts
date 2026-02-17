@@ -56,6 +56,12 @@ interface RoomPosition {
     getPositionAtDirection(direction: DirectionConstant): RoomPosition | null;
 }
 
+interface RoomMemory {
+    isDangerous?: boolean;
+    dangerUntil?: number;
+    [key: string]: any;
+}
+
 interface Memory {
     kernel: KernelMemory;
     creeps: { [name: string]: CreepMemory };

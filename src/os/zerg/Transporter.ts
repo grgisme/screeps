@@ -24,6 +24,8 @@ export class Transporter extends Zerg {
     }
 
     run(): void {
+        if (this.avoidDanger()) return;
+
         if (!this.request) {
             this.idle();
         }

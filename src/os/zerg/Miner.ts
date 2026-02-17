@@ -10,6 +10,8 @@ export class Miner extends Zerg {
     }
 
     run(): void {
+        if (this.avoidDanger()) return;
+
         if (!this.site || !this.site.containerPos) return;
 
         // 1. Move to container position

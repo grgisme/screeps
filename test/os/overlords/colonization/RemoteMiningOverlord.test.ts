@@ -24,6 +24,7 @@ describe("RemoteMiningOverlord", () => {
             }
         } as any;
         (globalThis as any).Game.rooms["W2N1"] = room;
+        (globalThis as any).Memory.rooms["W2N1"] = {};
         (globalThis as any).Game.time = 100; // Trigger infrastructure check
 
         // Mock Colony

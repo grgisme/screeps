@@ -159,6 +159,7 @@
 
 (globalThis as any).Memory = {
     creeps: {},
+    rooms: {},
     kernel: {
         processTable: [],
         nextPID: 1,
@@ -194,7 +195,7 @@
 // RoomPosition (minimal)
 // ---------------------------------------------------------------------------
 
-class MockRoomPosition {
+export class MockRoomPosition {
     x: number;
     y: number;
     roomName: string;
@@ -242,6 +243,10 @@ class MockRoomPosition {
         return Math.max(dx, dy);
     }
 
+    findInRange<T>(_type: number, _range: number, _opts?: any): T[] {
+        return [] as T[];
+    }
+
     getDirectionTo(target: RoomPosition | { pos: RoomPosition }): DirectionConstant {
         const pos = "pos" in target ? target.pos : target;
         if (this.x === pos.x && this.y === pos.y) return 1 as DirectionConstant; // Same pos
@@ -249,39 +254,14 @@ class MockRoomPosition {
         const dx = pos.x - this.x;
         const dy = pos.y - this.y;
 
-        if (dx > 0) {
-            if (dy > 0) return 4 as DirectionConstant; // BOTTOM_RIGHT
-            if (dy < 0) return 2 as DirectionConstant; // TOP_RIGHT
-            return 3 as DirectionConstant; // RIGHT
-        }
-        if (dx < 0) {
-            if (dy > 0) return 6 as DirectionConstant; // BOTTOM_LEFT
-            if (dy < 0) return 8 as DirectionConstant; // TOP_LEFT
-            return 7 as DirectionConstant; // LEFT
-        }
-        if (dy > 0) return 5 as DirectionConstant; // BOTTOM
-        if (dy < 0) return 1 as DirectionConstant; // TOP
-
-        return 1 as DirectionConstant;
+        if (dx > 0) return 3; // Right
+        if (dx < 0) return 7; // Left
+        if (dy > 0) return 5; // Down
+        if (dy < 0) return 1; // Up
+        return 1;
     }
 
-    lookFor<T>(type: LookConstant): T[] {
-        if (type === LOOK_CREEPS) {
-            // Scan global creeps to see if any are at this pos
-            const creeps = (globalThis as any).Game.creeps;
-            const results: any[] = [];
-            for (const name in creeps) {
-                const creep = creeps[name];
-                if (creep.pos.x === this.x && creep.pos.y === this.y && creep.pos.roomName === this.roomName) {
-                    results.push(creep);
-                }
-            }
-            return results as T[];
-        }
-        if (type === LOOK_STRUCTURES) {
-            // Return empty for now as we simulate open terrain
-            return [] as T[];
-        }
+    lookFor<T>(_type: string): T[] {
         return [] as T[];
     }
 }
@@ -289,34 +269,28 @@ class MockRoomPosition {
 (globalThis as any).RoomPosition = MockRoomPosition;
 
 // ---------------------------------------------------------------------------
-// Room (minimal)
+// Room (very minimal)
 // ---------------------------------------------------------------------------
 
-class MockRoom {
-    static serializePath(
-        path: Array<{ x: number; y: number; dx: number; dy: number; direction: number }>
-    ): string {
-        let result = "";
-        for (const step of path) {
-            result += `${step.x}${step.y}${step.direction}`;
-        }
-        return result;
+export class MockRoom {
+    name: string;
+    controller?: {
+        my: boolean;
+        owner?: { username: string };
+        reservation?: { username: string };
+    };
+    storage?: { pos: MockRoomPosition; store: any };
+
+    constructor(name: string) {
+        this.name = name;
     }
 
-    static deserializePath(
-        serialized: string
-    ): Array<{ x: number; y: number; dx: number; dy: number; direction: number }> {
-        const path: Array<{ x: number; y: number; dx: number; dy: number; direction: number }> = [];
-        for (let i = 0; i < serialized.length; i += 3) {
-            path.push({
-                x: parseInt(serialized[i], 10),
-                y: parseInt(serialized[i + 1], 10),
-                dx: 0,
-                dy: 0,
-                direction: parseInt(serialized[i + 2], 10),
-            });
-        }
-        return path;
+    find(_type: number): any[] {
+        return [];
+    }
+
+    lookForAt(_type: string, _x: number, _y: number): any[] {
+        return [];
     }
 }
 
@@ -326,28 +300,60 @@ class MockRoom {
 // Creep (minimal)
 // ---------------------------------------------------------------------------
 
-class MockCreep {
+export class MockCreep {
     name: string;
-    room: MockRoom | null = null;
-    memory: any = {};
-    pos: MockRoomPosition = new MockRoomPosition(0, 0, "room");
-    store: any = { getCapacity: () => 50, getFreeCapacity: () => 50, getUsedCapacity: () => 0 };
-    ticksToLive: number = 1500;
+    room: MockRoom;
+    pos: MockRoomPosition;
+    store: any;
+    memory: any;
+    body: any[];
+    hits: number;
+    hitsMax: number;
 
-    constructor(id: string) {
-        this.name = id;
+    constructor(name: string, roomName: string) {
+        this.name = name;
+        this.room = new MockRoom(roomName);
+        this.pos = new MockRoomPosition(25, 25, roomName);
+        this.store = {
+            getUsedCapacity: () => 0,
+            getFreeCapacity: () => 50,
+            energy: 0
+        };
+        this.memory = {};
+        this.body = [];
+        this.hits = 100;
+        this.hitsMax = 100;
     }
 
-    moveTo(_target: RoomPosition | { pos: RoomPosition }): number {
-        return 0; // OK
-    }
-
-    harvest(_target: Source): number {
-        return 0; // OK
-    }
+    say(_msg: string): void { }
+    move(_direction: number): number { return 0; }
+    transfer(_target: any, _resource: string): number { return 0; }
+    withdraw(_target: any, _resource: string): number { return 0; }
+    harvest(_target: any): number { return 0; }
+    pickup(_target: any): number { return 0; }
+    repair(_target: any): number { return 0; }
+    build(_target: any): number { return 0; }
 }
 
 (globalThis as any).Creep = MockCreep;
+
+// ---------------------------------------------------------------------------
+// Colony (minimal)
+// ---------------------------------------------------------------------------
+
+export class MockColony {
+    name: string;
+    room: MockRoom;
+    hatchery: { enqueue: (req: any) => void };
+    logistics: { requestTask: () => void };
+
+    constructor(name: string) {
+        this.name = name;
+        this.room = new MockRoom(name);
+        this.hatchery = { enqueue: () => { } };
+        this.logistics = { requestTask: () => { } };
+    }
+}
 
 // ---------------------------------------------------------------------------
 // _heap global init
@@ -367,6 +373,7 @@ class MockCreep {
 export function resetMocks(): void {
     (globalThis as any).Memory = {
         creeps: {},
+        rooms: {},
         kernel: {
             processTable: [],
             nextPID: 1,
