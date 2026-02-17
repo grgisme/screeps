@@ -4,6 +4,7 @@ import { MiningOverlord } from "../processes/overlords/MiningOverlord";
 import { ConstructionOverlord } from "../processes/overlords/ConstructionOverlord";
 import { BunkerLayout } from "./infrastructure/BunkerLayout";
 import { LogisticsNetwork } from "./logistics/LogisticsNetwork";
+import { Hatchery } from "./colony/Hatchery";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };
@@ -21,6 +22,7 @@ export class Colony {
     overlords: Overlord[] = [];
     zergs: Map<string, Zerg> = new Map();
     logistics: LogisticsNetwork;
+    hatchery: Hatchery;
 
     constructor(roomName: string) {
         this.name = roomName;
@@ -37,9 +39,11 @@ export class Colony {
         if (this.room) {
             this.scan();
             this.logistics = new LogisticsNetwork(this);
+            this.hatchery = new Hatchery(this);
             this.initOverlords();
         } else {
             this.logistics = new LogisticsNetwork(this);
+            this.hatchery = new Hatchery(this);
         }
     }
 
@@ -65,6 +69,7 @@ export class Colony {
     refresh(): void {
         this.room = Game.rooms[this.name];
         this.logistics.refresh();
+        this.hatchery.refresh();
 
         // Detect RCL change
         if (this.room && this.room.controller) {
@@ -111,6 +116,8 @@ export class Colony {
         for (const overlord of this.overlords) {
             overlord.run();
         }
+
+        this.hatchery.run();
 
         for (const zerg of this.zergs.values()) {
             zerg.run();

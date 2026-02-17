@@ -16,7 +16,10 @@ describe("TransporterOverlord", () => {
         mockColony = {
             room: room,
             name: "W1N1",
-            logistics: new LogisticsNetwork(undefined as any) // We'll patch this
+            logistics: new LogisticsNetwork(undefined as any), // We'll patch this
+            hatchery: {
+                enqueue: (req: any) => { console.log(`[MockHatchery] Enqueued ${req.name}`); }
+            }
         };
         mockColony.logistics.colony = mockColony;
         mockColony.logistics.providers = [];
@@ -69,6 +72,6 @@ describe("TransporterOverlord", () => {
 
         console.log = originalLog;
 
-        expect(lastLog).to.contain("Requesting spawn");
+        expect(lastLog).to.contain("Enqueued spawn request");
     });
 });

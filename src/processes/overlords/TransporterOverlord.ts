@@ -41,30 +41,32 @@ export class TransporterOverlord extends Overlord {
 
         // Simple threshold: buffer of 2000 or ratio
         if (transportPower < deficit) {
-            // Request spawn
-            // We need a way to request spawns. Overlord doesn't have it standard yet in this context?
-            // "request a new Transporter spawn from the Hatchery."
-            // Assuming we have a Hatchery or SpawnOverlord.
-            const body = this.generateTransporterBody();
-            console.log(`TransporterOverlord: Requesting spawn. Cap: ${transportPower}, Deficit: ${deficit}. Body: ${body}`);
+            // Request spawn via Hatchery
+            // Priority: High (Logistics is critical) -> Let's say 5? 
+            // "Tiers: 1=Critical (Miners/Queens)..." -> Wait, 1 is Highest?
+            // "Tiers: 1=Critical (Miners/Queens), 2=Defensive, 3=Economic, 4=Strategic."
+            // Logistics is likely Tier 3 (Economic) or 1 (Critical)?
+            // Transporters are critical for the colony to function. Let's use Priority 1 or 2.
+            // Let's go with 1 for now as without transporters everything dies.
 
-            // TODO: Hook into Colony.hatchery.enqueue(...)
+            // Template: [CARRY, CARRY, MOVE] or similar.
+            // "Standard 1:1 CARRY:MOVE ratio"
+            const template = [CARRY, MOVE];
+
+            this.colony.hatchery.enqueue({
+                priority: 1, // Critical
+                bodyTemplate: template,
+                overlord: this,
+                name: `Transporter_${this.colony.name}_${Game.time}` // Optional name
+            });
+
+            console.log(`TransporterOverlord: Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
         }
     }
 
-    private generateTransporterBody(): BodyPartConstant[] {
-        // Standard 1:1 CARRY:MOVE ratio
-        // Cap at maybe 25 pairs (50 parts) -> 2500 cost, 1250 capacity
-        const body: BodyPartConstant[] = [];
-        const energyAvailable = this.colony.room.energyCapacityAvailable;
-        const maxParts = Math.floor(energyAvailable / 100); // 50 (CARRY) + 50 (MOVE) = 100
-        const pairs = Math.min(maxParts, 25);
-
-        for (let i = 0; i < pairs; i++) {
-            body.push(CARRY, MOVE);
-        }
-        return body;
-    }
+    // private generateTransporterBody(): BodyPartConstant[] {
+    //     return [];
+    // }
 
     private calculateTransportDeficit(): number {
         // Sum of all requests amount?

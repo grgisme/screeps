@@ -81,6 +81,7 @@
 (globalThis as any).FIND_MY_STRUCTURES = 108;
 (globalThis as any).FIND_STRUCTURES = 107;
 (globalThis as any).FIND_MY_SPAWNS = 112;
+(globalThis as any).FIND_MY_CREEPS = 102;
 
 (globalThis as any).STRUCTURE_SPAWN = "spawn";
 (globalThis as any).STRUCTURE_EXTENSION = "extension";
@@ -129,6 +130,11 @@
 (globalThis as any).WORK = "work";
 (globalThis as any).CARRY = "carry";
 (globalThis as any).MOVE = "move";
+(globalThis as any).ATTACK = "attack";
+(globalThis as any).RANGED_ATTACK = "ranged_attack";
+(globalThis as any).HEAL = "heal";
+(globalThis as any).TOUGH = "tough";
+(globalThis as any).CLAIM = "claim";
 
 (globalThis as any).BODYPART_COST = {
     work: 100,

@@ -50,6 +50,16 @@ The `LogisticsNetwork` acts as a centralized broker for resource transport withi
     -   **State**: Tracks incoming and outgoing resource reservations using a ledger system to prevent "Energy Racing".
     -   **Buffer Management**: Storage acts as a provider in **Surplus Mode** (>100k) and a requester in **Deficit Mode** (<100k).
 
+### 2.6. Hatchery (`src/os/colony/Hatchery.ts`)
+The `Hatchery` acts as an automated foundry for the Colony.
+
+- **Role**:
+    -   **Spawn Management**: Controls all `StructureSpawn` and `StructureExtension` instances.
+    -   **Priority Queue**: Manages a priority-based queue for spawn requests from Overlords.
+    -   **Dynamic Body Generator**: Uses `CreepBody.grow()` to scale creep bodies up to the room's energy capacity (capped at 50 parts).
+    -   **Emergency Mode**: If the colony has zero creeps, it overrides the queue to immediately spawn a "Bootstrapper" creep to recover.
+    -   **Logistics Integration**: Monitors energy levels and registers a single consolidated `LogisticsRequest` (Priority: Critical) to refill the spawn energy pool when a deficit exists.
+
 ### 3. Overlords (`src/processes/overlords/*.ts`)
 An **Overlord** is a specialized manager for a specific aspect of the Colony. It automates testing, creeping, and tasks.
 
@@ -79,7 +89,7 @@ The codebase contains some standalone processes (e.g., `MiningProcess.ts`) from 
 -   **New Code**: Should use the `Overlord` pattern within a `Colony`.
 -   **Legacy Code**: `MiningProcess`, `UpgradeProcess`. These are effective but less integrated. The goal is to migrate these logic blocks into Overlords.
 
-### 2.6. Hauler Fleet ("The Hands") - Phase 3
+### 2.7. Hauler Fleet ("The Hands") - Phase 3
 
 The Hauler Fleet executes the logistics plan.
 
