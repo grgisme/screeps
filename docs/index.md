@@ -12,7 +12,7 @@ The bot operates on a **Kernel OS** architecture, using a multi-process schedule
 4.  **Traffic Management**: Advanced path caching and priority-based shoving to reduce congestion.
 5.  **Strategic Planning**: Automated bunker layouts based on Distance Transform logic.
 
-## Recent Advancements (v1.0.11)
+## Recent Advancements (v1.0.13)
 - **Kernel OS Core**: Implemented a robust process scheduler with priority-based execution.
 - **Overlord Overhaul**: Transitioned from global managers to localized Overlords for better scalability.
 - **TrafficManager**: Centralized movement logic with path caching and creep shoving.
