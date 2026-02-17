@@ -44,8 +44,9 @@ The `LogisticsNetwork` acts as a centralized broker for resource transport withi
 
 - **Role**:
     -   **Registry**: Maintains transient lists of `providers` (supply), `requesters` (demand), and `buffers` (storage).
-    -   **Matching**: (Planned) Efficiently matches providers to requesters to minimize travel time.
-    -   **State**: Tracks incoming and outgoing resource reservations to prevent over-delivery or double-booking.
+    -   **Matching**: Pairs `providers` to `requesters` based on priority and distance to minimize travel time.
+    -   **State**: Tracks incoming and outgoing resource reservations using a ledger system to prevent "Energy Racing" (double-booking).
+    -   **Buffer Management**: Automatically utilizes Storage as a provider when in surplus.
 
 ### 3. Overlords (`src/processes/overlords/*.ts`)
 An **Overlord** is a specialized manager for a specific aspect of the Colony. It automates testing, creeping, and tasks.

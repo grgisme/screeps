@@ -179,6 +179,8 @@ src/
 ├── os/infrastructure/
 │   ├── BunkerLayout.ts        # Base layout templates
 │   └── TrafficManager.ts      # (Experimental) Priority-based movement
+├── os/logistics/
+│   └── LogisticsNetwork.ts    # Centralized resource broker
 └── zerg/
     └── Zerg.ts                # Creep wrapper + path cache
 ```
