@@ -4,7 +4,7 @@ const path = require('path');
 
 // 1. Load your config
 // Config is in src/.screeps.json based on file system
-const configPath = path.join(__dirname, 'src', '.screeps.json');
+const configPath = path.join(__dirname, '.screeps.json');
 if (!fs.existsSync(configPath)) {
     console.error("Config file not found at:", configPath);
     process.exit(1);
