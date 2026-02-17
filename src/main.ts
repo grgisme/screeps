@@ -22,6 +22,31 @@ const log = new Logger("OS");
     return `Log level set to: ${level}`;
 };
 
+/**
+ * Force an error from deep inside a process-style call stack.
+ * Used to verify source map resolution shows the correct .ts file + line.
+ */
+(globalThis as any).testError = (): string => {
+    function deepNestedCall(): never {
+        throw new Error("TEST: Deliberate error from deeply nested code path");
+    }
+    function middleLayer(): never {
+        return deepNestedCall();
+    }
+    try {
+        middleLayer();
+    } catch (e: unknown) {
+        if (e instanceof Error) {
+            const mapped = ErrorMapper.mapTrace(e.stack ?? e.message);
+            console.log(
+                `<span style='color:#e74c3c'>[TEST ERROR]</span> ${mapped}`
+            );
+            return mapped;
+        }
+    }
+    return "No error caught";
+};
+
 // -------------------------------------------------------------------------
 // Register all process factories (must happen before deserialization)
 // -------------------------------------------------------------------------
@@ -61,6 +86,47 @@ Kernel.registerProcess(
 );
 
 // -------------------------------------------------------------------------
+// Foundation Status Report — printed on every global reset
+// -------------------------------------------------------------------------
+
+function printFoundationStatus(kernel: Kernel): void {
+    const sourceMapActive = ErrorMapper.isActive();
+    const priorityLevels = kernel.getPriorityLevels();
+    const mode = kernel.getSchedulerMode();
+
+    // Bundle size: try to read main.js module length
+    let bundleSizeKB = "unknown";
+    try {
+        // In Screeps, require("main") returns the module but we can
+        // approximate bundle size from the source map's sources content
+        const mapData = require("main.js.map");
+        if (mapData && mapData.mappings) {
+            // Use mappings string length as a rough proxy
+            bundleSizeKB = `~${(JSON.stringify(mapData).length / 1024).toFixed(1)}`;
+        }
+    } catch {
+        bundleSizeKB = "N/A";
+    }
+
+    const statusLines = [
+        `═══════════════════════════════════════════`,
+        `  FOUNDATION STATUS (v${SCRIPT_VERSION})`,
+        `═══════════════════════════════════════════`,
+        `  Source Mapping:  ${sourceMapActive ? "✅ Active" : "❌ Inactive"}`,
+        `  Bundle Size:     ${bundleSizeKB} KB`,
+        `  Scheduler:       ${priorityLevels.length} priority levels ${JSON.stringify(priorityLevels)}`,
+        `  Processes:       ${kernel.processCount} running`,
+        `  Bucket:          ${Game.cpu.bucket} / 10000`,
+        `  Mode:            ${mode}`,
+        `═══════════════════════════════════════════`,
+    ];
+
+    console.log(
+        `<span style='color:#2ecc71'>${statusLines.join("\n")}</span>`
+    );
+}
+
+// -------------------------------------------------------------------------
 // Rehydration — restore Kernel from Memory after global reset
 // -------------------------------------------------------------------------
 
@@ -97,7 +163,6 @@ export const loop = ErrorMapper.wrapLoop(() => {
         if (cached) {
             kernel = cached;
         } else {
-            // Shouldn't normally happen, but recover gracefully
             log.warning("Kernel not in heap — deserializing from Memory");
             kernel = rehydrateKernel();
         }
@@ -111,10 +176,15 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // --- 4. Ensure profiler process exists ---
     ensureProfiler(kernel);
 
-    // --- 5. Run the scheduler ---
+    // --- 5. Foundation Status on global reset ---
+    if (isReset) {
+        printFoundationStatus(kernel);
+    }
+
+    // --- 6. Run the scheduler ---
     kernel.run();
 
-    // --- 6. Persist minimal state to Memory ---
+    // --- 7. Persist minimal state to Memory ---
     kernel.serialize();
 });
 
@@ -131,16 +201,15 @@ function bootstrapProcesses(kernel: Kernel): void {
 
         log.info(`Bootstrapping processes for room ${roomName}`);
 
-        // One MiningProcess per source
         const sources = room.find(FIND_SOURCES);
         for (const source of sources) {
             const proc = new MiningProcess(
-                0, // PID will be assigned by kernel
-                10, // Priority: mining is critical
+                0,
+                10,
                 null,
                 source.id,
                 roomName,
-                1 // 1 miner per source to start
+                1
             );
             kernel.addProcess(proc);
             log.info(
@@ -148,10 +217,9 @@ function bootstrapProcesses(kernel: Kernel): void {
             );
         }
 
-        // One UpgradeProcess per room
         const upgrader = new UpgradeProcess(
             0,
-            20, // Priority: upgrading is secondary to mining
+            20,
             null,
             roomName,
             1
@@ -171,7 +239,7 @@ function ensureProfiler(kernel: Kernel): void {
         return;
     }
 
-    const proc = new ProfilerProcess(0, 0, null); // Priority 0 — runs first
+    const proc = new ProfilerProcess(0, 0, null);
     kernel.addProcess(proc);
     log.info(`→ ProfilerProcess (PID ${proc.pid}, priority 0)`);
 }

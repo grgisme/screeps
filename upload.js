@@ -32,9 +32,19 @@ async function upload() {
             const name = path.basename(file, '.js');
             modules[name] = fs.readFileSync(path.join(buildPath, file), 'utf8');
         }
-        // Optional: Upload source maps if needed, though Screeps native support varies.
-        // Usually just main.js is enough for a bundle.
     });
+
+    // Upload source maps for ErrorMapper
+    // Screeps convention: upload `main.js.map` as a module named "main.js.map"
+    // The Screeps runtime strips the trailing `.js`, so `require("main.js.map")` works
+    const mapFile = path.join(buildPath, 'main.js.map');
+    if (fs.existsSync(mapFile)) {
+        const mapContent = fs.readFileSync(mapFile, 'utf8');
+        modules['main.js.map'] = `module.exports = ${mapContent};`;
+        console.log(`📍 Source map loaded (${(mapContent.length / 1024).toFixed(1)} KB)`);
+    } else {
+        console.log("⚠️  No source map found — ErrorMapper will be inactive");
+    }
 
     console.log(`Pushing ${Object.keys(modules).length} modules to branch: ${config.branch}`);
 

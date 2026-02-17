@@ -1,23 +1,24 @@
 // ============================================================================
-// Kernel.test.ts — Unit tests for the Kernel scheduler
+// Kernel.test.ts — Unit tests for the Kernel scheduler + load shedding
 // ============================================================================
 
 import "../mock.setup";
 import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
-import { Kernel } from "../../src/kernel/Kernel";
+import { Kernel, SchedulerMode } from "../../src/kernel/Kernel";
 import { Process } from "../../src/kernel/Process";
 import { ProcessStatus } from "../../src/kernel/ProcessStatus";
 
-// Concrete test process
+// Concrete test process with configurable priority and name
 class TestProcess extends Process {
-    public readonly processName = "test";
+    public readonly processName: string;
     public executionOrder: number[] = [];
     public shouldThrow = false;
 
-    constructor(pid: number, priority: number, order: number[]) {
+    constructor(pid: number, priority: number, order: number[], name: string = "test") {
         super(pid, priority);
         this.executionOrder = order;
+        this.processName = name;
     }
 
     run(): void {
@@ -73,6 +74,17 @@ describe("Kernel", () => {
 
             const found = kernel.getProcessesByName("test");
             expect(found).to.have.length(2);
+        });
+
+        it("should return distinct priority levels", () => {
+            const kernel = new Kernel();
+            kernel.addProcess(new TestProcess(0, 10, []));
+            kernel.addProcess(new TestProcess(0, 0, []));
+            kernel.addProcess(new TestProcess(0, 20, []));
+            kernel.addProcess(new TestProcess(0, 10, [])); // duplicate
+
+            const levels = kernel.getPriorityLevels();
+            expect(levels).to.deep.equal([0, 10, 20]);
         });
     });
 
@@ -130,7 +142,7 @@ describe("Kernel", () => {
             expect(procCrash.status).to.equal(ProcessStatus.DEAD);
         });
 
-        it("should stop when CPU ceiling is reached", () => {
+        it("should stop when soft CPU ceiling is reached", () => {
             const kernel = new Kernel();
             const order: number[] = [];
 
@@ -140,11 +152,9 @@ describe("Kernel", () => {
 
             const proc1 = new TestProcess(0, 5, order);
             const proc2 = new TestProcess(0, 10, order);
-            const proc3 = new TestProcess(0, 15, order);
 
             kernel.addProcess(proc1);
             kernel.addProcess(proc2);
-            kernel.addProcess(proc3);
 
             const origRun = proc1.run.bind(proc1);
             proc1.run = () => {
@@ -156,17 +166,28 @@ describe("Kernel", () => {
             expect(order).to.deep.equal([proc1.pid]);
         });
 
-        it("should stop when bucket is low", () => {
+        it("should stop when hard tickLimit ceiling is hit", () => {
             const kernel = new Kernel();
             const order: number[] = [];
 
-            (globalThis as any).Game.cpu.bucket = 100;
+            let cpuUsed = 0;
+            (globalThis as any).Game.cpu.getUsed = () => cpuUsed;
+            (globalThis as any).Game.cpu.tickLimit = 500;
 
-            const proc1 = new TestProcess(0, 10, order);
+            const proc1 = new TestProcess(0, 5, order);
+            const proc2 = new TestProcess(0, 10, order);
+
             kernel.addProcess(proc1);
+            kernel.addProcess(proc2);
+
+            const origRun = proc1.run.bind(proc1);
+            proc1.run = () => {
+                origRun();
+                cpuUsed = 480; // Over 95% of 500
+            };
 
             kernel.run();
-            expect(order).to.deep.equal([]);
+            expect(order).to.deep.equal([proc1.pid]);
         });
 
         it("should sweep dead processes after run", () => {
@@ -179,6 +200,115 @@ describe("Kernel", () => {
 
             kernel.run();
             expect(kernel.processCount).to.equal(0);
+        });
+
+        it("should record CPU profile per process name", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+
+            let cpuUsed = 0;
+            (globalThis as any).Game.cpu.getUsed = () => cpuUsed;
+
+            const proc = new TestProcess(0, 10, order);
+            kernel.addProcess(proc);
+
+            const origRun = proc.run.bind(proc);
+            proc.run = () => {
+                origRun();
+                cpuUsed += 5.5;
+            };
+
+            kernel.run();
+
+            const profile = kernel.getCpuProfile();
+            expect(profile.get("test")).to.be.closeTo(5.5, 0.01);
+        });
+    });
+
+    describe("Load Shedding — 3-Tier CPU Governor", () => {
+        it("should be in NORMAL mode when bucket >= 500", () => {
+            const kernel = new Kernel();
+            (globalThis as any).Game.cpu.bucket = 5000;
+
+            kernel.addProcess(new TestProcess(0, 10, []));
+            kernel.run();
+
+            expect(kernel.getSchedulerMode()).to.equal(SchedulerMode.NORMAL);
+        });
+
+        it("should be in SAFE mode when bucket < 500", () => {
+            const kernel = new Kernel();
+            (globalThis as any).Game.cpu.bucket = 300;
+
+            kernel.addProcess(new TestProcess(0, 0, []));
+            kernel.run();
+
+            expect(kernel.getSchedulerMode()).to.equal(SchedulerMode.SAFE);
+        });
+
+        it("should be in EMERGENCY mode when bucket < 100", () => {
+            const kernel = new Kernel();
+            (globalThis as any).Game.cpu.bucket = 50;
+
+            kernel.addProcess(new TestProcess(0, 0, []));
+            kernel.run();
+
+            expect(kernel.getSchedulerMode()).to.equal(SchedulerMode.EMERGENCY);
+        });
+
+        it("should run all processes in NORMAL mode", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+            (globalThis as any).Game.cpu.bucket = 5000;
+
+            kernel.addProcess(new TestProcess(0, 0, order, "critical"));
+            kernel.addProcess(new TestProcess(0, 10, order, "economy"));
+            kernel.addProcess(new TestProcess(0, 20, order, "growth"));
+
+            kernel.run();
+
+            // All 3 should have run
+            expect(order).to.have.length(3);
+        });
+
+        it("should skip priority > 2 in SAFE mode", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+            (globalThis as any).Game.cpu.bucket = 300;
+
+            const critical = new TestProcess(0, 0, order, "critical");
+            const safe = new TestProcess(0, 2, order, "safe");
+            const economy = new TestProcess(0, 10, order, "economy");
+            const growth = new TestProcess(0, 20, order, "growth");
+
+            kernel.addProcess(critical);
+            kernel.addProcess(safe);
+            kernel.addProcess(economy);
+            kernel.addProcess(growth);
+
+            kernel.run();
+
+            // Only priority 0 and 2 should run
+            expect(order).to.deep.equal([critical.pid, safe.pid]);
+        });
+
+        it("should only run priority 0 in EMERGENCY mode", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+            (globalThis as any).Game.cpu.bucket = 50;
+
+            const critical = new TestProcess(0, 0, order, "critical");
+            const safe = new TestProcess(0, 2, order, "safe");
+            const economy = new TestProcess(0, 10, order, "economy");
+
+            kernel.addProcess(critical);
+            kernel.addProcess(safe);
+            kernel.addProcess(economy);
+
+            kernel.run();
+
+            // Only priority 0 should run
+            expect(order).to.deep.equal([critical.pid]);
         });
     });
 

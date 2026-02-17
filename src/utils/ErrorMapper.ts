@@ -1,87 +1,92 @@
 // ============================================================================
-// ErrorMapper — Clean stack traces via source-map parsing
+// ErrorMapper — Screeps-native source-map stack trace resolution
 // ============================================================================
-
-/**
- * Maps V8 stack traces from the bundled main.js back to original TypeScript
- * source locations using the inline source map embedded by Rollup.
- *
- * Uses `source-map` v0.6.x (synchronous API, lightweight).
- */
+//
+// Based on the canonical screeps-typescript-starter pattern.
+// Uses `require("main.js.map")` to load the external source map that Rollup
+// generates, then caches the SourceMapConsumer on the heap for reuse across
+// ticks (invalidated on global reset).
+//
+// source-map v0.6.x is required — later versions are async and incompatible
+// with the Screeps VM.
+// ============================================================================
 
 import { SourceMapConsumer } from "source-map";
 
-// Heap-cached consumer — survives between ticks until global reset
-let consumer: SourceMapConsumer | null = null;
+// ---------------------------------------------------------------------------
+// Heap-cached consumer — survives between ticks, dies on global reset
+// ---------------------------------------------------------------------------
 
-/**
- * Lazily initialise the SourceMapConsumer from the inline source map.
- * In Screeps, `require("main")` returns the module and we can read
- * the raw source from the module wrapper to extract the base-64 map.
- */
-function getConsumer(): SourceMapConsumer | null {
-    if (consumer) {
-        return consumer;
+let _consumer: SourceMapConsumer | undefined;
+
+function getConsumer(): SourceMapConsumer {
+    if (_consumer == null) {
+        // Screeps strips the trailing `.js` when resolving module names.
+        // We upload `main.js.map` as a module, Screeps sees it as "main.js.map".
+        _consumer = new SourceMapConsumer(require("main.js.map"));
     }
-
-    try {
-        // The Screeps runtime exposes module source via the require cache.
-        // With inline source maps, the data URL is appended at the end:
-        //   //# sourceMappingURL=data:application/json;charset=utf-8;base64,...
-        const mainModule = require.main;
-        if (!mainModule || !mainModule.filename) {
-            return null;
-        }
-
-        // Try to find inline source map in the module source
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const fs = require("fs");
-        let source: string;
-        try {
-            source = fs.readFileSync(mainModule.filename, "utf8");
-        } catch {
-            // In Screeps runtime, fs won't exist — try alternative approaches
-            return null;
-        }
-
-        const match = source.match(
-            /\/\/# sourceMappingURL=data:application\/json;charset=utf-8;base64,(.+)$/m
-        );
-        if (!match) {
-            return null;
-        }
-
-        const rawMap = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
-        consumer = new SourceMapConsumer(rawMap);
-        return consumer;
-    } catch {
-        return null;
-    }
+    return _consumer;
 }
 
+// ---------------------------------------------------------------------------
+// Trace cache — avoids re-mapping the same stack trace every tick
+// ---------------------------------------------------------------------------
+
+const _traceCache: Record<string, string> = {};
+
 /**
- * Map a single stack trace line to original source if possible.
+ * Map a raw V8 stack trace back to original TypeScript source locations.
+ *
+ * WARNING: First call after global reset costs ~30 CPU (source map parsing).
+ * Subsequent calls are cached and cost ~0.1 CPU.
  */
-function mapStack(stack: string): string {
-    const smc = getConsumer();
-    if (!smc) {
-        return stack;
+function sourceMappedStackTrace(error: Error | string): string {
+    const stack: string = error instanceof Error ? (error.stack as string) : error;
+
+    // Return cached result if available
+    if (Object.prototype.hasOwnProperty.call(_traceCache, stack)) {
+        return _traceCache[stack];
     }
 
-    return stack.replace(
-        /^\s+at\s+(.+?)\s+\((.+?):(\d+):(\d+)\)/gm,
-        (_match, fn, _file, line, col) => {
-            const pos = smc.originalPositionFor({
-                line: parseInt(line, 10),
-                column: parseInt(col, 10),
+    // Regex matches V8 stack frames:
+    //   at FunctionName (main:123:45)
+    //   at main:123:45
+    // eslint-disable-next-line no-useless-escape
+    const re = /^\s+at\s+(.+?\s+)?\(?([0-z._\-\\\/]+):(\d+):(\d+)\)?$/gm;
+    let match: RegExpExecArray | null;
+    let outStack = error.toString();
+
+    const consumer = getConsumer();
+
+    while ((match = re.exec(stack))) {
+        // Only map frames from the "main" module (our bundle)
+        if (match[2] === "main") {
+            const pos = consumer.originalPositionFor({
+                column: parseInt(match[4], 10),
+                line: parseInt(match[3], 10),
             });
-            if (pos.source && pos.line !== null) {
-                const srcFile = pos.source.replace("../", "");
-                return `    at ${fn} (${srcFile}:${pos.line}:${pos.column ?? 0})`;
+
+            if (pos.line != null) {
+                if (pos.name) {
+                    outStack += `\n    at ${pos.name} (${pos.source}:${pos.line}:${pos.column})`;
+                } else if (match[1]) {
+                    // Function name from original trace
+                    outStack += `\n    at ${match[1]}(${pos.source}:${pos.line}:${pos.column})`;
+                } else {
+                    outStack += `\n    at ${pos.source}:${pos.line}:${pos.column}`;
+                }
+            } else {
+                // Position not found — stop mapping
+                break;
             }
-            return _match;
+        } else {
+            // Non-main frame — stop mapping
+            break;
         }
-    );
+    }
+
+    _traceCache[stack] = outStack;
+    return outStack;
 }
 
 // ============================================================================
@@ -90,8 +95,21 @@ function mapStack(stack: string): string {
 
 export const ErrorMapper = {
     /**
-     * Wraps the game loop so uncaught errors are caught, mapped to
-     * TypeScript source locations, and logged without crashing ticks.
+     * Returns `true` if the source map module is available.
+     * Used by the Foundation Status report.
+     */
+    isActive(): boolean {
+        try {
+            require("main.js.map");
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    /**
+     * Wraps the game loop so uncaught errors are caught, source-mapped,
+     * and logged to the console without crashing subsequent ticks.
      */
     wrapLoop(fn: () => void): () => void {
         return (): void => {
@@ -99,10 +117,16 @@ export const ErrorMapper = {
                 fn();
             } catch (e: unknown) {
                 if (e instanceof Error) {
-                    const mapped = mapStack(e.stack ?? e.message);
-                    console.log(
-                        `<span style='color:#e74c3c'>[ERROR]</span> ${mapped}`
-                    );
+                    if ("sim" in Game.rooms) {
+                        // Source maps don't work in the simulator
+                        console.log(
+                            `<span style='color:#e74c3c'>[ERROR] Source maps unavailable in sim</span>\n${e.stack}`
+                        );
+                    } else {
+                        console.log(
+                            `<span style='color:#e74c3c'>[ERROR]</span> ${sourceMappedStackTrace(e)}`
+                        );
+                    }
                 } else {
                     console.log(
                         `<span style='color:#e74c3c'>[ERROR]</span> Non-Error thrown: ${String(e)}`
@@ -113,9 +137,13 @@ export const ErrorMapper = {
     },
 
     /**
-     * Map a stack trace string on demand (useful for per-process errors).
+     * Map a stack trace string on demand (for per-process crash traces).
      */
     mapTrace(stack: string): string {
-        return mapStack(stack);
+        try {
+            return sourceMappedStackTrace(stack);
+        } catch {
+            return stack;
+        }
     },
 };

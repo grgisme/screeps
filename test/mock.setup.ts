@@ -70,6 +70,7 @@
     time: 1,
     cpu: {
         limit: 20,
+        tickLimit: 500,
         bucket: 10000,
         getUsed: () => 0,
     },
@@ -172,6 +173,7 @@ export function resetMocks(): void {
         time: 1,
         cpu: {
             limit: 20,
+            tickLimit: 500,
             bucket: 10000,
             getUsed: () => 0,
         },
