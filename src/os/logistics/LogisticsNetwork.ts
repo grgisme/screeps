@@ -1,5 +1,6 @@
 
 import type { Colony } from "../Colony";
+import type { Zerg } from "../infrastructure/Zerg";
 
 export interface TransportRequest {
     target: Structure | Resource;
@@ -28,6 +29,7 @@ export class LogisticsNetwork {
     incomingReservations: Map<string, number>;
     outgoingReservations: Map<string, number>;
     colony: Colony;
+    unassignedRequests: MatchedRequest[] = [];
 
     constructor(colony: Colony) {
         this.colony = colony;
@@ -89,8 +91,8 @@ export class LogisticsNetwork {
         this.incomingReservations.set(target.id, currentIncoming + amount);
     }
 
-    match(): MatchedRequest[] {
-        const matches: MatchedRequest[] = [];
+    match(): void {
+        this.unassignedRequests = [];
         let reservedEnergy = 0;
 
         // Buffer Logic
@@ -133,7 +135,7 @@ export class LogisticsNetwork {
 
                 if (amount > 0) {
                     this.registerAllocation(bestProvider, req.target as Structure, amount);
-                    matches.push({
+                    this.unassignedRequests.push({
                         target: req.target,
                         amount: amount,
                         resourceType: req.resourceType,
@@ -145,7 +147,37 @@ export class LogisticsNetwork {
             }
         }
 
-        console.log(`Matched [${matches.length}] requests, [${reservedEnergy}] energy reserved.`);
-        return matches;
+        console.log(`Matched [${this.unassignedRequests.length}] requests, [${reservedEnergy}] energy reserved.`);
+    }
+
+    requestTask(zerg: Zerg): MatchedRequest | null {
+        // Finds the best task for the zerg (closest)
+        let bestRequest: MatchedRequest | null = null;
+        let minCost = Infinity;
+        let bestIndex = -1;
+
+        for (let i = 0; i < this.unassignedRequests.length; i++) {
+            const req = this.unassignedRequests[i];
+            // Simple cost function: Range to provider
+            const cost = zerg.pos.getRangeTo(req.provider.pos);
+
+            // Priority multiplier? (Lower cost is better)
+            // Higher priority should reduce cost? Or just take highest priority first?
+            // The list is already sorted by priority. So we should pick the first one that is "reasonably" close.
+            // Or just pick the absolute closest one to save CPU/travel.
+            // Let's pick closest for now.
+            if (cost < minCost) {
+                minCost = cost;
+                bestRequest = req;
+                bestIndex = i;
+            }
+        }
+
+        if (bestRequest && bestIndex !== -1) {
+            this.unassignedRequests.splice(bestIndex, 1); // Remove from pool
+            return bestRequest;
+        }
+
+        return null;
     }
 }

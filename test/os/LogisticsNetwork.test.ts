@@ -66,7 +66,8 @@ describe("LogisticsNetwork", () => {
         } as unknown as Structure;
         network.requestInput(requester, { amount: 100 });
 
-        const matches = network.match();
+        network.match();
+        const matches = network.unassignedRequests;
 
         expect(matches).to.have.length(1);
         expect(matches[0].target).to.equal(requester);
@@ -115,7 +116,8 @@ describe("LogisticsNetwork", () => {
         } as unknown as Structure;
         network.requestInput(req2, { amount: 400, priority: 5 }); // Lower priority
 
-        const matches = network.match();
+        network.match();
+        const matches = network.unassignedRequests;
 
         // First match takes 400. Provider effectively has 100 left.
         // Second match needs 400. 
