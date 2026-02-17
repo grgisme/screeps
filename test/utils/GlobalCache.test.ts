@@ -5,7 +5,7 @@
 import "../mock.setup";
 import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
-import { GlobalCache } from "../../src/utils/GlobalCache";
+import { GlobalCache } from "../../src/kernel/GlobalCache";
 
 describe("GlobalCache", () => {
     let originalLog: typeof console.log;

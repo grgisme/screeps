@@ -10,7 +10,7 @@
  * All heap data lives under the global `_heap` variable declared in types.d.ts.
  */
 
-import { Logger } from "./Logger";
+import { Logger } from "../utils/Logger";
 
 const log = new Logger("GlobalCache");
 

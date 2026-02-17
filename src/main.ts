@@ -2,9 +2,9 @@
 // Main Loop — Entry point for the Screeps OS
 // ============================================================================
 
-import { ErrorMapper } from "./utils/ErrorMapper";
+import { ErrorMapper } from "./kernel/ErrorMapper";
 import "./utils/RoomPosition";
-import { GlobalCache } from "./utils/GlobalCache";
+import { GlobalCache } from "./kernel/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
 import { MiningProcess } from "./os/processes/MiningProcess";
@@ -161,8 +161,8 @@ function handleKernelPanic(): void {
 // Main Loop
 // -------------------------------------------------------------------------
 
-import { GlobalManager } from "./core/GlobalManager";
-import { SegmentManager } from "./core/memory/SegmentManager";
+import { GlobalManager } from "./kernel/GlobalManager";
+import { SegmentManager } from "./kernel/memory/SegmentManager";
 
 // ... (existing imports)
 

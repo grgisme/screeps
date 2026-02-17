@@ -4,7 +4,7 @@
 
 import { Process } from "../../kernel/Process";
 import { Kernel, SchedulerReport } from "../../kernel/Kernel";
-import { GlobalCache } from "../../utils/GlobalCache";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 /**
  * Critical process (Priority 0) that tracks cumulative CPU usage per

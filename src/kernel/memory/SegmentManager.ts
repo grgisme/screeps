@@ -2,7 +2,7 @@
 // SegmentManager — RawMemory Segment Management
 // ============================================================================
 
-import { GlobalCache } from "../../utils/GlobalCache";
+import { GlobalCache } from "../GlobalCache";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("SegmentManager");

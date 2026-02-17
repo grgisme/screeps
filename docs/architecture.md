@@ -160,7 +160,12 @@ src/
 ├── kernel/
 │   ├── Kernel.ts              # Scheduler + profiling + process table
 │   ├── Process.ts             # Abstract process base
-│   └── ProcessStatus.ts       # Runtime status constants
+│   ├── ProcessStatus.ts       # Runtime status constants
+│   ├── ErrorMapper.ts         # Source-map stack trace resolution
+│   ├── GlobalCache.ts         # Heap-first state + reset detection
+│   ├── GlobalManager.ts       # Warm start / Colony rehydration
+│   └── memory/
+│       └── SegmentManager.ts  # RawMemory segment management
 ├── os/
 │   ├── colony/
 │   │   ├── Colony.ts          # Per-room hub for Overlords & State
@@ -188,15 +193,9 @@ src/
 │       ├── UpgradeProcess.ts  # Standalone controller upgrader
 │       ├── ProfilerProcess.ts # CPU usage monitor (priority 0)
 │       └── RoomPlannerProcess.ts # Room planning automation
-├── utils/
-│   ├── ErrorMapper.ts         # Source-map stack trace mapping
-│   ├── GlobalCache.ts         # Heap-first state + reset detection
-│   ├── Algorithms.ts          # Distance Transform & geometries
-│   ├── CreepBody.ts           # Body part scaling utilities
-│   ├── Logger.ts              # Structured logging with levels
-│   └── RoomPosition.ts        # RoomPosition prototype extensions
-└── core/
-    ├── GlobalManager.ts       # Warm start / Colony rehydration
-    └── memory/
-        └── SegmentManager.ts  # RawMemory segment management
+└── utils/
+    ├── Algorithms.ts          # Distance Transform & geometries
+    ├── CreepBody.ts           # Body part scaling utilities
+    ├── Logger.ts              # Structured logging with levels
+    └── RoomPosition.ts        # RoomPosition prototype extensions
 ```

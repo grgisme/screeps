@@ -2,7 +2,7 @@
 // GlobalManager — Centralized entry point for Heap-First Architecture
 // ============================================================================
 
-import { GlobalCache } from "../utils/GlobalCache";
+import { GlobalCache } from "./GlobalCache";
 import { Logger } from "../utils/Logger";
 import { Colony } from "../os/colony/Colony";
 

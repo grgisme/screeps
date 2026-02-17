@@ -7,7 +7,7 @@ import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
 import { ProfilerProcess } from "../../../src/os/processes/ProfilerProcess";
 import { Kernel } from "../../../src/kernel/Kernel";
-import { GlobalCache } from "../../../src/utils/GlobalCache";
+import { GlobalCache } from "../../../src/kernel/GlobalCache";
 
 describe("ProfilerProcess", () => {
     let logOutput: string[];

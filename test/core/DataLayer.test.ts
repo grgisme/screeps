@@ -5,9 +5,9 @@
 import "../mock.setup";
 import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
-import { GlobalCache } from "../../src/utils/GlobalCache";
-import { SegmentManager } from "../../src/core/memory/SegmentManager";
-import { GlobalManager } from "../../src/core/GlobalManager";
+import { GlobalCache } from "../../src/kernel/GlobalCache";
+import { SegmentManager } from "../../src/kernel/memory/SegmentManager";
+import { GlobalManager } from "../../src/kernel/GlobalManager";
 
 describe("Data Layer Optimization", () => {
     beforeEach(() => {

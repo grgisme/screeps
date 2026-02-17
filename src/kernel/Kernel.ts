@@ -4,8 +4,8 @@
 
 import { Process } from "./Process";
 import { ProcessStatus, ProcessStatusType } from "./ProcessStatus";
-import { GlobalCache } from "../utils/GlobalCache";
-import { ErrorMapper } from "../utils/ErrorMapper";
+import { GlobalCache } from "./GlobalCache";
+import { ErrorMapper } from "./ErrorMapper";
 import { Logger } from "../utils/Logger";
 
 const log = new Logger("Kernel");
