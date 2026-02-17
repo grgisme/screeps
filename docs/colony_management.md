@@ -39,6 +39,14 @@ The `ColonyProcess` is the "glue" between the Kernel and the Colony.
     -   It ensures the `Colony.run()` method is called every tick.
     -   It handles the persistence of the Colony's PID.
 
+### 2.5. LogisticsNetwork (`src/os/logistics/LogisticsNetwork.ts`)
+The `LogisticsNetwork` acts as a centralized broker for resource transport within the Colony.
+
+- **Role**:
+    -   **Registry**: Maintains transient lists of `providers` (supply), `requesters` (demand), and `buffers` (storage).
+    -   **Matching**: (Planned) Efficiently matches providers to requesters to minimize travel time.
+    -   **State**: Tracks incoming and outgoing resource reservations to prevent over-delivery or double-booking.
+
 ### 3. Overlords (`src/processes/overlords/*.ts`)
 An **Overlord** is a specialized manager for a specific aspect of the Colony. It automates testing, creeping, and tasks.
 
