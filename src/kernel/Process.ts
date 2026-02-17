@@ -1,0 +1,95 @@
+// ============================================================================
+// Process — Abstract base class for all OS processes
+// ============================================================================
+
+import { ProcessStatus, ProcessStatusType } from "./ProcessStatus";
+
+/**
+ * Every unit of work in the Screeps OS is modelled as a Process.
+ * Concrete subclasses implement `run()` to perform their tick logic.
+ *
+ * Processes are managed by the Kernel's scheduler and executed in
+ * priority order (lower number = higher priority).
+ */
+export abstract class Process {
+    public pid: number;
+    public priority: number;
+    public parentPID: number | null;
+    public status: ProcessStatusType;
+
+    /** Human-readable identifier used for serialization / logging */
+    public abstract readonly processName: string;
+
+    constructor(pid: number, priority: number, parentPID: number | null = null) {
+        this.pid = pid;
+        this.priority = priority;
+        this.parentPID = parentPID;
+        this.status = ProcessStatus.ALIVE;
+    }
+
+    // -------------------------------------------------------------------------
+    // Lifecycle helpers
+    // -------------------------------------------------------------------------
+
+    /** Pause this process — the scheduler will skip it. */
+    suspend(): void {
+        this.status = ProcessStatus.SLEEP;
+    }
+
+    /** Resume a sleeping process. */
+    resume(): void {
+        if (this.status === ProcessStatus.SLEEP) {
+            this.status = ProcessStatus.ALIVE;
+        }
+    }
+
+    /** Mark this process for removal on the next scheduler sweep. */
+    terminate(): void {
+        this.status = ProcessStatus.DEAD;
+    }
+
+    /** Returns `true` when the process should be executed this tick. */
+    isAlive(): boolean {
+        return this.status === ProcessStatus.ALIVE;
+    }
+
+    // -------------------------------------------------------------------------
+    // Serialization (for Memory persistence across global resets)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Override this in subclasses to persist process-specific state.
+     * Only return data that is absolutely required to survive a global reset.
+     */
+    serialize(): Record<string, unknown> {
+        return {};
+    }
+
+    /**
+     * Override this to restore process-specific state after a global reset.
+     */
+    deserialize(_data: Record<string, unknown>): void {
+        // default: no-op
+    }
+
+    /**
+     * Produce the full descriptor for the Kernel to store in Memory.
+     */
+    toDescriptor(): ProcessDescriptor {
+        return {
+            pid: this.pid,
+            priority: this.priority,
+            parentPID: this.parentPID,
+            processName: this.processName,
+            status: this.status,
+            data: this.serialize(),
+        };
+    }
+
+    // -------------------------------------------------------------------------
+    // Core — implemented by every concrete process
+    // -------------------------------------------------------------------------
+
+    /** Execute one tick of work for this process. */
+    abstract run(): void;
+}
