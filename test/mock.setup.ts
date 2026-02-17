@@ -382,4 +382,28 @@ export function resetMocks(): void {
         _cache: new Map<string, unknown>(),
         _pathCache: new Map<string, { path: string; tick: number }>(),
     };
+
+    // Restore PathFinder
+    (globalThis as any).PathFinder = {
+        search: (origin: RoomPosition, _goal: any, _opts: any) => {
+            return {
+                path: [
+                    new RoomPosition(origin.x + 1, origin.y, origin.roomName),
+                    new RoomPosition(origin.x + 2, origin.y, origin.roomName),
+                    new RoomPosition(origin.x + 3, origin.y, origin.roomName)
+                ],
+                ops: 1,
+                cost: 1,
+                incomplete: false
+            };
+        },
+        CostMatrix: class {
+            _bits: Uint8Array = new Uint8Array(2500);
+            set(x: number, y: number, val: number) { this._bits[x * 50 + y] = val; }
+            get(x: number, y: number) { return this._bits[x * 50 + y]; }
+            clone() { return new (globalThis as any).PathFinder.CostMatrix(); }
+            serialize() { return []; }
+            deserialize(_val: any) { }
+        }
+    };
 }

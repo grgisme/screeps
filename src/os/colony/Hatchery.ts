@@ -7,6 +7,7 @@ export interface SpawnRequest {
     bodyTemplate: BodyPartConstant[];
     overlord: Overlord;
     name?: string; // Optional specific name desire
+    memory?: any;
 }
 
 export class Hatchery {
@@ -110,7 +111,8 @@ export class Hatchery {
                 const result = spawn.spawnCreep(body, request.name!, {
                     memory: {
                         _overlord: request.overlord.processId, // Link back to overlord
-                        colony: this.colony.name
+                        colony: this.colony.name,
+                        ...(request.memory || {})
                     } as any
                 });
 

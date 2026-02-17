@@ -1,6 +1,6 @@
 import { Overlord } from "./processes/Overlord";
 import { Zerg } from "./infrastructure/Zerg";
-import { MiningOverlord } from "../processes/overlords/MiningOverlord";
+import { MiningOverlord } from "./processes/economy/MiningOverlord";
 import { ConstructionOverlord } from "../processes/overlords/ConstructionOverlord";
 import { BunkerLayout } from "./infrastructure/BunkerLayout";
 import { LogisticsNetwork } from "./logistics/LogisticsNetwork";
@@ -49,20 +49,11 @@ export class Colony {
 
     private initOverlords(): void {
         this.registerOverlord(new ConstructionOverlord(this));
+        this.registerOverlord(new MiningOverlord(this));
     }
 
     scan(): void {
-        // Instantiate MiningOverlords for sources
-        const sources = this.room.find(FIND_SOURCES);
-        for (const source of sources) {
-            const id = `mining:${this.name}:${source.id}`;
-            // Check if already registered (scan can be called multiple times?)
-            // Actually scan is called in constructor.
-            // If we add dynamic scanning, we need duplicate checks.
-            if (!this.overlords.find(o => o.processId === id)) {
-                this.registerOverlord(new MiningOverlord(this, source));
-            }
-        }
+        // MiningOverlord now manages sites internally
     }
 
     /** Refresh room object and zergs at start of tick */
