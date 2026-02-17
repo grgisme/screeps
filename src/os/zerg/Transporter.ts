@@ -46,6 +46,9 @@ export class Transporter extends Zerg {
     private handleRequest(): void {
         if (!this.request) return;
 
+        // "Repair-on-Transit": Check for road maintenance opportunities
+        this.repairRoad();
+
         // Determine phase based on carry state
         // If we are empty, go to provider.
         // If we are full (or have the amount), go to target.
@@ -90,6 +93,33 @@ export class Transporter extends Zerg {
                 // Ideally, we clear request and ask for new one immediately if CPU allows?
             } else {
                 this.travelTo(target.pos);
+            }
+        }
+    }
+
+    /**
+     * Repair road underfoot if damaged.
+     * Costs 0 extra CPU for movement, just the repair call check.
+     * Requires WORK part and Energy.
+     */
+    private repairRoad(): void {
+        // 1. Check if we have energy and WORK parts
+        if (this.creep.store.energy === 0) return;
+        const workParts = this.creep.body.filter(b => b.type === WORK).length;
+        if (workParts === 0) return;
+
+        // 2. Check structure underfoot
+        const road = this.pos.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_ROAD);
+        if (road && road.hits < road.hitsMax) {
+            // Repair it
+            // Repair power: 100 hits/tick per WORK part
+            // But we only repair if it needs it.
+            // Also, we can repair ANY structure in range 3, but "Repair-on-Transit" usually implies
+            // the road we are standing on or moving to.
+            // Repairing the one we are standing on is safest (range 0).
+            const result = this.creep.repair(road);
+            if (result === OK) {
+                // console.log(`Transporter ${this.name} repaired road at ${this.pos}`);
             }
         }
     }

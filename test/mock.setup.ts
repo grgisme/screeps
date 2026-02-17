@@ -79,6 +79,7 @@
 (globalThis as any).LOOK_CREEPS = "creep";
 (globalThis as any).LOOK_SOURCES = "source";
 (globalThis as any).LOOK_STRUCTURES = "structure";
+(globalThis as any).LOOK_CONSTRUCTION_SITES = "constructionSite";
 (globalThis as any).STRUCTURE_WALL = "constructedWall";
 (globalThis as any).FIND_SOURCES_ACTIVE = 104;
 (globalThis as any).FIND_MY_STRUCTURES = 108;
@@ -138,6 +139,8 @@
 (globalThis as any).HEAL = "heal";
 (globalThis as any).TOUGH = "tough";
 (globalThis as any).CLAIM = "claim";
+(globalThis as any).TERRAIN_MASK_WALL = 1;
+(globalThis as any).TERRAIN_MASK_SWAMP = 2;
 
 (globalThis as any).BODYPART_COST = {
     work: 100,
@@ -208,6 +211,14 @@ class MockRoomPosition {
             this.y === target.y &&
             this.roomName === target.roomName
         );
+    }
+
+    isNearTo(target: RoomPosition | { pos: RoomPosition }): boolean {
+        return this.inRangeTo(target, 1);
+    }
+
+    createConstructionSite(_structureType: StructureConstant): number {
+        return 0; // OK
     }
 
     findPathTo(
