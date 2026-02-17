@@ -16,6 +16,10 @@
         "emitDecoratorMetadata": true,
         "noImplicitReturns": true,
         "noImplicitAny": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "forceConsistentCasingInFileNames": true,
         "typeRoots": [
             "node_modules/@types"
         ],

@@ -8,8 +8,16 @@ import { expect } from "chai";
 import { GlobalCache } from "../../src/utils/GlobalCache";
 
 describe("GlobalCache", () => {
+    let originalLog: typeof console.log;
+
     beforeEach(() => {
         resetMocks();
+        originalLog = console.log;
+        console.log = () => { /* suppress Logger output */ };
+    });
+
+    afterEach(() => {
+        console.log = originalLog;
     });
 
     describe("isGlobalReset", () => {
@@ -28,6 +36,12 @@ describe("GlobalCache", () => {
             const heap = (globalThis as any)._heap;
             expect(heap._cache).to.be.an.instanceOf(Map);
             expect(heap._pathCache).to.be.an.instanceOf(Map);
+        });
+
+        it("should record lastGlobalReset in Memory", () => {
+            (Game as any).time = 42;
+            GlobalCache.isGlobalReset();
+            expect(Memory.kernel.lastGlobalReset).to.equal(42);
         });
     });
 

@@ -29,6 +29,8 @@ interface ProcessDescriptor {
 interface KernelMemory {
     processTable: ProcessDescriptor[];
     nextPID: number;
+    /** Game.time when the last global reset was detected */
+    lastGlobalReset?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +51,8 @@ interface CreepMemory {
 interface Memory {
     kernel: KernelMemory;
     creeps: { [name: string]: CreepMemory };
+    /** Log verbosity level (0=DEBUG, 1=INFO, 2=WARNING, 3=ERROR) */
+    logLevel?: number;
 }
 
 // ---------------------------------------------------------------------------

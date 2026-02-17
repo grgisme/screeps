@@ -64,7 +64,7 @@ describe("UpgradeProcess", () => {
             let spawned = false;
             const mockSpawn = {
                 spawning: null,
-                spawnCreep: (body: any[], name: string, opts: any) => {
+                spawnCreep: (_body: any[], name: string, opts: any) => {
                     spawned = true;
                     (Game as any).creeps[name] = {
                         name,

@@ -1,10 +1,11 @@
 // ============================================================================
-// Kernel — Process scheduler with CPU-aware execution
+// Kernel — Process scheduler with CPU-aware execution and profiling
 // ============================================================================
 
 import { Process } from "./Process";
 import { ProcessStatus, ProcessStatusType } from "./ProcessStatus";
 import { GlobalCache } from "../utils/GlobalCache";
+import { ErrorMapper } from "../utils/ErrorMapper";
 
 /** Factory function signature for restoring a process from a descriptor. */
 export type ProcessFactory = (
@@ -28,6 +29,12 @@ export class Kernel {
 
     /** Registry of factories used to reconstruct processes after global reset. */
     private static registry: Map<string, ProcessFactory> = new Map();
+
+    /**
+     * Per-tick CPU usage by process name.
+     * Accumulated during `run()`, reset at the start of each `run()` call.
+     */
+    private _cpuProfile: Map<string, number> = new Map();
 
     // -----------------------------------------------------------------------
     // Process Registration (static)
@@ -80,6 +87,18 @@ export class Kernel {
     }
 
     // -----------------------------------------------------------------------
+    // CPU Profiling
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns the per-process CPU profile from the most recent `run()` call.
+     * Keys are process names, values are cumulative CPU milliseconds.
+     */
+    getCpuProfile(): Map<string, number> {
+        return this._cpuProfile;
+    }
+
+    // -----------------------------------------------------------------------
     // Scheduler
     // -----------------------------------------------------------------------
 
@@ -94,8 +113,12 @@ export class Kernel {
      * - Lower `priority` value = executed first.
      * - Each process is wrapped in try/catch so failures are isolated.
      * - Execution halts when CPU usage exceeds the ceiling or bucket is low.
+     * - CPU deltas are recorded per process name for the profiler.
      */
     run(): void {
+        // Reset CPU profile for this tick
+        this._cpuProfile = new Map();
+
         // Sort processes: lowest priority number first
         const sorted = this.getSortedProcesses();
 
@@ -123,15 +146,24 @@ export class Kernel {
                 continue;
             }
 
+            // Profile: record CPU before and after
+            const cpuBefore = Game.cpu.getUsed();
             try {
                 process.run();
             } catch (e: unknown) {
-                const msg = e instanceof Error ? e.stack ?? e.message : String(e);
+                const raw = e instanceof Error ? e.stack ?? e.message : String(e);
+                const mapped = ErrorMapper.mapTrace(raw);
                 console.log(
-                    `<span style='color:#e74c3c'>[Kernel] Process ${process.processName} (PID ${process.pid}) crashed:</span>\n${msg}`
+                    `<span style='color:#e74c3c'>[Kernel] Process ${process.processName} (PID ${process.pid}) crashed:</span>\n${mapped}`
                 );
                 process.terminate();
             }
+            const cpuAfter = Game.cpu.getUsed();
+            const delta = cpuAfter - cpuBefore;
+
+            // Accumulate per process name
+            const existing = this._cpuProfile.get(process.processName) ?? 0;
+            this._cpuProfile.set(process.processName, existing + delta);
         }
 
         // Sweep dead processes
@@ -172,6 +204,7 @@ export class Kernel {
             descriptors.push(process.toDescriptor());
         }
         Memory.kernel = {
+            ...Memory.kernel,
             processTable: descriptors,
             nextPID: this.nextPID,
         };

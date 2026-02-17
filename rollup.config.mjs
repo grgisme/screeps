@@ -8,7 +8,7 @@ export default {
     output: {
         file: 'dist/main.js',
         format: 'cjs',
-        sourcemap: true,
+        sourcemap: 'inline',
         // Inject version banner at top of bundle for easy identification
         banner: '/* Screeps Bot - Built: ' + new Date().toISOString() + ' */',
     },

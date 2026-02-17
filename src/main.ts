@@ -4,11 +4,23 @@
 
 import { ErrorMapper } from "./utils/ErrorMapper";
 import { GlobalCache } from "./utils/GlobalCache";
+import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
-import { Process } from "./kernel/Process";
 import { MiningProcess } from "./processes/MiningProcess";
 import { UpgradeProcess } from "./processes/UpgradeProcess";
+import { ProfilerProcess } from "./processes/ProfilerProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
+
+const log = new Logger("OS");
+
+// -------------------------------------------------------------------------
+// Console Commands — exposed on global for the Screeps console
+// -------------------------------------------------------------------------
+
+(globalThis as any).setLogLevel = (level: string): string => {
+    Logger.setLevelByName(level);
+    return `Log level set to: ${level}`;
+};
 
 // -------------------------------------------------------------------------
 // Register all process factories (must happen before deserialization)
@@ -17,7 +29,7 @@ import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
 Kernel.registerProcess(
     "mining",
     (pid, priority, parentPID, data) => {
-        const proc = new MiningProcess(
+        return new MiningProcess(
             pid,
             priority,
             parentPID,
@@ -25,23 +37,42 @@ Kernel.registerProcess(
             data.roomName as string,
             (data.targetMiners as number) ?? 1
         );
-        return proc;
     }
 );
 
 Kernel.registerProcess(
     "upgrade",
     (pid, priority, parentPID, data) => {
-        const proc = new UpgradeProcess(
+        return new UpgradeProcess(
             pid,
             priority,
             parentPID,
             data.roomName as string,
             (data.targetUpgraders as number) ?? 1
         );
-        return proc;
     }
 );
+
+Kernel.registerProcess(
+    "profiler",
+    (pid, priority, parentPID, _data) => {
+        return new ProfilerProcess(pid, priority, parentPID);
+    }
+);
+
+// -------------------------------------------------------------------------
+// Rehydration — restore Kernel from Memory after global reset
+// -------------------------------------------------------------------------
+
+function rehydrateKernel(): Kernel {
+    log.warning(
+        `Rehydrating kernel (v${SCRIPT_VERSION}: ${SCRIPT_SUMMARY})`
+    );
+    const kernel = Kernel.deserialize();
+    kernel.saveToHeap();
+    log.info(`Rehydrated ${kernel.processCount} processes from Memory`);
+    return kernel;
+}
 
 // -------------------------------------------------------------------------
 // Main Loop
@@ -60,20 +91,15 @@ export const loop = ErrorMapper.wrapLoop(() => {
     let kernel: Kernel;
 
     if (isReset) {
-        console.log(
-            `[OS] Global reset detected — rehydrating kernel (v${SCRIPT_VERSION}: ${SCRIPT_SUMMARY})`
-        );
-        kernel = Kernel.deserialize();
-        kernel.saveToHeap();
+        kernel = rehydrateKernel();
     } else {
         const cached = Kernel.loadFromHeap();
         if (cached) {
             kernel = cached;
         } else {
             // Shouldn't normally happen, but recover gracefully
-            console.log("[OS] Kernel not in heap — deserializing from Memory");
-            kernel = Kernel.deserialize();
-            kernel.saveToHeap();
+            log.warning("Kernel not in heap — deserializing from Memory");
+            kernel = rehydrateKernel();
         }
     }
 
@@ -82,10 +108,13 @@ export const loop = ErrorMapper.wrapLoop(() => {
         bootstrapProcesses(kernel);
     }
 
-    // --- 4. Run the scheduler ---
+    // --- 4. Ensure profiler process exists ---
+    ensureProfiler(kernel);
+
+    // --- 5. Run the scheduler ---
     kernel.run();
 
-    // --- 5. Persist minimal state to Memory ---
+    // --- 6. Persist minimal state to Memory ---
     kernel.serialize();
 });
 
@@ -100,7 +129,7 @@ function bootstrapProcesses(kernel: Kernel): void {
             continue;
         }
 
-        console.log(`[OS] Bootstrapping processes for room ${roomName}`);
+        log.info(`Bootstrapping processes for room ${roomName}`);
 
         // One MiningProcess per source
         const sources = room.find(FIND_SOURCES);
@@ -114,8 +143,8 @@ function bootstrapProcesses(kernel: Kernel): void {
                 1 // 1 miner per source to start
             );
             kernel.addProcess(proc);
-            console.log(
-                `[OS]   → MiningProcess for source ${source.id} (PID ${proc.pid})`
+            log.info(
+                `→ MiningProcess for source ${source.id} (PID ${proc.pid})`
             );
         }
 
@@ -128,6 +157,21 @@ function bootstrapProcesses(kernel: Kernel): void {
             1
         );
         kernel.addProcess(upgrader);
-        console.log(`[OS]   → UpgradeProcess (PID ${upgrader.pid})`);
+        log.info(`→ UpgradeProcess (PID ${upgrader.pid})`);
     }
+}
+
+// -------------------------------------------------------------------------
+// Ensure the profiler process is always running
+// -------------------------------------------------------------------------
+
+function ensureProfiler(kernel: Kernel): void {
+    const existing = kernel.getProcessesByName("profiler");
+    if (existing.length > 0) {
+        return;
+    }
+
+    const proc = new ProfilerProcess(0, 0, null); // Priority 0 — runs first
+    kernel.addProcess(proc);
+    log.info(`→ ProfilerProcess (PID ${proc.pid}, priority 0)`);
 }

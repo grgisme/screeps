@@ -108,7 +108,7 @@ describe("MiningProcess", () => {
             let spawned = false;
             const mockSpawn = {
                 spawning: null,
-                spawnCreep: (body: any[], name: string, opts: any) => {
+                spawnCreep: (_body: any[], name: string, opts: any) => {
                     spawned = true;
                     // Simulate adding to Game.creeps
                     (Game as any).creeps[name] = {

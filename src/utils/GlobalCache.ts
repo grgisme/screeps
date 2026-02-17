@@ -4,11 +4,15 @@
 
 /**
  * Screeps can reset the global object at any time. This module detects
- * those resets and provides typed cache get/set helpers that live on the
- * heap, avoiding costly `Memory` serialization on every tick.
+ * those resets, records them in Memory, and provides cache primitives
+ * for heap-persistent storage.
  *
  * All heap data lives under the global `_heap` variable declared in types.d.ts.
  */
+
+import { Logger } from "./Logger";
+
+const log = new Logger("GlobalCache");
 
 function ensureHeap(): HeapCache {
     if (typeof _heap === "undefined" || !_heap) {
@@ -26,6 +30,8 @@ export class GlobalCache {
     /**
      * Returns `true` the first time it is called after a global reset.
      * Subsequent calls in the same global lifecycle return `false`.
+     *
+     * Also records `Memory.kernel.lastGlobalReset = Game.time`.
      */
     static isGlobalReset(): boolean {
         const heap = ensureHeap();
@@ -36,6 +42,13 @@ export class GlobalCache {
         heap._initialized = true;
         heap._cache = new Map<string, unknown>();
         heap._pathCache = new Map<string, { path: string; tick: number }>();
+
+        // Record timestamp in Memory
+        if (Memory.kernel) {
+            Memory.kernel.lastGlobalReset = Game.time;
+        }
+
+        log.info(`Global reset detected at tick ${Game.time}`);
         return true;
     }
 
