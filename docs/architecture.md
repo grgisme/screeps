@@ -172,11 +172,19 @@ src/
 │   │   ├── Hatchery.ts        # Spawn manager with priority queue
 │   │   ├── MiningSite.ts      # Source mining site data
 │   │   └── LogisticsNetwork.ts # Centralized resource broker
+│   ├── directives/
+│   │   ├── Directive.ts       # Abstract base: Flag → Overlord(s)
+│   │   └── resource/
+│   │       └── HarvestDirective.ts # Remote mining orchestration
 │   ├── overlords/
 │   │   ├── Overlord.ts        # Abstract overlord base class
 │   │   ├── MiningOverlord.ts  # Colony-level mine management
 │   │   ├── ConstructionOverlord.ts # Base building automation
-│   │   └── TransporterOverlord.ts  # Logistics fleet manager
+│   │   ├── TransporterOverlord.ts  # Logistics fleet manager
+│   │   └── colonization/
+│   │       ├── ScoutOverlord.ts        # Invisible room exploration
+│   │       ├── ReserverOverlord.ts     # Buffer cycling reservation
+│   │       └── RemoteMiningOverlord.ts # Remote source management
 │   ├── zerg/
 │   │   ├── Zerg.ts            # Creep wrapper with task execution & pathing
 │   │   ├── Miner.ts           # Specialized miner creep

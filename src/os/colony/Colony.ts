@@ -5,6 +5,8 @@ import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LogisticsNetwork } from "./LogisticsNetwork";
 import { Hatchery } from "./Hatchery";
+import { Directive } from "../directives/Directive";
+import { HarvestDirective } from "../directives/resource/HarvestDirective";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };
@@ -20,6 +22,7 @@ export class Colony {
     memory: ColonyMemory;
     state: ColonyState;
     overlords: Overlord[] = [];
+    directives: Directive[] = [];
     zergs: Map<string, Zerg> = new Map();
     logistics: LogisticsNetwork;
     hatchery: Hatchery;
@@ -41,6 +44,7 @@ export class Colony {
             this.logistics = new LogisticsNetwork(this);
             this.hatchery = new Hatchery(this);
             this.initOverlords();
+            this.initDirectives();
         } else {
             this.logistics = new LogisticsNetwork(this);
             this.hatchery = new Hatchery(this);
@@ -95,14 +99,43 @@ export class Colony {
         return this.zergs.get(name);
     }
 
-    /** Run all overlords */
+    /**
+     * Scan Game.flags for directive flags (e.g. "inc:W2N1").
+     * Creates HarvestDirective for each matching flag.
+     */
+    private initDirectives(): void {
+        if (!Game.flags) return;
+        for (const name in Game.flags) {
+            if (name.startsWith("inc:")) {
+                // Avoid duplicates
+                const existing = this.directives.find(d => d.flag.name === name);
+                if (!existing) {
+                    const flag = Game.flags[name];
+                    const directive = new HarvestDirective(flag, this);
+                    this.directives.push(directive);
+                }
+            }
+        }
+    }
+
+    /** Run all overlords and directives */
     run(): void {
         if (!this.room) return; // No visibility
+
+        // Init directives first — they may register new overlords
+        for (const directive of this.directives) {
+            directive.init();
+        }
 
         for (const overlord of this.overlords) {
             overlord.init();
         }
         this.logistics.init();
+
+        // Run directives
+        for (const directive of this.directives) {
+            directive.run();
+        }
 
         for (const overlord of this.overlords) {
             overlord.run();

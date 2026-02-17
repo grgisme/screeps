@@ -24,10 +24,13 @@
 (globalThis as any).ERR_INVALID_TARGET = -7;
 (globalThis as any).ERR_BUSY = -4;
 (globalThis as any).ERR_NOT_ENOUGH_ENERGY = -6;
+(globalThis as any).ERR_NAME_EXISTS = -3;
 
 (globalThis as any).FIND_SOURCES = 105;
 (globalThis as any).FIND_MY_SPAWNS = 111;
 (globalThis as any).FIND_SOURCES_ACTIVE = 104;
+(globalThis as any).FIND_FLAGS = 110;
+(globalThis as any).FIND_HOSTILE_CREEPS = 106;
 
 // Mocks for PathFinder
 (globalThis as any).PathFinder = {
@@ -172,6 +175,7 @@
         getUsed: () => 0,
     },
     creeps: {} as Record<string, any>,
+    flags: {} as Record<string, any>,
     rooms: {} as Record<string, any>,
     map: {
         getRoomTerrain: (_roomName: string) => {
@@ -366,6 +370,7 @@ export function resetMocks(): void {
             getUsed: () => 0,
         },
         creeps: {},
+        flags: {},
         rooms: {},
         map: {
             getRoomTerrain: (_roomName: string) => {
