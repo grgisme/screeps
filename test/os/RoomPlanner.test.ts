@@ -1,7 +1,7 @@
 import "../mock.setup";
 import { expect } from "chai";
 import { RoomPlannerProcess } from "../../src/os/processes/RoomPlannerProcess";
-import { Colony } from "../../src/os/Colony";
+import { Colony } from "../../src/os/colony/Colony";
 
 // Mock Algorithms if possible, or use real one with mock terrain?
 // We need to mock 'distanceTransform' from Algorithms.ts if we don't want to rely on real one + mock map.

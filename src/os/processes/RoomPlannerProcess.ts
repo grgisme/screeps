@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Process } from "../../kernel/Process";
-import { Colony } from "../Colony";
+import { Colony } from "../colony/Colony";
 import { distanceTransform } from "../../utils/Algorithms";
 import { Logger } from "../../utils/Logger";
 

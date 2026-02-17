@@ -1,6 +1,6 @@
 
-import type { Colony } from "../Colony";
-import type { Zerg } from "../infrastructure/Zerg";
+import type { Colony } from "./Colony";
+import type { Zerg } from "../zerg/Zerg";
 
 export interface TransportRequest {
     target: Structure | Resource;

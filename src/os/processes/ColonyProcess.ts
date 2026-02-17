@@ -4,7 +4,7 @@
 
 import { Process } from "../../kernel/Process";
 
-import { Colony } from "../Colony";
+import { Colony } from "../colony/Colony";
 
 export class ColonyProcess extends Process {
     colonyName: string;

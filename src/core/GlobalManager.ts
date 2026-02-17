@@ -4,7 +4,7 @@
 
 import { GlobalCache } from "../utils/GlobalCache";
 import { Logger } from "../utils/Logger";
-import { Colony } from "../os/Colony";
+import { Colony } from "../os/colony/Colony";
 
 const log = new Logger("GlobalManager");
 

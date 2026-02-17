@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { ITask } from "../tasks/ITask";
-import { TrafficManager } from "./TrafficManager";
+import { TrafficManager } from "../infrastructure/TrafficManager";
 
 /**
  * Zerg is a wrapper around the native Creep object.

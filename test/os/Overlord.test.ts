@@ -5,10 +5,11 @@
 import "../mock.setup";
 import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
-import { Colony } from "../../src/os/Colony";
-import { MiningOverlord } from "../../src/os/processes/economy/MiningOverlord";
+import { Colony } from "../../src/os/colony/Colony";
+import { MiningOverlord } from "../../src/os/overlords/MiningOverlord";
+// import { ConstructionOverlord } from "../../src/os/overlords/ConstructionOverlord";
 import { HarvestTask } from "../../src/os/tasks/HarvestTask";
-import { Zerg } from "../../src/os/infrastructure/Zerg";
+import { Zerg } from "../../src/os/zerg/Zerg";
 
 describe("Overlord Control Pattern", () => {
     let room: Room;

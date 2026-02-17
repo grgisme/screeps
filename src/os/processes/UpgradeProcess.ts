@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Process } from "../../kernel/Process";
-import { Zerg } from "../infrastructure/Zerg";
+import { Zerg } from "../zerg/Zerg";
 
 /**
  * Manages upgrader creeps for a single room's controller.

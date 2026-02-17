@@ -1,4 +1,4 @@
-import { Colony } from "../Colony";
+import { Colony } from "./Colony";
 
 
 export class MiningSite {

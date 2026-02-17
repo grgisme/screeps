@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { ITask } from "./ITask";
-import { Zerg } from "../infrastructure/Zerg";
+import { Zerg } from "../zerg/Zerg";
 
 export class HarvestTask implements ITask {
     name = "Harvest";

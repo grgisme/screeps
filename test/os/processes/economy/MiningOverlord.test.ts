@@ -1,6 +1,6 @@
 import "../../../mock.setup";
 import { expect } from "chai";
-import { MiningOverlord } from "../../../../src/os/processes/economy/MiningOverlord";
+import { MiningOverlord } from "../../../../src/os/overlords/MiningOverlord";
 
 describe("MiningOverlord", () => {
     let mockColony: any;

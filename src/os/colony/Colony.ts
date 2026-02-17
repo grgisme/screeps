@@ -1,10 +1,10 @@
-import { Overlord } from "./processes/Overlord";
-import { Zerg } from "./infrastructure/Zerg";
-import { MiningOverlord } from "./processes/economy/MiningOverlord";
-import { ConstructionOverlord } from "./processes/overlords/ConstructionOverlord";
-import { BunkerLayout } from "./infrastructure/BunkerLayout";
-import { LogisticsNetwork } from "./logistics/LogisticsNetwork";
-import { Hatchery } from "./colony/Hatchery";
+import { Overlord } from "../overlords/Overlord";
+import { Zerg } from "../zerg/Zerg";
+import { MiningOverlord } from "../overlords/MiningOverlord";
+import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
+import { BunkerLayout } from "../infrastructure/BunkerLayout";
+import { LogisticsNetwork } from "./LogisticsNetwork";
+import { Hatchery } from "./Hatchery";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };

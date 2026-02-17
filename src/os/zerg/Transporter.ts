@@ -1,6 +1,6 @@
-import { Zerg } from "../infrastructure/Zerg";
-import { MatchedRequest } from "../logistics/LogisticsNetwork";
-import { Overlord } from "../../os/processes/Overlord";
+import { Zerg } from "./Zerg";
+import { MatchedRequest } from "../colony/LogisticsNetwork";
+import { Overlord } from "../overlords/Overlord";
 
 export class Transporter extends Zerg {
 

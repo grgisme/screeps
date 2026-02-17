@@ -1,8 +1,8 @@
-import { Overlord } from "../Overlord";
-import { Colony } from "../../Colony";
-import { MiningSite } from "../../colony/MiningSite";
-import { Miner } from "../../zerg/Miner";
-import { Zerg } from "../../infrastructure/Zerg";
+import { Overlord } from "./Overlord";
+import { Colony } from "../colony/Colony";
+import { MiningSite } from "../colony/MiningSite";
+import { Miner } from "../zerg/Miner";
+import { Zerg } from "../zerg/Zerg";
 
 export class MiningOverlord extends Overlord {
     sites: MiningSite[] = [];
@@ -67,15 +67,6 @@ export class MiningOverlord extends Overlord {
         console.log(`MiningSite [${site.source.id}]: Distance [${site.distance}], Required Haul Capacity [${powerNeeded}], Current [${currentPower}]`);
 
         if (currentPower < powerNeeded) {
-            // "Part-Count Balancing" logic: TotalCarryParts = ceil(HaulingPower / 50).
-            // Actually, we request a creep. 
-            // If we need 100 capacity, that's 2 CARRY parts.
-            // But HaulingPower is total capacity needed. 
-
-            // We enqueue a request. The Hatchery handles body scaling.
-            // We should provide a template.
-            // Standard Hauler: CARRY, MOVE (1:1 road).
-
             this.colony.hatchery.enqueue({
                 priority: 50, // Medium-High
                 bodyTemplate: [CARRY, MOVE],
@@ -90,20 +81,6 @@ export class MiningOverlord extends Overlord {
         for (const miner of this.miners) {
             miner.run();
         }
-
-        // Haulers are likely managed by TransporterOverlord logic generally, 
-        // but if this Overlord requested them and OWNS them (passed 'this' as overlord),
-        // then it should run them. 
-        // NOTE: The requirements say "It requests Haulers". 
-        // Usually dedicated haulers for a source are "Dedicated Logistics". 
-        // If we use the TransporterOverlord for general logistics, these might be redundant?
-        // OR, this MiningOverlord simply ensures enough haulers exist, but maybe they join the general pool?
-        // Requirement: "It requests Haulers... based on MiningSite... logic"
-        // Let's assume for this specific task, MiningOverlord runs them OR they are just spawned.
-        // Given Phase 1 is "MiningSite Architecture", we'll just implement basic running or idle for now 
-        // unless specified.
-        // Actually, the requirements don't specify Hauler BEHAVIOR in "The Miner Zerg" or "MiningOverlord" sections other than spawning.
-        // I will focus on Miner running. Haulers might just accumulate for now or I'll implement simple delivery.
 
         for (const hauler of this.haulers) {
             // Simple delivery logic for now to validate spawning

@@ -2,8 +2,8 @@
 // Overlord — Base class for task managers
 // ============================================================================
 
-import { Zerg } from "../infrastructure/Zerg";
-import { Colony } from "../Colony";
+import { Zerg } from "../zerg/Zerg";
+import { Colony } from "../colony/Colony";
 
 export abstract class Overlord {
     colony: Colony;

@@ -5,7 +5,7 @@
 import "../mock.setup";
 import { resetMocks } from "../mock.setup";
 import { expect } from "chai";
-import { Zerg } from "../../src/os/infrastructure/Zerg";
+import { Zerg } from "../../src/os/zerg/Zerg";
 import { TrafficManager } from "../../src/os/infrastructure/TrafficManager";
 import "../../src/utils/RoomPosition"; // Ensure prototype is loaded
 

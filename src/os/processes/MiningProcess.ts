@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Process } from "../../kernel/Process";
-import { Zerg } from "../infrastructure/Zerg";
+import { Zerg } from "../zerg/Zerg";
 
 /**
  * Manages all mining operations for a single energy source.

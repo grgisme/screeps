@@ -2,7 +2,7 @@
 // TrafficManager — Priority-based movement resolution
 // ============================================================================
 
-import { Zerg } from "./Zerg";
+import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("TrafficManager");

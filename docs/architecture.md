@@ -162,35 +162,37 @@ src/
 │   ├── Process.ts             # Abstract process base
 │   └── ProcessStatus.ts       # Runtime status constants
 ├── os/
-│   ├── Colony.ts              # Per-room hub for Overlords & State
 │   ├── colony/
+│   │   ├── Colony.ts          # Per-room hub for Overlords & State
 │   │   ├── Hatchery.ts        # Spawn manager with priority queue
-│   │   └── MiningSite.ts      # Source mining site data
+│   │   ├── MiningSite.ts      # Source mining site data
+│   │   └── LogisticsNetwork.ts # Centralized resource broker
+│   ├── overlords/
+│   │   ├── Overlord.ts        # Abstract overlord base class
+│   │   ├── MiningOverlord.ts  # Colony-level mine management
+│   │   ├── ConstructionOverlord.ts # Base building automation
+│   │   └── TransporterOverlord.ts  # Logistics fleet manager
+│   ├── zerg/
+│   │   ├── Zerg.ts            # Creep wrapper with task execution & pathing
+│   │   ├── Miner.ts           # Specialized miner creep
+│   │   └── Transporter.ts     # Logistics worker creep
 │   ├── infrastructure/
 │   │   ├── BunkerLayout.ts    # Base layout templates
-│   │   ├── TrafficManager.ts  # Priority-based movement resolution
-│   │   └── Zerg.ts            # Creep wrapper with task execution
-│   ├── logistics/
-│   │   └── LogisticsNetwork.ts # Centralized resource broker
-│   ├── processes/
-│   │   ├── ColonyProcess.ts   # Kernel adapter for Colony lifecycle
-│   │   ├── MiningProcess.ts   # Standalone source harvesting process
-│   │   ├── UpgradeProcess.ts  # Standalone controller upgrader
-│   │   ├── ProfilerProcess.ts # CPU usage monitor (priority 0)
-│   │   ├── Overlord.ts        # Abstract overlord base class
-│   │   ├── RoomPlannerProcess.ts # Room planning automation
-│   │   ├── economy/
-│   │   │   └── MiningOverlord.ts # Colony-level mine management
-│   │   └── overlords/
-│   │       ├── ConstructionOverlord.ts # Base building automation
-│   │       └── TransporterOverlord.ts # Logistics fleet manager
-│   └── zerg/
-│       ├── Miner.ts           # Specialized miner creep
-│       └── Transporter.ts     # Logistics worker creep
+│   │   └── TrafficManager.ts  # Priority-based movement resolution
+│   ├── tasks/
+│   │   ├── ITask.ts           # Task interface
+│   │   └── HarvestTask.ts     # Harvest task implementation
+│   └── processes/
+│       ├── ColonyProcess.ts   # Kernel adapter for Colony lifecycle
+│       ├── MiningProcess.ts   # Standalone source harvesting process
+│       ├── UpgradeProcess.ts  # Standalone controller upgrader
+│       ├── ProfilerProcess.ts # CPU usage monitor (priority 0)
+│       └── RoomPlannerProcess.ts # Room planning automation
 ├── utils/
 │   ├── ErrorMapper.ts         # Source-map stack trace mapping
 │   ├── GlobalCache.ts         # Heap-first state + reset detection
 │   ├── Algorithms.ts          # Distance Transform & geometries
+│   ├── CreepBody.ts           # Body part scaling utilities
 │   ├── Logger.ts              # Structured logging with levels
 │   └── RoomPosition.ts        # RoomPosition prototype extensions
 └── core/

@@ -2,7 +2,7 @@
 // ITask — Interface for actionable tasks
 // ============================================================================
 
-import { Zerg } from "../infrastructure/Zerg";
+import { Zerg } from "../zerg/Zerg";
 
 /**
  * A Task represents a specific action a Zerg should perform (Harvest, Upgrade, etc.)

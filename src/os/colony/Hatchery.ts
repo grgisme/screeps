@@ -1,5 +1,5 @@
-import { Colony } from "../Colony";
-import { Overlord } from "../processes/Overlord";
+import { Colony } from "./Colony";
+import { Overlord } from "../overlords/Overlord";
 import { CreepBody } from "../../utils/CreepBody";
 
 export interface SpawnRequest {
