@@ -45,3 +45,5 @@ Type these in the Screeps console at runtime:
 
 ## Documentation Map
 - [Architecture Reference](architecture.md) — Full OS design documentation
+- [Colony Management](colony_management.md) — Room hierarchy (Colony -> Overlord -> Zerg)
+- [Automated Planning](automated_planning.md) — Infrastructure and construction logic

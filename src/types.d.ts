@@ -52,6 +52,10 @@ interface CreepMemory {
     homeRoom?: string;
 }
 
+interface RoomPosition {
+    getPositionAtDirection(direction: DirectionConstant): RoomPosition | null;
+}
+
 interface Memory {
     kernel: KernelMemory;
     creeps: { [name: string]: CreepMemory };

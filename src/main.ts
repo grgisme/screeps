@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { ErrorMapper } from "./utils/ErrorMapper";
+import "./prototypes/RoomPosition";
 import { GlobalCache } from "./utils/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
@@ -11,6 +12,7 @@ import { UpgradeProcess } from "./processes/UpgradeProcess";
 import { ProfilerProcess } from "./processes/ProfilerProcess";
 import { ColonyProcess } from "./os/processes/ColonyProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
+import { TrafficManager } from "./os/infrastructure/TrafficManager";
 
 const log = new Logger("OS");
 
@@ -207,7 +209,10 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // --- 7. Run the scheduler ---
     kernel.run();
 
-    // --- 8. Handle kernel panic ---
+    // --- 8. Run Traffic Manager ---
+    TrafficManager.run();
+
+    // --- 9. Handle kernel panic ---
     if (kernel.isPanicActive()) {
         handleKernelPanic();
     }

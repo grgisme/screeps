@@ -15,28 +15,33 @@ This document describes the internal architecture of the Screeps bot's Operating
 └─────────────────────────────────────────────────┘
          │
          ▼
+```
 ┌─────────────────────────────────────────────────┐
 │                    Kernel                        │
 │  ProcessTable: Map<PID, Process>                │
-│  Scheduler: priority sort → for-of → try/catch │
-│  Guards: CPU ceiling (90%), Bucket floor (500)  │
-│  Profiling: per-process CPU deltas via getUsed  │
-│  Serialization: Memory.kernel ↔ processTable    │
 └─────────────────────────────────────────────────┘
          │
          ▼
-┌──────────┐ ┌──────────────┐ ┌───────────────┐
-│ Profiler │ │ MiningProc   │ │ UpgradeProc   │
-│ pri: 0   │ │ pri: 10      │ │ pri: 20       │
-│ CPU stats│ │ 1 per source │ │ 1 per room    │
-│ 20-tick  │ │ spawns miners│ │ spawns upgrdrs│
-└──────────┘ └──────────────┘ └───────────────┘
-         │           │                │
-         ▼           ▼                ▼
+┌───────────────────┐      ┌─────────────────────────┐
+│  ColonyProcess    │      │  Legacy Processes       │
+│  (1 per Room)     │      │  (Mining/Upgrade)       │
+└───────────────────┘      └─────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────┐
+│                    Colony                        │
+│  Hub for Overlords & State                      │
+└─────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐  ┌──────────────────┐
+│ MiningOverlord   │  │ ConstructOverlord│
+└──────────────────┘  └──────────────────┘
+         │                    │
+         ▼                    ▼
 ┌─────────────────────────────────────────────────┐
 │                    Zerg                          │
 │  Creep wrapper with heap-cached pathing         │
-│  TTL: 15 ticks │ Key: "name:x:y:room"          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -110,6 +115,21 @@ sweep dead processes
 | Creep role + PID | `Memory.creeps` | Survive global resets |
 | Log level | `Memory.logLevel` | Persist across resets |
 | Last reset tick | `Memory.kernel.lastGlobalReset` | Diagnostics |
+| IDs 0-99 | `RawMemory.segments` | Managed by SegmentManager |
+
+## Infrastructure Layer
+
+### Raw Memory Management (`SegmentManager`)
+-   Manages access to the 100 available raw memory segments.
+-   Enforces the 10-active-segment limit per tick.
+-   Provides an interface to Request, Read, and Save segments.
+
+### Traffic Management (`TrafficManager`)
+*(Experimental)*
+-   Implements a priority-based movement resolution system.
+-   Resolves conflicts when multiple creeps try to move to the same square or swap positions.
+-   **Shove Logic**: Higher priority creeps can "shove" lower priority or idle creeps out of the way.
+-   *Note: Currently separate from the main `Zerg.travelTo` logic.*
 
 ## Build Configuration
 
@@ -141,13 +161,30 @@ src/
 │   ├── Process.ts             # Abstract process base
 │   └── ProcessStatus.ts       # Runtime status constants
 ├── processes/
-│   ├── MiningProcess.ts       # Source harvesting overlord
-│   ├── UpgradeProcess.ts      # Controller upgrade overlord
+│   ├── overlords/             # Colony Task Managers
+│   │   ├── MiningOverlord.ts  # Source harvesting
+│   │   └── ConstructionOverlord.ts # Base building
+│   ├── MiningProcess.ts       # (Legacy) Standalone miner
+│   ├── UpgradeProcess.ts      # (Legacy) Standalone upgrader
 │   └── ProfilerProcess.ts     # CPU usage monitor (priority 0)
 ├── utils/
 │   ├── ErrorMapper.ts         # Source-map stack trace mapping
 │   ├── GlobalCache.ts         # Heap-first state + reset detection
+│   ├── Algorithms.ts          # Distance Transform & geometries
 │   └── Logger.ts              # Structured logging with levels
+├── core/
+│   ├── GlobalManager.ts       # Warm start / Colony rehydration
+│   └── memory/
+│       └── SegmentManager.ts  # RawMemory segment management
+├── os/infrastructure/
+│   ├── BunkerLayout.ts        # Base layout templates
+│   └── TrafficManager.ts      # (Experimental) Priority-based movement
 └── zerg/
     └── Zerg.ts                # Creep wrapper + path cache
 ```
+
+### New Modules (Automated Planning)
+
+- **RoomPlannerProcess**: `src/os/processes/RoomPlannerProcess.ts`
+- **ConstructionOverlord**: `src/processes/overlords/ConstructionOverlord.ts`
+- **BunkerLayout**: `src/os/infrastructure/BunkerLayout.ts`
