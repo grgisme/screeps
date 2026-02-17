@@ -39,6 +39,7 @@ export class Transporter extends Zerg {
         if (request) {
             this.request = request;
             this.creep.say("🚛" + request.amount);
+            console.log(`Transporter ${this.name} dispatched to ${request.target} (Priority ${request.priority}).`);
         }
     }
 
