@@ -23,6 +23,10 @@ export class MiningOverlord extends Overlord {
             if (alive) z.refresh();
             return alive;
         });
+
+        // Adopt orphaned miners/haulers after global resets
+        this.adoptOrphans();
+
         // 1. Instantiate Sites if not done
         if (this.sites.length === 0) {
             const sources = this.colony.room.find(FIND_SOURCES);
@@ -51,6 +55,26 @@ export class MiningOverlord extends Overlord {
         // 4. Spawn Logic per Site
         for (const site of this.sites) {
             this.handleSpawning(site);
+        }
+    }
+
+    /**
+     * Adopt orphaned miners and haulers that survive global resets.
+     * Without this, zergs is empty after a reset and miners never get run().
+     */
+    private adoptOrphans(): void {
+        const room = this.colony.room;
+        const orphans = room.find(FIND_MY_CREEPS, {
+            filter: (creep: Creep) =>
+                (creep.memory.role === "miner" || creep.memory.role === "hauler") &&
+                !this.colony.getZerg(creep.name)
+        });
+
+        for (const orphan of orphans) {
+            const zerg = this.colony.registerZerg(orphan);
+            zerg.task = null;
+            this.zergs.push(zerg);
+            log.info(`${this.colony.name}: Adopted orphan ${orphan.memory.role} ${orphan.name}`);
         }
     }
 
