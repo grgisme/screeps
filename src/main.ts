@@ -226,7 +226,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
     // Memory Usage Report (Console)
     if (Game.time % 100 === 0) {
-        const heapUsed = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const heap = Game.cpu.getHeapStatistics?.();
+        const heapUsed = heap ? (heap.used_heap_size / 1024 / 1024).toFixed(2) : "N/A";
         const bucket = Game.cpu.bucket;
         console.log(`<span style='color:#a6a6a6'>[System] Heap: ${heapUsed} MB | Bucket: ${bucket}</span>`);
     }
