@@ -55,35 +55,84 @@ export class WorkerOverlord extends Overlord {
     }
 
     private handleSpawning(): void {
+        const room = (this as any).colony.room;
+
         // Check if mining is suspended (no containers/storage yet)
         const miningOverlord = (this as any).colony.overlords
             .find((o: any) => o instanceof MiningOverlord) as MiningOverlord | undefined;
         const miningSuspended = miningOverlord ? miningOverlord.isSuspended : true;
 
-        // Base target: 4 workers if mining suspended (Genesis), 1 if active
-        let target = miningSuspended ? 4 : 1;
+        // Slot-based cap: count walkable tiles around all sources
+        const maxWorkers = this.countMiningSpots(room) + 2;
+
+        // Despawn: if way over cap, suicide lowest-TTL worker
+        if (this.workers.length > maxWorkers + 2) {
+            let worst: Worker | null = null;
+            let worstTTL = Infinity;
+            for (const w of this.workers) {
+                const ttl = w.creep.ticksToLive ?? Infinity;
+                if (ttl < worstTTL) {
+                    worstTTL = ttl;
+                    worst = w;
+                }
+            }
+            if (worst) {
+                log.info(`Despawning excess worker ${worst.name} (TTL: ${worstTTL}, cap: ${maxWorkers})`);
+                worst.creep.suicide();
+                this.workers = this.workers.filter(w => w.name !== worst!.name);
+            }
+        }
+
+        // Don't spawn if at or over cap
+        if (this.workers.length >= maxWorkers) return;
+
+        // Base target: more during genesis, fewer once mining is online
+        let target = miningSuspended ? Math.min(4, maxWorkers) : 1;
 
         // Scale up for construction work
-        const sites = (this as any).colony.room.find(FIND_MY_CONSTRUCTION_SITES);
+        const sites = room.find(FIND_MY_CONSTRUCTION_SITES);
         const progressTotal = sites.reduce((sum: number, site: ConstructionSite) => sum + (site.progressTotal - site.progress), 0);
 
         if (progressTotal > 0) {
             target += Math.floor(progressTotal / 2000);
         }
 
-        // Cap: higher during genesis, normal otherwise
-        const maxWorkers = miningSuspended ? 6 : 5;
         if (target > maxWorkers) target = maxWorkers;
 
         if (this.workers.length < target) {
             (this as any).colony.hatchery.enqueue({
-                // Higher priority during genesis so workers spawn before haulers/upgraders
                 priority: miningSuspended ? 80 : 3,
                 bodyTemplate: [WORK, CARRY, MOVE],
                 overlord: this,
                 memory: { role: "worker" }
             });
         }
+    }
+
+    /**
+     * Count total walkable (non-wall) tiles adjacent to all sources in the room.
+     * This determines how many creeps can physically mine simultaneously.
+     */
+    private countMiningSpots(room: Room): number {
+        const terrain = Game.map.getRoomTerrain(room.name);
+        const sources = room.find(FIND_SOURCES);
+        let spots = 0;
+
+        for (const source of sources) {
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const x = source.pos.x + dx;
+                    const y = source.pos.y + dy;
+                    if (x < 0 || x > 49 || y < 0 || y > 49) continue;
+                    if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
+                        spots++;
+                    }
+                }
+            }
+        }
+
+        return spots;
     }
     getBestConstructionSite(): ConstructionSite | null {
         // Priority Table

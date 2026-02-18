@@ -162,10 +162,21 @@ export class Worker extends Zerg {
     private work(): void {
         const room = this.creep.room;
 
-        // 1. Emergency Fill (If spawns are empty and we have energy)
-        // Only if we are in RCL 1 or critical situation
+        // 1. CRITICAL: Build container sites FIRST (Genesis Build Order)
+        //    Without containers, mining stays suspended → workers keep spawning → stagnation
+        const containerSite = room.find(FIND_MY_CONSTRUCTION_SITES, {
+            filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
+        })[0];
+        if (containerSite) {
+            this.creep.say("📦🔨");
+            if (this.creep.build(containerSite) === ERR_NOT_IN_RANGE) {
+                this.travelTo(containerSite);
+            }
+            return;
+        }
+
+        // 2. Fill Spawns/Extensions (keep energy flowing for spawning)
         if (room.energyAvailable < room.energyCapacityAvailable) {
-            // Find closest spawn/extension
             const target = this.pos.findClosestByRange(FIND_MY_STRUCTURES, {
                 filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
                     s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -178,7 +189,7 @@ export class Worker extends Zerg {
             }
         }
 
-        // 2. Build Construction Sites (Prioritized by Overlord)
+        // 3. Build Other Construction Sites (Prioritized by Overlord)
         const site = (this.overlord as any).getBestConstructionSite();
         if (site) {
             if (this.creep.build(site) === ERR_NOT_IN_RANGE) {
@@ -187,10 +198,7 @@ export class Worker extends Zerg {
             return;
         }
 
-        // 3. Repair Critical Structures (Roads, Containers)
-        // We iterate to find something damaged
-        // Maintain Roads at 90%, Containers at 100%?
-        // Let's say roads > 75% is fine.
+        // 4. Repair Critical Structures (Roads < 75%, Containers < 100%)
         const structure = this.pos.findClosestByRange(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax * 0.75) ||
                 (s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax)
@@ -202,7 +210,7 @@ export class Worker extends Zerg {
             return;
         }
 
-        // 4. Upgrade Controller (Default)
+        // 5. Upgrade Controller (Default)
         if (room.controller) {
             if (this.creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
                 this.travelTo(room.controller, 3);

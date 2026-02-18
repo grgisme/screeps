@@ -9,12 +9,24 @@ describe("WorkerOverlord", () => {
     let overlord: WorkerOverlord;
     let mockMiningOverlord: any;
 
+    // Mock sources with positions for countMiningSpots()
+    const mockSources = [
+        { id: "src1", pos: { x: 10, y: 10, roomName: "W1N1", findInRange: () => [], isNearTo: () => false } },
+        { id: "src2", pos: { x: 30, y: 30, roomName: "W1N1", findInRange: () => [], isNearTo: () => false } },
+    ];
+
+    // Mock terrain that returns all plains (no walls) → 8 spots per source × 2 = 16, maxWorkers = 18
+    const mockTerrain = { get: (_x: number, _y: number) => 0 }; // 0 = plain
+
     beforeEach(() => {
         // Reset Global Mocks
         (global as any).Game = {
             rooms: {},
             creeps: {},
-            time: 100
+            time: 100,
+            map: {
+                getRoomTerrain: (_name: string) => mockTerrain
+            }
         };
         (global as any).Memory = {
             creeps: {},
@@ -24,7 +36,10 @@ describe("WorkerOverlord", () => {
         // Setup Mock Room
         const room = new MockRoom("W1N1");
         Game.rooms["W1N1"] = room as any;
-        room.find = (_: number) => [];
+        room.find = (type: number) => {
+            if (type === FIND_SOURCES) return mockSources;
+            return [];
+        };
 
         // Setup Mock Colony
         colony = new MockColony("W1N1") as any;
@@ -50,6 +65,7 @@ describe("WorkerOverlord", () => {
         // Mock room.find to return the orphan
         colony.room.find = (type: number) => {
             if (type === FIND_MY_CREEPS) return [orphan];
+            if (type === FIND_SOURCES) return mockSources;
             return [];
         };
 
@@ -64,10 +80,10 @@ describe("WorkerOverlord", () => {
         // Mock construction sites
         const site1 = { progress: 0, progressTotal: 3000 };
         const site2 = { progress: 0, progressTotal: 3000 };
-        // Total remaining = 6000. 6000 / 2000 = 3 extras + 4 base (suspended) = 7 -> cap 6.
 
         colony.room.find = (type: number) => {
             if (type === FIND_MY_CONSTRUCTION_SITES) return [site1, site2];
+            if (type === FIND_SOURCES) return mockSources;
             return [];
         };
 
@@ -82,15 +98,16 @@ describe("WorkerOverlord", () => {
         expect(request.memory.role).to.equal("worker");
     });
 
-    it("should cap workers at 5 when mining is active", () => {
+    it("should cap workers at maxWorkers (slot-based)", () => {
         // Give MiningOverlord a site with a container (mining active)
         mockMiningOverlord.sites = [{ container: { id: "c1" }, link: undefined }];
 
         // Mock massive construction
-        const site = { progress: 0, progressTotal: 50000 }; // 25 extras -> Cap 5
+        const site = { progress: 0, progressTotal: 50000 };
 
         colony.room.find = (type: number) => {
             if (type === FIND_MY_CONSTRUCTION_SITES) return [site];
+            if (type === FIND_SOURCES) return mockSources;
             return [];
         };
 
@@ -99,6 +116,7 @@ describe("WorkerOverlord", () => {
 
         overlord.init();
 
+        // With 0 workers and 18 maxWorkers, should still request spawn
         expect(request).to.not.be.null;
     });
 
@@ -106,7 +124,10 @@ describe("WorkerOverlord", () => {
         // MiningOverlord has no containers → isSuspended = true
         mockMiningOverlord.sites = [{ container: undefined, link: undefined }];
 
-        colony.room.find = (_type: number) => [];
+        colony.room.find = (type: number) => {
+            if (type === FIND_SOURCES) return mockSources;
+            return [];
+        };
 
         let request: any = null;
         colony.hatchery.enqueue = (req: any) => { request = req; return "test"; };
