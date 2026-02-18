@@ -220,7 +220,7 @@ export class Logger {
 
         // Color-coded output: tag and label are styled, message body is styled
         const styledTag = `<span style=\"color:#999999\">[${this.tag}]</span>`;
-        const styledLabel = `<span style=\"color:${color};font-weight:bold\">[${label}]</span>`;
+        const styledLabel = `<span style=\"color:${color}\">[${label}]</span>`;
         const styledMsg = `<span style=\"color:${color}\">${resolved}</span>`;
 
         console.log(`${emoji} ${styledLabel} ${styledTag} ${styledMsg}`);
