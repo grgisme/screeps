@@ -50,7 +50,7 @@ export class MiningOverlord extends Overlord {
         if (siteMiners.length < 1) {
             this.colony.hatchery.enqueue({
                 priority: 100, // Very High, essential for energy
-                bodyTemplate: [WORK, WORK, WORK, WORK, WORK, MOVE], // 5 Work = 10 energy/tick
+                bodyTemplate: [WORK, WORK, MOVE], // Scales with energy: 250/repeat
                 overlord: this,
                 name: `miner_${site.source.id}_${Game.time}`,
                 memory: { role: "miner", state: { siteId: site.source.id } }

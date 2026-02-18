@@ -13,7 +13,13 @@ export class CreepBody {
         let repeats = maxRepeats;
 
         // Safety check: if pattern is empty or cost is 0, return empty
-        if (patternCost === 0) return [];
+        if (patternCost === 0 || template.length === 0) return [];
+
+        // If we can't afford even one repeat, return one copy anyway
+        // (the Hatchery will wait for energy or drop if truly impossible)
+        if (maxRepeats === 0) {
+            return this.sort([...template]);
+        }
 
         for (let i = 0; i < repeats; i++) {
             if (body.length + template.length > limitPos) break;
