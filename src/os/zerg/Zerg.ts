@@ -100,11 +100,14 @@ export class Zerg {
                 maxOps: 2000
             });
 
-            if (ret.incomplete) {
+            if (ret.path.length === 0) {
+                // PathFinder returned nothing — direct moveTo as last resort
+                this.creep.say("⛔ Path");
+                this.creep.moveTo(targetPos, { range });
                 return;
             }
 
-            // Serialize path to string
+            // Use the path even if incomplete — partial progress is better than standing still
             const pathString = this.serializePath(this.pos, ret.path);
             this._path = {
                 path: pathString,
