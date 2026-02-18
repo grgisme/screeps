@@ -125,15 +125,38 @@ export class LogisticsNetwork {
             }
 
             // Deficit Mode: Storage acts as Requester
-            // Only if we have providers that are NOT the storage itself (miners/containers)
-            // This allows 'draining' containers into storage when storage is low.
             if (energy < 100000) {
-                // We don't want to double register if it's already a provider?
-                // Logic: If < 100k, we WANT energy.
-                // But generally miners push to storage via separate logic? 
-                // "The User says: If Storage.store < 100,000, it acts as a Requester (accept energy from miners)."
-                // So we add it to requesters.
-                this.requestInput(storage, { amount: 100000 - energy, priority: 1 }); // Low priority fill
+                this.requestInput(storage, { amount: 100000 - energy, priority: 1 });
+            }
+        }
+
+        // --- Link Integration (Hub Link) ---
+        if (this.colony.linkNetwork && this.colony.linkNetwork.hubLink) {
+            const hub = this.colony.linkNetwork.hubLink;
+            // Provider: If full (came from source), dump to storage
+            // Use hysteresis to prevent flip-flopping
+            if (hub.store.energy > 600) {
+                this.providers.push(hub);
+            }
+            // Requester: If empty (needs to feed controller/upgraders), fill from storage
+            if (hub.store.energy < 400) {
+                this.requestInput(hub, { amount: 800 - hub.store.energy, priority: 5 });
+            }
+        }
+
+        // --- Terminal Integration ---
+        if (this.colony.room.terminal) {
+            const term = this.colony.room.terminal;
+            // Simplistic logic for now: Keep terminal at ~5000 energy for transactions
+            // Real logic is handled by TerminalOverlord - but Logistics handles the moving
+            if (term.store.energy < 3000) {
+                this.requestInput(term, { amount: 3000 - term.store.energy, priority: 3 });
+            }
+            if (term.store.energy > 10000) { // Too much? dump back to storage (unless selling)
+                // Actually, TerminalOverlord might want it full. 
+                // Let's just allow it to provide if it has excess?
+                // For now, let's treat it as a provider if > 10000
+                this.providers.push(term);
             }
         }
 

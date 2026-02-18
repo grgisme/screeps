@@ -3,6 +3,7 @@ import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
+import { LinkNetwork } from "./LinkNetwork";
 import { LogisticsNetwork } from "./LogisticsNetwork";
 import { Hatchery } from "./Hatchery";
 import { Directive } from "../directives/Directive";
@@ -26,6 +27,7 @@ export class Colony {
     directives: Directive[] = [];
     zergs: Map<string, Zerg> = new Map();
     logistics: LogisticsNetwork;
+    linkNetwork: LinkNetwork;
     hatchery: Hatchery;
 
     constructor(roomName: string) {
@@ -42,11 +44,13 @@ export class Colony {
         if (this.room) {
             this.scan();
             this.logistics = new LogisticsNetwork(this);
+            this.linkNetwork = new LinkNetwork(this);
             this.hatchery = new Hatchery(this);
             this.initOverlords();
             this.initDirectives();
         } else {
             this.logistics = new LogisticsNetwork(this);
+            this.linkNetwork = new LinkNetwork(this);
             this.hatchery = new Hatchery(this);
         }
     }
@@ -58,13 +62,16 @@ export class Colony {
         // Core Logic (Genesis Protocol) - Use dynamic require to avoid circular dependency
         const { WorkerOverlord } = require("../overlords/core/WorkerOverlord");
         const { UpgradingOverlord } = require("../overlords/core/UpgradingOverlord");
+        const { TerminalOverlord } = require("../overlords/economy/TerminalOverlord");
 
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
+        this.registerOverlord(new TerminalOverlord(this));
     }
 
     scan(): void {
         this.creeps = this.room ? this.room.find(FIND_MY_CREEPS) : [];
+        if (this.linkNetwork) this.linkNetwork.refresh();
     }
 
     refresh(): void {
@@ -139,6 +146,11 @@ export class Colony {
 
         for (const zerg of this.zergs.values()) {
             zerg.run();
+        }
+
+        if (this.linkNetwork) {
+            this.linkNetwork.init();
+            this.linkNetwork.run();
         }
     }
 

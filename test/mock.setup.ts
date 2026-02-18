@@ -140,6 +140,8 @@
 (globalThis as any).HEAL = "heal";
 (globalThis as any).TOUGH = "tough";
 (globalThis as any).CLAIM = "claim";
+(globalThis as any).ORDER_SELL = "sell";
+(globalThis as any).ORDER_BUY = "buy";
 (globalThis as any).TERRAIN_MASK_WALL = 1;
 (globalThis as any).TERRAIN_MASK_SWAMP = 2;
 
@@ -190,6 +192,11 @@
         }
     },
     getObjectById: (_id: string) => null,
+    market: {
+        calcTransactionCost: (_amount: number, _roomName1: string, _roomName2: string) => 0,
+        getAllOrders: (_filter?: any) => [],
+        deal: (_orderId: string, _amount: number, _targetRoomName?: string) => OK,
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -372,6 +379,7 @@ export class MockColony {
 // ---------------------------------------------------------------------------
 
 export function resetMocks(): void {
+    // console.log("resetMocks called");
     (globalThis as any).Memory = {
         creeps: {},
         rooms: {},
@@ -399,6 +407,11 @@ export function resetMocks(): void {
             }
         },
         getObjectById: (_id: string) => null,
+        market: {
+            calcTransactionCost: (_amount: number, _roomName1: string, _roomName2: string) => 0,
+            getAllOrders: (_filter?: any) => [],
+            deal: (_orderId: string, _amount: number, _targetRoomName?: string) => OK,
+        }
     };
     (globalThis as any)._heap = {
         _initialized: false,
