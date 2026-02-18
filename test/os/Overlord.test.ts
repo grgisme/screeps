@@ -36,6 +36,12 @@ describe("Overlord Control Pattern", () => {
             return [];
         };
 
+        // Mock getObjectById for HarvestTask getter pattern
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === source.id) return source;
+            return null;
+        };
+
         creep = new Creep("miner1" as Id<Creep>);
         creep.room = room;
         creep.memory = { role: "miner" } as CreepMemory;
@@ -94,14 +100,17 @@ describe("Overlord Control Pattern", () => {
 
     describe("Zerg & Task", () => {
         it("should execute task", () => {
-            const zerg = new Zerg(creep);
-            const task = new HarvestTask(source);
+            const zerg = new Zerg(creep.name);
+            const task = new HarvestTask(source.id);
             zerg.task = task;
 
-            // Creep out of range
+            // Creep out of range — travelTo falls back to moveTo when PathFinder returns empty
             creep.pos = new RoomPosition(20, 20, "W1N1");
             let moveCalled = false;
-            creep.moveTo = (_target) => { moveCalled = true; return OK; };
+            creep.moveTo = ((_target: any) => { moveCalled = true; return OK; }) as any;
+            creep.say = (() => OK) as any;
+            // Force PathFinder to return empty path
+            (globalThis as any).PathFinder.search = () => ({ path: [], ops: 0, cost: 0, incomplete: true });
 
             zerg.run();
             expect(moveCalled).to.be.true;
@@ -109,10 +118,12 @@ describe("Overlord Control Pattern", () => {
             // Creep in range
             creep.pos = new RoomPosition(11, 10, "W1N1");
             let harvestCalled = false;
-            creep.harvest = (_target) => { harvestCalled = true; return OK; };
+            creep.harvest = ((_target: any) => { harvestCalled = true; return OK; }) as any;
 
             zerg.run();
+            // zerg.harvest() intent-cached wrapper calls creep.harvest under the hood
             expect(harvestCalled).to.be.true;
         });
     });
 });
+

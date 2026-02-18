@@ -17,12 +17,9 @@ export class MiningOverlord extends Overlord {
     }
 
     init(): void {
-        // Refresh all zerg creep references for this tick and prune dead
-        this.zergs = this.zergs.filter(z => {
-            const alive = !!Game.creeps[z.name];
-            if (alive) z.refresh();
-            return alive;
-        });
+        // The getter pattern means we no longer need refresh() — Game.creeps
+        // is resolved each tick automatically. Just prune dead zergs.
+        this.zergs = this.zergs.filter(z => z.isAlive());
 
         // Adopt orphaned miners/haulers after global resets
         this.adoptOrphans();
@@ -46,7 +43,7 @@ export class MiningOverlord extends Overlord {
             .map(z => {
                 const mem = (z.memory as any);
                 if (!mem.state || !mem.state.siteId) return null;
-                return new Miner(z.creep, this.sites.find(s => s.source.id === mem.state.siteId));
+                return new Miner(z.creepName);
             })
             .filter(m => m !== null) as Miner[];
 
@@ -93,7 +90,10 @@ export class MiningOverlord extends Overlord {
             return;
         }
 
-        const siteMiners = this.miners.filter(m => m.site === site);
+        const siteMiners = this.miners.filter(m => {
+            const mem = m.memory as any;
+            return mem?.state?.siteId === site.source.id;
+        });
         if (siteMiners.length < 1) {
             this.colony.hatchery.enqueue({
                 priority: 100, // Very High, essential for energy
@@ -109,7 +109,7 @@ export class MiningOverlord extends Overlord {
         const powerNeeded = site.calculateHaulingPowerNeeded();
         const currentPower = this.haulers
             .filter(h => (h.memory as any).state.siteId === site.source.id)
-            .reduce((sum, h) => sum + h.creep.store.getCapacity(), 0);
+            .reduce((sum, h) => sum + h.creep!.store.getCapacity(), 0);
 
         log.throttle(100, () => `Site [${site.source.id.slice(-4)}]: Dist=${site.distance}, HaulNeeded=${powerNeeded}, HaulCurrent=${currentPower}`, site.source.id.charCodeAt(0));
 
@@ -131,18 +131,19 @@ export class MiningOverlord extends Overlord {
 
         for (const hauler of this.haulers) {
             // Simple delivery logic for now to validate spawning
-            if (hauler.creep.store.getFreeCapacity() > 0) {
+            if (!hauler.isAlive()) continue;
+            if (hauler.creep!.store.getFreeCapacity() > 0) {
                 // Go to site container
                 const site = this.sites.find(s => s.source.id === (hauler.memory as any).state.siteId);
                 if (site && site.containerPos) {
-                    if (!hauler.pos.inRangeTo(site.containerPos, 1)) {
+                    if (!hauler.pos!.inRangeTo(site.containerPos, 1)) {
                         hauler.travelTo(site.containerPos);
                     } else {
-                        if (site.container) hauler.creep.withdraw(site.container, RESOURCE_ENERGY);
+                        if (site.container) hauler.creep!.withdraw(site.container, RESOURCE_ENERGY);
                         else {
                             // Pickup dropped?
                             const dropped = site.containerPos.lookFor(LOOK_RESOURCES)[0];
-                            if (dropped) hauler.creep.pickup(dropped);
+                            if (dropped) hauler.creep!.pickup(dropped);
                         }
                     }
                 }
@@ -150,7 +151,7 @@ export class MiningOverlord extends Overlord {
                 // Deliver to storage/spawn
                 const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
                 if (dropoff) {
-                    if (hauler.creep.transfer(dropoff, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    if (hauler.creep!.transfer(dropoff, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                         hauler.travelTo(dropoff);
                     }
                 }

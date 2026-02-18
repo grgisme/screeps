@@ -28,7 +28,7 @@ describe("Movement Optimization", () => {
         (creep as any).room = room;
 
         (globalThis as any).Game.creeps["scout1"] = creep;
-        zerg = new Zerg(creep);
+        zerg = new Zerg(creep.name);
     });
 
     describe("Zerg.travelTo (Path Caching)", () => {

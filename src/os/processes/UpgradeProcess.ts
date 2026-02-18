@@ -50,7 +50,7 @@ export class UpgradeProcess extends Process {
             if (!creep) {
                 continue;
             }
-            this.runUpgrader(new Zerg(creep));
+            this.runUpgrader(new Zerg(name));
         }
     }
 
@@ -61,13 +61,13 @@ export class UpgradeProcess extends Process {
         }
 
         // Needs energy? Go withdraw/pickup
-        if (zerg.creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+        if (zerg.creep!.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
             this.withdrawEnergy(zerg, room);
             return;
         }
 
         // Upgrade controller
-        const result = zerg.creep.upgradeController(room.controller);
+        const result = zerg.creep!.upgradeController(room.controller);
         if (result === ERR_NOT_IN_RANGE) {
             zerg.travelTo(room.controller.pos);
         }
@@ -77,7 +77,7 @@ export class UpgradeProcess extends Process {
         // Prefer containers/storage, fall back to harvesting a source
         const target = this.findEnergySource(room);
         if (target) {
-            const result = zerg.creep.withdraw(
+            const result = zerg.creep!.withdraw(
                 target as StructureContainer | StructureStorage,
                 RESOURCE_ENERGY
             );
@@ -91,7 +91,7 @@ export class UpgradeProcess extends Process {
         const sources = room.find(FIND_SOURCES_ACTIVE);
         if (sources.length > 0) {
             const source = sources[0];
-            const result = zerg.creep.harvest(source);
+            const result = zerg.creep!.harvest(source);
             if (result === ERR_NOT_IN_RANGE) {
                 zerg.travelTo(source.pos);
             }

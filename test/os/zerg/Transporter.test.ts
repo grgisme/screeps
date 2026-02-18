@@ -26,7 +26,8 @@ describe("Transporter", () => {
 
         colony = { room: { name: "W1N1" }, logistics: { requestTask: () => null } } as any;
         overlord = { colony } as any;
-        transporter = new Transporter(creep, overlord);
+        (globalThis as any).Game.creeps[creep.name] = creep;
+        transporter = new Transporter(creep.name, overlord);
     });
 
     it("should repair road underfoot if damaged", () => {

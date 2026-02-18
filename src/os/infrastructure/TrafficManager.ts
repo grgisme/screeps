@@ -59,7 +59,7 @@ export class TrafficManager {
 
         for (const intent of this.intents) {
             const zerg = intent.zerg;
-            const targetPos = positionAtDirection(zerg.pos, intent.direction);
+            const targetPos = positionAtDirection(zerg.pos!, intent.direction);
 
             if (!targetPos) continue;
 
@@ -68,7 +68,7 @@ export class TrafficManager {
             const blocker = creepsAtTarget.length > 0 ? (creepsAtTarget[0] as Creep) : null;
 
             // If blocked by a friendly creep
-            if (blocker && blocker.owner && blocker.owner.username === zerg.room.controller?.owner?.username) {
+            if (blocker && blocker.owner && blocker.owner.username === zerg.room!.controller?.owner?.username) {
                 // Is the blocker moving?
                 const blockerIntent = this.intents.find(i => i.zerg.name === blocker.name);
 
@@ -88,7 +88,7 @@ export class TrafficManager {
             }
 
             // Execute move
-            zerg.creep.move(intent.direction);
+            zerg.creep!.move(intent.direction);
             this.movesThisTick++;
         }
 

@@ -46,8 +46,9 @@ export class ScoutOverlord extends Overlord {
     run(): void {
         const scouts = this.zergs.filter(z => (z.memory as any).role === "scout");
         for (const scout of scouts) {
+            if (!scout.isAlive()) continue;
             // If already in target room, job is done — just idle
-            if (scout.creep.room.name === this.targetRoom) {
+            if (scout.creep!.room.name === this.targetRoom) {
                 return;
             }
 

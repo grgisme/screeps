@@ -11,16 +11,13 @@ export class UpgradingOverlord extends Overlord {
 
     constructor(colony: any) {
         super(colony, "upgrading");
-        this.upgraders = this.zergs.map(z => new Upgrader(z.creep));
+        this.upgraders = this.zergs.map(z => new Upgrader(z.creepName));
     }
 
     init(): void {
         // Refresh creep references for this tick (same pattern as WorkerOverlord)
-        this.upgraders = this.upgraders.filter(u => {
-            const alive = !!Game.creeps[u.name];
-            if (alive) u.refresh();
-            return alive;
-        });
+        // Getter pattern: no refresh needed. Just prune dead.
+        this.upgraders = this.upgraders.filter(u => u.isAlive());
 
         this.adoptOrphans();
         this.handleSpawning();
@@ -41,7 +38,7 @@ export class UpgradingOverlord extends Overlord {
             const zerg = this.colony.registerZerg(orphan);
             zerg.task = null;
             this.zergs.push(zerg);
-            const upgrader = new Upgrader(orphan);
+            const upgrader = new Upgrader(orphan.name);
             this.upgraders.push(upgrader);
             log.info(`${this.colony.name}: Adopted orphan upgrader ${orphan.name}`);
         }
@@ -74,7 +71,7 @@ export class UpgradingOverlord extends Overlord {
             if (this.upgraders.length > 0) {
                 for (const u of this.upgraders) {
                     log.info(`Suiciding gated upgrader ${u.name} (no infrastructure)`);
-                    u.creep.suicide();
+                    u.creep!.suicide();
                 }
                 this.upgraders = [];
             }

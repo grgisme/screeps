@@ -117,7 +117,13 @@ describe("MiningOverlord", () => {
             memory: { role: "hauler", state: { siteId: source.id } }
         } as any;
 
-        overlord.zergs = [{ creep: haulerCreep, memory: haulerCreep.memory } as any];
+        overlord.zergs = [{
+            creepName: "hauler1",
+            name: "hauler1",
+            creep: haulerCreep,
+            memory: haulerCreep.memory,
+            isAlive: () => true
+        } as any];
 
         overlord.init();
         const site = overlord.sites[0];

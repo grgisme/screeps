@@ -219,12 +219,12 @@ export class LogisticsNetwork {
         for (let i = 0; i < this.unassignedRequests.length; i++) {
             const req = this.unassignedRequests[i];
 
-            const distance = zerg.pos.getRangeTo(req.provider.pos);
+            const distance = zerg.pos!.getRangeTo(req.provider.pos);
             const distSq = Math.max(1, distance * distance);
 
             // Resource Density: Request Amount / Zerg Capacity
             // High density (full load) > Low density (partial load)
-            const capacity = zerg.creep.store.getCapacity(req.resourceType) || 1;
+            const capacity = zerg.creep!.store.getCapacity(req.resourceType) || 1;
             const resourceDensity = Math.min(req.amount, capacity) / capacity;
 
             // Score = Priority / (Distance^2 * (1 + ResourceDensity))
@@ -267,7 +267,7 @@ export class LogisticsNetwork {
             const currentAmount = this.getEffectiveAmount(provider, bestRequest.resourceType);
             // We can check predicted amount here for logging?
             // Prediction only useful if we KNEW travel time.
-            const dist = zerg.pos.getRangeTo(provider);
+            const dist = zerg.pos!.getRangeTo(provider);
             const predictedAmount = this.getEffectiveAmount(provider, bestRequest.resourceType, dist);
 
             const providerName = 'structureType' in provider ? provider.structureType : 'resource';

@@ -11,7 +11,7 @@ export class WorkerOverlord extends Overlord {
     constructor(colony: any) {
         super(colony, "worker");
         this.workers = (this as any).zergs.map((z: any) => {
-            const w = new Worker(z.creep);
+            const w = new Worker(z.creepName);
             w.overlord = this;
             return w;
         });
@@ -22,11 +22,8 @@ export class WorkerOverlord extends Overlord {
         // Workers are separate objects from colony.zergs and don't get
         // refreshed by Colony.refresh() — without this, this.pos is stale
         // and PathFinder computes paths from the wrong origin!
-        this.workers = this.workers.filter(w => {
-            const alive = !!Game.creeps[w.name];
-            if (alive) w.refresh();
-            return alive;
-        });
+        // Getter pattern: no refresh needed. Just prune dead workers.
+        this.workers = this.workers.filter(w => w.isAlive());
 
         this.adoptOrphans();
         this.handleSpawning();
@@ -47,7 +44,7 @@ export class WorkerOverlord extends Overlord {
             const zerg = (this as any).colony.registerZerg(orphan);
             zerg.task = null;
             (this as any).zergs.push(zerg);
-            const worker = new Worker(orphan);
+            const worker = new Worker(orphan.name);
             worker.overlord = this;
             this.workers.push(worker);
             log.info(`${(this as any).colony.name}: Adopted orphan worker ${orphan.name}`);
@@ -70,7 +67,7 @@ export class WorkerOverlord extends Overlord {
             let worst: Worker | null = null;
             let worstTTL = Infinity;
             for (const w of this.workers) {
-                const ttl = w.creep.ticksToLive ?? Infinity;
+                const ttl = w.creep?.ticksToLive ?? Infinity;
                 if (ttl < worstTTL) {
                     worstTTL = ttl;
                     worst = w;
@@ -78,7 +75,7 @@ export class WorkerOverlord extends Overlord {
             }
             if (worst) {
                 log.info(`Despawning excess worker ${worst.name} (TTL: ${worstTTL}, cap: ${maxWorkers})`);
-                worst.creep.suicide();
+                worst.creep!.suicide();
                 this.workers = this.workers.filter(w => w.name !== worst!.name);
             }
         }

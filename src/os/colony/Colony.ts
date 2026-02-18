@@ -86,8 +86,10 @@ export class Colony {
 
         if (!this.room) return;
 
-        for (const zerg of this.zergs.values()) {
-            zerg.refresh();
+        for (const [name, zerg] of this.zergs.entries()) {
+            if (!zerg.isAlive()) {
+                this.zergs.delete(name);
+            }
         }
     }
 
@@ -98,7 +100,7 @@ export class Colony {
     registerZerg(creep: Creep): Zerg {
         let zerg = this.zergs.get(creep.name);
         if (!zerg) {
-            zerg = new Zerg(creep);
+            zerg = new Zerg(creep.name);
             this.zergs.set(creep.name, zerg);
         }
         return zerg;

@@ -25,6 +25,10 @@
 (globalThis as any).ERR_BUSY = -4;
 (globalThis as any).ERR_NOT_ENOUGH_ENERGY = -6;
 (globalThis as any).ERR_NAME_EXISTS = -3;
+(globalThis as any).ERR_NOT_OWNER = -1;
+(globalThis as any).ERR_NO_BODYPART = -12;
+(globalThis as any).ERR_TIRED = -11;
+(globalThis as any).ERR_NOT_ENOUGH_RESOURCES = -6;
 
 (globalThis as any).FIND_SOURCES = 105;
 (globalThis as any).FIND_MY_SPAWNS = 111;

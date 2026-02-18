@@ -73,12 +73,13 @@ export class ReserverOverlord extends Overlord {
     run(): void {
         const reservers = this.zergs.filter(z => (z.memory as any).role === "reserver");
         for (const reserver of reservers) {
+            if (!reserver.isAlive()) continue;
             const room = Game.rooms[this.targetRoom];
 
             // If we have visibility and a controller, go reserve it
             if (room && room.controller) {
-                if (reserver.pos.inRangeTo(room.controller.pos, 1)) {
-                    reserver.creep.reserveController(room.controller);
+                if (reserver.pos!.inRangeTo(room.controller.pos, 1)) {
+                    reserver.creep!.reserveController(room.controller);
                 } else {
                     reserver.travelTo(room.controller.pos, 1);
                 }

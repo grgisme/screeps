@@ -63,13 +63,13 @@ export class RemoteMiningOverlord extends Overlord {
                 .map(z => {
                     const mem = (z.memory as any);
                     if (!mem.state || !mem.state.siteId) return null;
-                    return new Miner(z.creep, this.sites.find(s => s.source.id === mem.state.siteId));
+                    return new Miner(z.creepName);
                 })
                 .filter(m => m !== null) as Miner[];
 
             this.haulers = this.zergs
                 .filter(z => (z.memory as any).role === "hauler")
-                .map(z => new Transporter(z.creep, this));
+                .map(z => new Transporter(z.creepName, this));
 
             return;
         }
@@ -95,13 +95,13 @@ export class RemoteMiningOverlord extends Overlord {
             .map(z => {
                 const mem = (z.memory as any);
                 if (!mem.state || !mem.state.siteId) return null;
-                return new Miner(z.creep, this.sites.find(s => s.source.id === mem.state.siteId));
+                return new Miner(z.creepName);
             })
             .filter(m => m !== null) as Miner[];
 
         this.haulers = this.zergs
             .filter(z => (z.memory as any).role === "hauler")
-            .map(z => new Transporter(z.creep, this));
+            .map(z => new Transporter(z.creepName, this));
 
         // 4. Spawn Logic per Site
         for (const site of this.sites) {
@@ -130,7 +130,7 @@ export class RemoteMiningOverlord extends Overlord {
         const powerNeeded = site.calculateHaulingPowerNeeded();
         const currentPower = this.haulers
             .filter(h => (h.memory as any).state?.siteId === site.source.id)
-            .reduce((sum, h) => sum + h.creep.store.getCapacity(), 0);
+            .reduce((sum, h) => sum + h.creep!.store.getCapacity(), 0);
 
         log.info(`Remote MiningSite [${site.source.id}]: Distance [${site.distance}], Required Haul [${powerNeeded}], Current [${currentPower}]`);
 

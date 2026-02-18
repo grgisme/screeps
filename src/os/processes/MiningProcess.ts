@@ -61,13 +61,13 @@ export class MiningProcess extends Process {
             if (!creep) {
                 continue;
             }
-            this.runMiner(new Zerg(creep));
+            this.runMiner(new Zerg(name));
         }
     }
 
     private runMiner(zerg: Zerg): void {
         // If carrying energy and full (or no work parts), deliver
-        if (zerg.creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+        if (zerg.creep!.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             this.deliverEnergy(zerg);
             return;
         }
@@ -78,7 +78,7 @@ export class MiningProcess extends Process {
             return;
         }
 
-        const result = zerg.creep.harvest(source);
+        const result = zerg.creep!.harvest(source);
         if (result === ERR_NOT_IN_RANGE) {
             zerg.travelTo(source.pos);
         }
@@ -96,7 +96,7 @@ export class MiningProcess extends Process {
             return;
         }
 
-        const result = zerg.creep.transfer(target, RESOURCE_ENERGY);
+        const result = zerg.creep!.transfer(target, RESOURCE_ENERGY);
         if (result === ERR_NOT_IN_RANGE) {
             zerg.travelTo(target.pos);
         }

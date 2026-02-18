@@ -25,7 +25,7 @@ describe("CombatZerg", () => {
         creep.pos = new RoomPosition(10, 10, "W1N1");
         (globalThis as any).Game.creeps["defender1"] = creep;
 
-        combatZerg = new CombatZerg(creep);
+        combatZerg = new CombatZerg(creep.name);
 
         hostile = new Creep("hostile1" as any);
         hostile.room = room;

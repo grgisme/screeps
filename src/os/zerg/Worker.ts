@@ -4,21 +4,23 @@ import { Zerg } from "./Zerg";
 export class Worker extends Zerg {
     overlord: any; // Type as any to avoid circular dependency for now
 
-    constructor(creep: Creep) {
-        super(creep);
+    constructor(creepName: string) {
+        super(creepName);
     }
 
     run(): void {
-        if (this.avoidDanger()) return;
+        if (!this.isAlive()) return;
+        const creep = this.creep!;
+        const mem = this.memory!;
 
         // State machine: Harvest/Refuel <-> Work
-        if (this.creep.store.getUsedCapacity() === 0) {
-            this.memory.working = false;
-        } else if (this.creep.store.getFreeCapacity() === 0) {
-            this.memory.working = true;
+        if (creep.store.getUsedCapacity() === 0) {
+            mem.working = false;
+        } else if (creep.store.getFreeCapacity() === 0) {
+            mem.working = true;
         }
 
-        if (this.memory.working) {
+        if (mem.working) {
             this.work();
         } else {
             this.refuel();
@@ -26,24 +28,25 @@ export class Worker extends Zerg {
     }
 
     private refuel(): void {
-        const room = this.creep.room;
+        const creep = this.creep!;
+        const room = creep.room;
         const mem = this.memory as any;
 
         // Clear source lock when full
-        if (this.creep.store.getFreeCapacity() === 0) {
+        if (creep.store.getFreeCapacity() === 0) {
             delete mem._lockedSourceId;
             delete mem._refuelTicks;
             return;
         }
 
         // Stuck Detection: if refueling for 15+ ticks with 0 energy, clear lock and unstick
-        if (this.creep.store.getUsedCapacity() === 0) {
+        if (creep.store.getUsedCapacity() === 0) {
             mem._refuelTicks = (mem._refuelTicks || 0) + 1;
             if (mem._refuelTicks > 15) {
-                this.creep.say("⛔ Reset");
-                delete mem._lockedSourceId; // Force re-target
+                creep.say("⛔ Reset");
+                delete mem._lockedSourceId;
                 const dirs: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
-                this.creep.move(dirs[Math.floor(Math.random() * dirs.length)]);
+                creep.move(dirs[Math.floor(Math.random() * dirs.length)]);
                 mem._refuelTicks = 0;
                 return;
             }
@@ -65,19 +68,19 @@ export class Worker extends Zerg {
 
         // 1. Standard Logistics: withdraw from Storage or Containers
         if (room.storage && room.storage.store.energy > 0) {
-            this.creep.say("🏦");
-            if (this.creep.withdraw(room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+            creep.say("🏦");
+            if (creep.withdraw(room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 this.travelTo(room.storage);
             }
             return;
         }
 
-        const container = this.pos.findClosestByRange(FIND_STRUCTURES, {
+        const container = this.pos!.findClosestByRange(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && (s as StructureContainer).store.energy > 0
         }) as StructureContainer | null;
         if (container) {
-            this.creep.say("📦");
-            if (this.creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+            creep.say("📦");
+            if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 this.travelTo(container);
             }
             return;
@@ -92,13 +95,14 @@ export class Worker extends Zerg {
      * Force harvest if adjacent. Travel otherwise.
      */
     private harvestFromSource(mem: any): void {
+        const creep = this.creep!;
         // Resolve locked source
         let source: Source | null = null;
 
         if (mem._lockedSourceId) {
             source = Game.getObjectById(mem._lockedSourceId as Id<Source>);
             // Validate: source must exist, be in this room, and have energy
-            if (!source || source.pos.roomName !== this.room.name || source.energy === 0) {
+            if (!source || source.pos.roomName !== this.room!.name || source.energy === 0) {
                 delete mem._lockedSourceId;
                 source = null;
             }
@@ -113,15 +117,15 @@ export class Worker extends Zerg {
         }
 
         if (!source) {
-            this.creep.say("💤");
+            creep.say("💤");
             return;
         }
 
-        this.creep.say("⛏️ S" + source.id.slice(-2));
+        creep.say("⛏️ S" + source.id.slice(-2));
 
         // Force harvest: if adjacent, harvest immediately — no movement
-        if (this.pos.isNearTo(source)) {
-            this.creep.harvest(source);
+        if (this.pos!.isNearTo(source)) {
+            creep.harvest(source);
             return;
         }
 
@@ -137,7 +141,7 @@ export class Worker extends Zerg {
      */
     private findOptimalSource(): Source | null {
         // FIND_SOURCES: includes depleted sources. Filter to current room + energy > 0.
-        const sources = this.room.find(FIND_SOURCES).filter(s => s.energy > 0);
+        const sources = this.room!.find(FIND_SOURCES).filter(s => s.energy > 0);
         if (sources.length === 0) return null;
         if (sources.length === 1) return sources[0];
 
@@ -147,7 +151,7 @@ export class Worker extends Zerg {
 
         for (const source of sources) {
             const nearbyCreeps = source.pos.findInRange(FIND_MY_CREEPS, 1).length;
-            const range = this.pos.getRangeTo(source);
+            const range = this.pos!.getRangeTo(source);
 
             if (nearbyCreeps < bestScore || (nearbyCreeps === bestScore && range < bestRange)) {
                 best = source;
@@ -160,7 +164,8 @@ export class Worker extends Zerg {
     }
 
     private work(): void {
-        const room = this.creep.room;
+        const creep = this.creep!;
+        const room = creep.room;
 
         // 1. CRITICAL: Build container sites FIRST (Genesis Build Order)
         //    Without containers, mining stays suspended → workers keep spawning → stagnation
@@ -168,8 +173,8 @@ export class Worker extends Zerg {
             filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
         })[0];
         if (containerSite) {
-            this.creep.say("📦🔨");
-            if (this.creep.build(containerSite) === ERR_NOT_IN_RANGE) {
+            creep.say("📦🔨");
+            if (creep.build(containerSite) === ERR_NOT_IN_RANGE) {
                 this.travelTo(containerSite);
             }
             return;
@@ -177,12 +182,12 @@ export class Worker extends Zerg {
 
         // 2. Fill Spawns/Extensions (keep energy flowing for spawning)
         if (room.energyAvailable < room.energyCapacityAvailable) {
-            const target = this.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+            const target = this.pos!.findClosestByRange(FIND_MY_STRUCTURES, {
                 filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
                     s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             });
             if (target) {
-                if (this.creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     this.travelTo(target);
                 }
                 return;
@@ -192,19 +197,19 @@ export class Worker extends Zerg {
         // 3. Build Other Construction Sites (Prioritized by Overlord)
         const site = (this.overlord as any).getBestConstructionSite();
         if (site) {
-            if (this.creep.build(site) === ERR_NOT_IN_RANGE) {
+            if (creep.build(site) === ERR_NOT_IN_RANGE) {
                 this.travelTo(site);
             }
             return;
         }
 
         // 4. Repair Critical Structures (Roads < 75%, Containers < 100%)
-        const structure = this.pos.findClosestByRange(FIND_STRUCTURES, {
+        const structure = this.pos!.findClosestByRange(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax * 0.75) ||
                 (s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax)
         });
         if (structure) {
-            if (this.creep.repair(structure) === ERR_NOT_IN_RANGE) {
+            if (creep.repair(structure) === ERR_NOT_IN_RANGE) {
                 this.travelTo(structure);
             }
             return;
@@ -212,7 +217,7 @@ export class Worker extends Zerg {
 
         // 5. Upgrade Controller (Default)
         if (room.controller) {
-            if (this.creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
+            if (creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
                 this.travelTo(room.controller, 3);
             }
         }

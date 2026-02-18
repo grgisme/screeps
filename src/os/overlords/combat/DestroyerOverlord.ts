@@ -16,7 +16,7 @@ export class DestroyerOverlord extends Overlord {
     }
 
     init(): void {
-        this.destroyers = this.zergs.map(z => new CombatZerg(z.creep));
+        this.destroyers = this.zergs.map(z => new CombatZerg(z.creepName));
 
         // Spawn 1 Destroyer
         if (this.destroyers.length < 1) {
@@ -42,7 +42,8 @@ export class DestroyerOverlord extends Overlord {
     }
 
     private handleDestroyer(zerg: CombatZerg): void {
-        const creep = zerg.creep;
+        if (!zerg.isAlive()) return;
+        const creep = zerg.creep!;
 
         // 1. Retreat Logic
         if (creep.hits < creep.hitsMax * 0.5) {

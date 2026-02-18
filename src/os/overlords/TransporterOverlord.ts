@@ -30,14 +30,14 @@ export class TransporterOverlord extends Overlord {
 
     addZerg(zerg: Zerg): void {
         // Convert generic Zerg to Transporter
-        const transporter = new Transporter(zerg.creep, this);
+        const transporter = new Transporter(zerg.creepName, this);
         this.transporters.push(transporter);
         super.addZerg(transporter);
     }
 
     private wishlistSpawns(): void {
         const deficit = this.calculateTransportDeficit();
-        const transportPower = this.transporters.reduce((sum, zerg) => sum + zerg.creep.store.getCapacity(), 0);
+        const transportPower = this.transporters.reduce((sum, zerg) => sum + zerg.creep!.store.getCapacity(), 0);
 
         // Simple threshold: buffer of 2000 or ratio
         if (transportPower < deficit) {

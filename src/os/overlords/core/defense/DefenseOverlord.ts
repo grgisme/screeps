@@ -14,7 +14,7 @@ export class DefenseOverlord extends Overlord {
     }
 
     init(): void {
-        this.defenders = this.zergs.map(z => new CombatZerg(z.creep));
+        this.defenders = this.zergs.map(z => new CombatZerg(z.creepName));
 
         const room = this.colony.room;
         if (!room) return;
