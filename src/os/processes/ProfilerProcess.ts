@@ -110,8 +110,8 @@ export class ProfilerProcess extends Process {
 
             const totalCpu = entries.reduce((sum, e) => sum + e[1], 0);
             console.log(
-                `<font color='#9b59b6'>[Profiler]</font> CPU Report (${ticks} ticks, ${totalCpu.toFixed(2)}ms total):\n` +
-                `<font color='#9b59b6'>[Profiler]</font> Top CPU Consumers:\n` +
+                `📊 [Profiler] CPU Report (${ticks} ticks, ${totalCpu.toFixed(2)}ms total):\n` +
+                `📊 [Profiler] Top CPU Consumers:\n` +
                 lines.join("\n")
             );
         }
@@ -139,7 +139,7 @@ export class ProfilerProcess extends Process {
 
         if (schedLines.length > 0) {
             console.log(
-                `<font color='#9b59b6'>[Profiler]</font> Scheduler Report (${ticks} ticks):\n` +
+                `📊 [Profiler] Scheduler Report (${ticks} ticks):\n` +
                 schedLines.join("\n")
             );
         }

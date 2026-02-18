@@ -42,7 +42,7 @@ const log = new Logger("OS");
         if (e instanceof Error) {
             const mapped = ErrorMapper.mapTrace(e.stack ?? e.message);
             console.log(
-                `<font color='#e74c3c'>[TEST ERROR]</font> ${mapped}`
+                `❌ [TEST ERROR] ${mapped}`
             );
             return mapped;
         }
@@ -122,7 +122,7 @@ function printFoundationStatus(kernel: Kernel): void {
     ];
 
     console.log(
-        `<font color='#2ecc71'>${statusLines.join("\n")}</font>`
+        statusLines.join("\n")
     );
 }
 
@@ -229,7 +229,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
         const heap = Game.cpu.getHeapStatistics?.();
         const heapUsed = heap ? (heap.used_heap_size / 1024 / 1024).toFixed(2) : "N/A";
         const bucket = Game.cpu.bucket;
-        console.log(`<font color='#a6a6a6'>[System] Heap: ${heapUsed} MB | Bucket: ${bucket}</font>`);
+        console.log(`⚙️ [System] Heap: ${heapUsed} MB | Bucket: ${bucket}`);
     }
 });
 

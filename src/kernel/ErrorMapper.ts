@@ -120,16 +120,16 @@ export const ErrorMapper = {
                     if ("sim" in Game.rooms) {
                         // Source maps don't work in the simulator
                         console.log(
-                            `<font color='#e74c3c'>[ERROR] Source maps unavailable in sim</font>\n${e.stack}`
+                            `❌ [ERROR] Source maps unavailable in sim\n${e.stack}`
                         );
                     } else {
                         console.log(
-                            `<font color='#e74c3c'>[ERROR]</font> ${sourceMappedStackTrace(e)}`
+                            `❌ [ERROR] ${sourceMappedStackTrace(e)}`
                         );
                     }
                 } else {
                     console.log(
-                        `<font color='#e74c3c'>[ERROR]</font> Non-Error thrown: ${String(e)}`
+                        `❌ [ERROR] Non-Error thrown: ${String(e)}`
                     );
                 }
             }

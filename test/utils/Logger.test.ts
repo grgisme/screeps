@@ -97,10 +97,11 @@ describe("Logger", () => {
             expect(logOutput[0]).to.include("[INFO]");
         });
 
-        it("should include HTML color formatting", () => {
+        it("should include emoji and level label", () => {
             const log = new Logger("X");
             log.error("test");
-            expect(logOutput[0]).to.include("<font color=");
+            expect(logOutput[0]).to.include("❌");
+            expect(logOutput[0]).to.include("[ERROR]");
         });
     });
 

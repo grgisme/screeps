@@ -332,7 +332,7 @@ export class Kernel {
                 const raw = e instanceof Error ? e.stack ?? e.message : String(e);
                 const mapped = ErrorMapper.mapTrace(raw);
                 console.log(
-                    `<font color='#e74c3c'>[Kernel] Process ${process.processName} (PID ${process.pid}) crashed:</font>\n${mapped}`
+                    `❌ [Kernel] Process ${process.processName} (PID ${process.pid}) crashed:\n${mapped}`
                 );
                 process.terminate();
             }

@@ -15,12 +15,12 @@ export const LogLevel = {
 
 export type LogLevelType = (typeof LogLevel)[keyof typeof LogLevel];
 
-/** Color palette for each log level (HTML spans for Screeps console). */
-const LEVEL_COLORS: Record<number, string> = {
-    [LogLevel.DEBUG]: "#888888",   // grey
-    [LogLevel.INFO]: "#2ecc71",    // green
-    [LogLevel.WARNING]: "#f39c12", // orange
-    [LogLevel.ERROR]: "#e74c3c",   // red
+/** Emoji prefix for each log level. */
+const LEVEL_EMOJI: Record<number, string> = {
+    [LogLevel.DEBUG]: "🐛",
+    [LogLevel.INFO]: "ℹ️",
+    [LogLevel.WARNING]: "⚠️",
+    [LogLevel.ERROR]: "❌",
 };
 
 const LEVEL_LABELS: Record<number, string> = {
@@ -66,7 +66,7 @@ export class Logger {
     }
 
     alert(msg: string): void {
-        this.log(LogLevel.ERROR, `<font color='#ff0000' style='font-weight:bold'>[ALERT]</font> ${msg}`);
+        this.log(LogLevel.ERROR, `🚨 [ALERT] ${msg}`);
     }
 
     // -----------------------------------------------------------------------
@@ -78,11 +78,11 @@ export class Logger {
             return;
         }
 
-        const color = LEVEL_COLORS[level] ?? "#ffffff";
+        const emoji = LEVEL_EMOJI[level] ?? "";
         const label = LEVEL_LABELS[level] ?? "???";
 
         console.log(
-            `<font color='${color}'>[${label}]</font> <font color='#3498db'>[${this.tag}]</font> ${msg}`
+            `${emoji} [${label}] [${this.tag}] ${msg}`
         );
     }
 
@@ -121,11 +121,11 @@ export class Logger {
         if (level !== undefined) {
             Logger.setLevel(level);
             console.log(
-                `<font color='#2ecc71'>[Logger] Log level set to ${normalized} (${level})</font>`
+                `✅ [Logger] Log level set to ${normalized} (${level})`
             );
         } else {
             console.log(
-                `<font color='#e74c3c'>[Logger] Unknown level "${name}". Valid: DEBUG, INFO, WARNING, ERROR</font>`
+                `❌ [Logger] Unknown level "${name}". Valid: DEBUG, INFO, WARNING, ERROR`
             );
         }
     }
