@@ -23,6 +23,11 @@ describe("MiningOverlord", () => {
             return [];
         };
 
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "src1") return source;
+            return null;
+        };
+
         hatcheryQueue = [];
         mockColony = {
             name: "W1N1",

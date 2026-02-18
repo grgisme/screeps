@@ -90,6 +90,8 @@ export class RoomPlannerProcess extends Process {
         console.log(`Genesis Architect: Bunker layout calculated. Build Priority: Containers > Extensions`);
 
         for (const type of structureTypes) {
+            if (type === STRUCTURE_CONTROLLER) continue;
+
             const layout = (require("../infrastructure/BunkerLayout").BunkerLayout.structures as any)[type];
             if (!layout) continue;
 
@@ -108,7 +110,7 @@ export class RoomPlannerProcess extends Process {
                 const site = pos.lookFor(LOOK_CONSTRUCTION_SITES).find(s => s.structureType === type);
 
                 if (!struct && !site) {
-                    pos.createConstructionSite(type);
+                    pos.createConstructionSite(type as BuildableStructureConstant);
                 }
             }
         }
