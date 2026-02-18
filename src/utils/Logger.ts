@@ -1,5 +1,6 @@
 // ============================================================================
-// Logger — Structured logging with lazy eval, throttling & delta alerts
+// Logger — Structured logging with lazy eval, throttling, delta alerts,
+//          safe HTML formatting, room links & XSS sanitization
 // ============================================================================
 
 /**
@@ -37,6 +38,27 @@ const LEVEL_LABELS: Record<number, string> = {
     [LogLevel.ERROR]: "ERROR",
 };
 
+/** Standard color palette for log levels (Screeps console HTML). */
+const LEVEL_COLORS: Record<number, string> = {
+    [LogLevel.TRACE]: "#8e8e8e",   // Grey
+    [LogLevel.DEBUG]: "#3498db",   // Blue
+    [LogLevel.INFO]: "#ffffff",    // White
+    [LogLevel.WARNING]: "#f39c12", // Yellow/Orange
+    [LogLevel.ERROR]: "#ff0000",   // Red
+};
+
+/**
+ * Shard name for room links. Cached on first access.
+ * Falls back to "shard3" if Game.shard is unavailable.
+ */
+function getShardName(): string {
+    try {
+        return (Game as any).shard?.name ?? "shard3";
+    } catch {
+        return "shard3";
+    }
+}
+
 /**
  * Structured logger with:
  * - Level-based filtering (TRACE → ERROR)
@@ -44,6 +66,9 @@ const LEVEL_LABELS: Record<number, string> = {
  *   cost when the message would be filtered out
  * - Delta alerts: only log when a state value changes
  * - Modulo throttling: log periodic status updates every N ticks
+ * - Safe HTML formatting with escaped double quotes
+ * - Interactive room links
+ * - XSS sanitization for hostile input
  *
  * The current level is stored in `Memory.logLevel` so it persists across
  * global resets and can be changed at runtime from the Screeps console:
@@ -125,6 +150,60 @@ export class Logger {
     }
 
     // -----------------------------------------------------------------------
+    // Formatting Helpers — Safe HTML for Screeps Console
+    // -----------------------------------------------------------------------
+
+    /**
+     * Wrap text in a colored `<span>` using escaped double quotes.
+     * This is the ONLY safe pattern for Screeps console HTML.
+     *
+     * Bad:  `<span style='color:red'>`   — parser may reject
+     * Good: `<span style=\"color:red\">`  — always works
+     *
+     * @param text   The text to colorize
+     * @param color  CSS color value (hex, named, rgb)
+     */
+    static style(text: string, color: string): string {
+        return `<span style=\"color:${color}\">${text}</span>`;
+    }
+
+    /**
+     * Wrap text in a `<font>` tag for maximum terminal compatibility.
+     * Some third-party Screeps clients only support `<font color="...">`.
+     * Use this for critical alerts that must render everywhere.
+     */
+    static font(text: string, color: string): string {
+        return `<font color=\"${color}\">${text}</font>`;
+    }
+
+    /**
+     * Generate a clickable room link for the Screeps console.
+     * Clicking the link jumps the camera to the specified room.
+     *
+     * @param roomName  e.g. "E1N8"
+     * @returns HTML anchor tag: `<a href="#!/room/shard3/E1N8">E1N8</a>`
+     */
+    static roomLink(roomName: string): string {
+        const shard = getShardName();
+        return `<a href=\"#!/room/${shard}/${roomName}\">${roomName}</a>`;
+    }
+
+    /**
+     * Sanitize untrusted input by escaping HTML entities.
+     * Apply this to ANY data from hostile creeps, public memory segments,
+     * or other players to prevent XSS-style client abuse.
+     *
+     * Replaces: < → &lt;  > → &gt;  & → &amp;  " → &quot;
+     */
+    static sanitize(text: string): string {
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    // -----------------------------------------------------------------------
     // Core
     // -----------------------------------------------------------------------
 
@@ -137,10 +216,14 @@ export class Logger {
         const resolved = typeof msg === "function" ? msg() : msg;
         const emoji = LEVEL_EMOJI[level] ?? "";
         const label = LEVEL_LABELS[level] ?? "???";
+        const color = LEVEL_COLORS[level] ?? "#ffffff";
 
-        console.log(
-            `${emoji} [${label}] [${this.tag}] ${resolved}`
-        );
+        // Color-coded output: tag and label are styled, message body is styled
+        const styledTag = `<span style=\"color:#999999\">[${this.tag}]</span>`;
+        const styledLabel = `<span style=\"color:${color};font-weight:bold\">[${label}]</span>`;
+        const styledMsg = `<span style=\"color:${color}\">${resolved}</span>`;
+
+        console.log(`${emoji} ${styledLabel} ${styledTag} ${styledMsg}`);
     }
 
     // -----------------------------------------------------------------------

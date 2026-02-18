@@ -242,4 +242,100 @@ describe("Logger", () => {
             expect(logOutput[0]).to.include("Unknown level");
         });
     });
+
+    describe("HTML Formatting", () => {
+        describe("style()", () => {
+            it("should wrap text in a span with escaped double quotes", () => {
+                const result = Logger.style("hello", "#ff0000");
+                expect(result).to.include("style=");
+                expect(result).to.include("color:#ff0000");
+                expect(result).to.include("hello");
+                expect(result).to.include("<span");
+                expect(result).to.include("</span>");
+            });
+
+            it("should not use single quotes for attributes", () => {
+                const result = Logger.style("test", "red");
+                expect(result).to.not.include("style='");
+            });
+        });
+
+        describe("font()", () => {
+            it("should wrap text in a font tag", () => {
+                const result = Logger.font("alert!", "#ff0000");
+                expect(result).to.include("<font");
+                expect(result).to.include("color=");
+                expect(result).to.include("#ff0000");
+                expect(result).to.include("alert!");
+                expect(result).to.include("</font>");
+            });
+        });
+
+        describe("roomLink()", () => {
+            it("should generate a clickable room link", () => {
+                const result = Logger.roomLink("E1N8");
+                expect(result).to.include("<a href=");
+                expect(result).to.include("E1N8");
+                expect(result).to.include("#!/room/");
+                expect(result).to.include("</a>");
+            });
+
+            it("should include shard name in the link", () => {
+                const result = Logger.roomLink("W5S10");
+                // Should contain shard name (defaults to shard3 in test env)
+                expect(result).to.include("shard");
+                expect(result).to.include("W5S10");
+            });
+        });
+
+        describe("sanitize()", () => {
+            it("should escape < and > to prevent HTML injection", () => {
+                const result = Logger.sanitize("<script>alert('xss')</script>");
+                expect(result).to.not.include("<script>");
+                expect(result).to.include("&lt;script&gt;");
+            });
+
+            it("should escape & to prevent entity injection", () => {
+                const result = Logger.sanitize("foo & bar");
+                expect(result).to.equal("foo &amp; bar");
+            });
+
+            it('should escape double quotes', () => {
+                const result = Logger.sanitize('a "b" c');
+                expect(result).to.equal("a &quot;b&quot; c");
+            });
+
+            it("should handle strings with no special characters", () => {
+                const result = Logger.sanitize("hello world");
+                expect(result).to.equal("hello world");
+            });
+
+            it("should handle hostile creep names", () => {
+                const result = Logger.sanitize('<font color="red">evil</font>');
+                expect(result).to.not.include("<font");
+                expect(result).to.include("&lt;font");
+            });
+        });
+    });
+
+    describe("Color-coded Output", () => {
+        it("should include color styling in output", () => {
+            const log = new Logger("Test");
+            log.info("colored message");
+            expect(logOutput[0]).to.include("style=");
+            expect(logOutput[0]).to.include("colored message");
+        });
+
+        it("should use red for ERROR level", () => {
+            const log = new Logger("Test");
+            log.error("failure");
+            expect(logOutput[0]).to.include("#ff0000");
+        });
+
+        it("should use yellow for WARNING level", () => {
+            const log = new Logger("Test");
+            log.warning("caution");
+            expect(logOutput[0]).to.include("#f39c12");
+        });
+    });
 });
