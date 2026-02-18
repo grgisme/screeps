@@ -48,11 +48,19 @@ export class Upgrader extends Zerg {
             return;
         }
 
-        // 3. Fallback: Harvest Source (Only if absolutely necessary, Upgraders usually purely withdraw)
-        // But if logistics fails, they should harvest?
-        // "Power Creeps" prompt said: "Pure Requester: Never harvest."
-        // So we do NOT harvest. We wait.
-        this.creep.say("Waiting");
+        // 3. Emergency Harvest — "Peasant Mode"
+        // If no logistics infrastructure exists, degrade to a harvester
+        // rather than standing idle consuming CPU and blocking space.
+        const source = this.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+        if (source) {
+            this.creep.say("🌾 Pzn");
+            if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                this.travelTo(source);
+            }
+            return;
+        }
+
+        this.creep.say("💤");
     }
 
     private upgrade(): void {

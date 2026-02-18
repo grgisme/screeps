@@ -71,7 +71,7 @@ describe("UpgradingOverlord", () => {
     it("should trigger Critical Mode if downgrade imminent", () => {
         // Setup poor room but critical controller
         room.storage = undefined;
-        (room as any).controller = { ticksToDowngrade: 3000 }; // Critical < 4000
+        (room as any).controller = { ticksToDowngrade: 3000, level: 1 }; // Critical < 4000
 
         let request: any = null;
         colony.hatchery.enqueue = (req: any) => { request = req; return "test"; };
