@@ -19,6 +19,7 @@ describe("Logger", () => {
             logOutput.push(args.join(" "));
         };
         Logger.resetDeltaCache();
+        Logger.resetLevelCache();
     });
 
     afterEach(() => {
@@ -260,11 +261,11 @@ describe("Logger", () => {
             });
         });
 
-        describe("font()", () => {
-            it("should wrap text in a font tag", () => {
-                const result = Logger.font("alert!", "#ff0000");
+        describe("style() alias", () => {
+            it("should be the only font-wrapping method (font() was removed)", () => {
+                const result = Logger.style("alert!", "#ff0000");
                 expect(result).to.include("<font");
-                expect(result).to.include("color=");
+                expect(result).to.include('color=');
                 expect(result).to.include("#ff0000");
                 expect(result).to.include("alert!");
                 expect(result).to.include("</font>");
