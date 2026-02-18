@@ -57,13 +57,15 @@ export class Hatchery {
     run(): void {
         // 1. Emergency Mode Check
         if (this.colony.room.find(FIND_MY_CREEPS).length === 0 && this.spawns.length > 0) {
-            console.log(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.`);
-            // Override queue
             const spawn = this.spawns[0];
-            const result = spawn.spawnCreep([WORK, CARRY, MOVE], "Bootstrapper", {
-                memory: { role: 'worker', room: this.colony.name } as any // Minimal memory
-            });
-            if (result === OK) return; // Priorities handled
+            // Skip if spawn is already busy or Bootstrapper exists
+            if (!spawn.spawning && !Game.creeps["Bootstrapper"]) {
+                console.log(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.`);
+                const result = spawn.spawnCreep([WORK, CARRY, MOVE], "Bootstrapper", {
+                    memory: { role: 'worker', room: this.colony.name } as any
+                });
+                if (result === OK) return;
+            }
         }
 
         // 2. Process Queue

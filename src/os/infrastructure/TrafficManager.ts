@@ -7,6 +7,30 @@ import { Logger } from "../../utils/Logger";
 
 const log = new Logger("TrafficManager");
 
+/** Direction offsets: [dx, dy] indexed by DirectionConstant (1-8). */
+const DIR_OFFSETS: Record<DirectionConstant, [number, number]> = {
+    [TOP]: [0, -1],
+    [TOP_RIGHT]: [1, -1],
+    [RIGHT]: [1, 0],
+    [BOTTOM_RIGHT]: [1, 1],
+    [BOTTOM]: [0, 1],
+    [BOTTOM_LEFT]: [-1, 1],
+    [LEFT]: [-1, 0],
+    [TOP_LEFT]: [-1, -1],
+};
+
+/**
+ * Get the RoomPosition one step in the given direction from `pos`.
+ * Returns null if the result would be out of bounds (0–49).
+ */
+function positionAtDirection(pos: RoomPosition, dir: DirectionConstant): RoomPosition | null {
+    const [dx, dy] = DIR_OFFSETS[dir];
+    const x = pos.x + dx;
+    const y = pos.y + dy;
+    if (x < 0 || x > 49 || y < 0 || y > 49) return null;
+    return new RoomPosition(x, y, pos.roomName);
+}
+
 export interface MoveIntent {
     zerg: Zerg;
     direction: DirectionConstant;
@@ -29,17 +53,13 @@ export class TrafficManager {
      * Resolve conflicts and execute moves.
      * High priority (lower number) moves first.
      */
-    /**
-     * Resolve conflicts and execute moves.
-     * High priority (lower number) moves first.
-     */
     static run(): void {
         // Sort by priority (ascending: 0 is highest)
         this.intents.sort((a, b) => a.priority - b.priority);
 
         for (const intent of this.intents) {
             const zerg = intent.zerg;
-            const targetPos = (zerg.pos as any).getPositionAtDirection(intent.direction);
+            const targetPos = positionAtDirection(zerg.pos, intent.direction);
 
             if (!targetPos) continue;
 
@@ -62,13 +82,6 @@ export class TrafficManager {
                         const shoved = this.shove(blocker);
                         if (shoved) {
                             this.shovesThisTick++;
-                            // Blocker moved, so tile is free? 
-                            // We assume the move call succeeded. 
-                            // The game engine will process the blocker's move first if we call it now?
-                            // Actually, execution order matters. 
-                            // We just called blocker.move(). 
-                            // Then we call zerg.move(). 
-                            // If both valid, they happen.
                         }
                     }
                 }
@@ -109,7 +122,7 @@ export class TrafficManager {
         }
 
         for (const dir of directions) {
-            const pos = (creep.pos as any).getPositionAtDirection(dir);
+            const pos = positionAtDirection(creep.pos, dir);
             if (!pos) continue;
 
             // Check for obstacles
@@ -135,3 +148,4 @@ export class TrafficManager {
         return false;
     }
 }
+
