@@ -318,24 +318,26 @@ describe("Logger", () => {
         });
     });
 
-    describe("Color-coded Output", () => {
-        it("should include color styling in output", () => {
+    describe("Plain Text Output Format", () => {
+        it("should include tag and message in output", () => {
             const log = new Logger("Test");
             log.info("colored message");
-            expect(logOutput[0]).to.include("<font");
+            expect(logOutput[0]).to.include("[Test]");
             expect(logOutput[0]).to.include("colored message");
         });
 
-        it("should use red for ERROR level", () => {
+        it("should include level label in output", () => {
             const log = new Logger("Test");
             log.error("failure");
-            expect(logOutput[0]).to.include("#ff0000");
+            expect(logOutput[0]).to.include("[ERROR]");
+            expect(logOutput[0]).to.include("failure");
         });
 
-        it("should use yellow for WARNING level", () => {
+        it("should include emoji for WARNING level", () => {
             const log = new Logger("Test");
             log.warning("caution");
-            expect(logOutput[0]).to.include("#f39c12");
+            expect(logOutput[0]).to.include("[WARN]");
+            expect(logOutput[0]).to.include("caution");
         });
     });
 });

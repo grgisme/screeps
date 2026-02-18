@@ -38,8 +38,8 @@ const LEVEL_LABELS: Record<number, string> = {
     [LogLevel.ERROR]: "ERROR",
 };
 
-/** Standard color palette for log levels (Screeps console HTML). */
-const LEVEL_COLORS: Record<number, string> = {
+/** Standard color palette — available for manual use with style()/font(). */
+export const LEVEL_COLORS: Record<number, string> = {
     [LogLevel.TRACE]: "#8e8e8e",   // Grey
     [LogLevel.DEBUG]: "#3498db",   // Blue
     [LogLevel.INFO]: "#ffffff",    // White
@@ -213,14 +213,9 @@ export class Logger {
         const resolved = typeof msg === "function" ? msg() : msg;
         const emoji = LEVEL_EMOJI[level] ?? "";
         const label = LEVEL_LABELS[level] ?? "???";
-        const color = LEVEL_COLORS[level] ?? "#ffffff";
 
-        // Color-coded output using <font> — the only tag Screeps console renders
-        const styledTag = `<font color="#999999">[${this.tag}]</font>`;
-        const styledLabel = `<font color="${color}">[${label}]</font>`;
-        const styledMsg = `<font color="${color}">${resolved}</font>`;
-
-        console.log(`<font color="${color}">${emoji} ${styledLabel} ${styledTag} ${styledMsg}</font>`);
+        // Plain text — Screeps console HTML rendering is unreliable
+        console.log(`${emoji} [${label}] [${this.tag}] ${resolved}`);
     }
 
     // -----------------------------------------------------------------------
