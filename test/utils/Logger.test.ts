@@ -97,10 +97,10 @@ describe("Logger", () => {
             expect(logOutput[0]).to.include("[INFO]");
         });
 
-        it("should include HTML color spans", () => {
+        it("should include HTML color formatting", () => {
             const log = new Logger("X");
             log.error("test");
-            expect(logOutput[0]).to.include("style='color:");
+            expect(logOutput[0]).to.include("<font color=");
         });
     });
 

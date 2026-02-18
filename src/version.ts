@@ -1,2 +1,2 @@
-export const SCRIPT_VERSION = "1.0.50";
+export const SCRIPT_VERSION = "2.1";
 export const SCRIPT_SUMMARY = "Update";

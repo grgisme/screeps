@@ -66,7 +66,7 @@ export class Logger {
     }
 
     alert(msg: string): void {
-        this.log(LogLevel.ERROR, `<span style='color:#ff0000; font-weight:bold'>[ALERT]</span> ${msg}`);
+        this.log(LogLevel.ERROR, `<font color='#ff0000' style='font-weight:bold'>[ALERT]</font> ${msg}`);
     }
 
     // -----------------------------------------------------------------------
@@ -82,7 +82,7 @@ export class Logger {
         const label = LEVEL_LABELS[level] ?? "???";
 
         console.log(
-            `<span style='color:${color}'>[${label}]</span> <span style='color:#3498db'>[${this.tag}]</span> ${msg}`
+            `<font color='${color}'>[${label}]</font> <font color='#3498db'>[${this.tag}]</font> ${msg}`
         );
     }
 
@@ -121,11 +121,11 @@ export class Logger {
         if (level !== undefined) {
             Logger.setLevel(level);
             console.log(
-                `<span style='color:#2ecc71'>[Logger] Log level set to ${normalized} (${level})</span>`
+                `<font color='#2ecc71'>[Logger] Log level set to ${normalized} (${level})</font>`
             );
         } else {
             console.log(
-                `<span style='color:#e74c3c'>[Logger] Unknown level "${name}". Valid: DEBUG, INFO, WARNING, ERROR</span>`
+                `<font color='#e74c3c'>[Logger] Unknown level "${name}". Valid: DEBUG, INFO, WARNING, ERROR</font>`
             );
         }
     }
