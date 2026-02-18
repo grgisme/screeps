@@ -2,6 +2,10 @@
 import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
+import { WorkerOverlord } from "../overlords/core/WorkerOverlord";
+import { UpgradingOverlord } from "../overlords/core/UpgradingOverlord";
+import { TerminalOverlord } from "../overlords/economy/TerminalOverlord";
+import { DefenseOverlord } from "../overlords/core/defense/DefenseOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LinkNetwork } from "./LinkNetwork";
 import { LogisticsNetwork } from "./LogisticsNetwork";
@@ -58,12 +62,6 @@ export class Colony {
     private initOverlords(): void {
         this.registerOverlord(new ConstructionOverlord(this));
         this.registerOverlord(new MiningOverlord(this));
-
-        // Core Logic (Genesis Protocol) - Use dynamic require to avoid circular dependency
-        const { WorkerOverlord } = require("../overlords/core/WorkerOverlord");
-        const { UpgradingOverlord } = require("../overlords/core/UpgradingOverlord");
-        const { TerminalOverlord } = require("../overlords/economy/TerminalOverlord");
-        const { DefenseOverlord } = require("../overlords/core/defense/DefenseOverlord");
 
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
