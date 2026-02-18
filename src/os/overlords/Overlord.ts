@@ -3,14 +3,14 @@
 // ============================================================================
 
 import { Zerg } from "../zerg/Zerg";
-import { Colony } from "../colony/Colony";
+// import type { Colony } from "../colony/Colony";
 
 export abstract class Overlord {
-    colony: Colony;
+    colony: any;
     processId: string;
     zergs: Zerg[] = [];
 
-    constructor(colony: Colony, processId: string) {
+    constructor(colony: any, processId: string) {
         this.colony = colony;
         this.processId = processId;
     }

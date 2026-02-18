@@ -86,6 +86,7 @@
 (globalThis as any).FIND_STRUCTURES = 107;
 (globalThis as any).FIND_MY_SPAWNS = 112;
 (globalThis as any).FIND_MY_CREEPS = 102;
+(globalThis as any).FIND_MY_CONSTRUCTION_SITES = 113;
 
 (globalThis as any).STRUCTURE_SPAWN = "spawn";
 (globalThis as any).STRUCTURE_EXTENSION = "extension";

@@ -103,7 +103,7 @@ export class ConstructionOverlord extends Overlord {
     private checkRoads(anchor: RoomPosition): void {
         const destinations = [
             this.colony.room.controller?.pos,
-            ...this.colony.room.find(FIND_SOURCES).map(s => s.pos)
+            ...this.colony.room.find(FIND_SOURCES).map((s: Source) => s.pos)
         ];
 
         for (const dest of destinations) {

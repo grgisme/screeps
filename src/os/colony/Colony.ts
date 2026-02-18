@@ -1,4 +1,4 @@
-import { Overlord } from "../overlords/Overlord";
+// import type { Overlord } from "../overlords/Overlord";
 import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
@@ -21,7 +21,8 @@ export class Colony {
     room: Room;
     memory: ColonyMemory;
     state: ColonyState;
-    overlords: Overlord[] = [];
+    overlords: any[] = [];
+    creeps: Creep[] = [];
     directives: Directive[] = [];
     zergs: Map<string, Zerg> = new Map();
     logistics: LogisticsNetwork;
@@ -31,13 +32,12 @@ export class Colony {
         this.name = roomName;
         this.room = Game.rooms[roomName];
 
-        // Init memory (this should be backed by Room.memory or a separate segment)
-        // For now, let's just alias Room.memory.colony if it exists, or create it.
+        // Init memory
         if (!(Memory as any).colonies) (Memory as any).colonies = {};
         if (!(Memory as any).colonies[this.name]) (Memory as any).colonies[this.name] = {};
         this.memory = (Memory as any).colonies[this.name];
 
-        this.state = { rclChanged: true }; // Force check on init
+        this.state = { rclChanged: true };
 
         if (this.room) {
             this.scan();
@@ -54,23 +54,27 @@ export class Colony {
     private initOverlords(): void {
         this.registerOverlord(new ConstructionOverlord(this));
         this.registerOverlord(new MiningOverlord(this));
+
+        // Core Logic (Genesis Protocol) - Use dynamic require to avoid circular dependency
+        const { WorkerOverlord } = require("../overlords/core/WorkerOverlord");
+        const { UpgradingOverlord } = require("../overlords/core/UpgradingOverlord");
+
+        this.registerOverlord(new WorkerOverlord(this));
+        this.registerOverlord(new UpgradingOverlord(this));
     }
 
     scan(): void {
-        // MiningOverlord now manages sites internally
+        this.creeps = this.room ? this.room.find(FIND_MY_CREEPS) : [];
     }
 
-    /** Refresh room object and zergs at start of tick */
     refresh(): void {
         this.room = Game.rooms[this.name];
         this.logistics.refresh();
         this.hatchery.refresh();
+        this.scan();
 
-        // Detect RCL change
         if (this.room && this.room.controller) {
-            // We can check previous RCL if we stored it in memory or state
-            // For simplicity, ConstructionOverlord runs every 100 ticks OR on rclChanged.
-            // We can rely on 100 ticks mostly.
+            // Check RCL logic here
         }
 
         if (!this.room) return;
@@ -80,12 +84,10 @@ export class Colony {
         }
     }
 
-    /** Register an overlord */
-    registerOverlord(overlord: Overlord): void {
+    registerOverlord(overlord: any): void {
         this.overlords.push(overlord);
     }
 
-    /** Register a Zerg to the colony */
     registerZerg(creep: Creep): Zerg {
         let zerg = this.zergs.get(creep.name);
         if (!zerg) {
@@ -99,15 +101,10 @@ export class Colony {
         return this.zergs.get(name);
     }
 
-    /**
-     * Scan Game.flags for directive flags (e.g. "inc:W2N1").
-     * Creates HarvestDirective for each matching flag.
-     */
     private initDirectives(): void {
         if (!Game.flags) return;
         for (const name in Game.flags) {
             if (name.startsWith("inc:")) {
-                // Avoid duplicates
                 const existing = this.directives.find(d => d.flag.name === name);
                 if (!existing) {
                     const flag = Game.flags[name];
@@ -118,11 +115,9 @@ export class Colony {
         }
     }
 
-    /** Run all overlords and directives */
     run(): void {
-        if (!this.room) return; // No visibility
+        if (!this.room) return;
 
-        // Init directives first — they may register new overlords
         for (const directive of this.directives) {
             directive.init();
         }
@@ -132,7 +127,6 @@ export class Colony {
         }
         this.logistics.init();
 
-        // Run directives
         for (const directive of this.directives) {
             directive.run();
         }
@@ -148,7 +142,6 @@ export class Colony {
         }
     }
 
-    /** Visualizes the bunker layout */
     showPlan(): string {
         if (!this.memory.anchor) return "No anchor set.";
         const anchor = new RoomPosition(this.memory.anchor.x, this.memory.anchor.y, this.name);
@@ -158,7 +151,6 @@ export class Colony {
             const coords = BunkerLayout.structures[type] || [];
             for (const rel of coords) {
                 const pos = BunkerLayout.getPos(anchor, rel);
-                // visual.structure(pos.x, pos.y, type); // not standard
                 visual.text(type[0].toUpperCase(), pos.x, pos.y, { font: 0.5, color: '#ffffff' });
             }
         }

@@ -45,11 +45,14 @@ interface CreepMemory {
     /** The role determines which process spawned this creep */
     role: string;
     /** PID of the owning process */
-    pid: number;
+    pid?: number;
     /** Optional target ID (source, controller, etc.) */
     targetId?: string;
     /** Room the creep was spawned for */
     homeRoom?: string;
+    /** Working state for state machines */
+    working?: boolean;
+    [key: string]: any;
 }
 
 interface RoomPosition {
