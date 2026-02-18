@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Overlord } from "../Overlord";
-import { Colony } from "../../colony/Colony";
+import type { Colony } from "../../colony/Colony";
 import { Logger } from "../../../utils/Logger";
 
 const log = new Logger("ReserverOverlord");

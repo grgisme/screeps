@@ -1,5 +1,5 @@
 import { Overlord } from "./Overlord";
-import { Colony } from "../colony/Colony";
+import type { Colony } from "../colony/Colony";
 import { MiningSite } from "../colony/MiningSite";
 import { Miner } from "../zerg/Miner";
 import { Zerg } from "../zerg/Zerg";

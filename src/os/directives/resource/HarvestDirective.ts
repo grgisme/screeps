@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Directive } from "../Directive";
-import { Colony } from "../../colony/Colony";
+import type { Colony } from "../../colony/Colony";
 import { ScoutOverlord } from "../../overlords/colonization/ScoutOverlord";
 import { ReserverOverlord } from "../../overlords/colonization/ReserverOverlord";
 import { RemoteMiningOverlord } from "../../overlords/colonization/RemoteMiningOverlord";

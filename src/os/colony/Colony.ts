@@ -63,10 +63,12 @@ export class Colony {
         const { WorkerOverlord } = require("../overlords/core/WorkerOverlord");
         const { UpgradingOverlord } = require("../overlords/core/UpgradingOverlord");
         const { TerminalOverlord } = require("../overlords/economy/TerminalOverlord");
+        const { DefenseOverlord } = require("../overlords/core/defense/DefenseOverlord");
 
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
         this.registerOverlord(new TerminalOverlord(this));
+        this.registerOverlord(new DefenseOverlord(this));
     }
 
     scan(): void {

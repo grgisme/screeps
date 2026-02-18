@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Overlord } from "../Overlord";
-import { Colony } from "../../colony/Colony";
+import type { Colony } from "../../colony/Colony";
 import { MiningSite } from "../../colony/MiningSite";
 import { Transporter } from "../../zerg/Transporter";
 import { Miner } from "../../zerg/Miner";

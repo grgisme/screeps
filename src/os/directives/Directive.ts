@@ -2,7 +2,7 @@
 // Directive — Base class for flag-driven mission objectives
 // ============================================================================
 
-import { Colony } from "../colony/Colony";
+import type { Colony } from "../colony/Colony";
 import { Overlord } from "../overlords/Overlord";
 import { Logger } from "../../utils/Logger";
 

@@ -1,4 +1,4 @@
-import { Colony } from "./Colony";
+import type { Colony } from "./Colony";
 import { Overlord } from "../overlords/Overlord";
 import { CreepBody } from "../../utils/CreepBody";
 

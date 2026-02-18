@@ -1,5 +1,4 @@
-
-import { Colony } from "./Colony";
+import type { Colony } from "./Colony";
 import { Logger } from "../../utils/Logger";
 
 export class LinkNetwork {

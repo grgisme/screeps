@@ -255,6 +255,20 @@ export class MockRoomPosition {
         return [] as T[];
     }
 
+    findClosestByRange<T>(objects: T[] | number): T | null {
+        if (Array.isArray(objects)) {
+            return objects[0] || null; // Simple mock: return first
+        }
+        return null; // Mock for finding by constant
+    }
+
+    findClosestByPath<T>(objects: T[] | number): T | null {
+        if (Array.isArray(objects)) {
+            return objects[0] || null;
+        }
+        return null;
+    }
+
     getDirectionTo(target: RoomPosition | { pos: RoomPosition }): DirectionConstant {
         const pos = "pos" in target ? target.pos : target;
         if (this.x === pos.x && this.y === pos.y) return 1 as DirectionConstant; // Same pos
@@ -317,9 +331,11 @@ export class MockCreep {
     body: any[];
     hits: number;
     hitsMax: number;
+    id: string;
 
     constructor(name: string, roomName: string) {
         this.name = name;
+        this.id = name; // Use name as ID for mock
         this.room = new MockRoom(roomName);
         this.pos = new MockRoomPosition(25, 25, roomName);
         this.store = {
@@ -341,6 +357,13 @@ export class MockCreep {
     pickup(_target: any): number { return 0; }
     repair(_target: any): number { return 0; }
     build(_target: any): number { return 0; }
+    attack(_target: any): number { return 0; }
+    rangedAttack(_target: any): number { return 0; }
+    heal(_target: any): number { return 0; }
+
+    getActiveBodyparts(type: BodyPartConstant): number {
+        return this.body.filter((p: any) => p.type === type && p.hits > 0).length;
+    }
 }
 
 (globalThis as any).Creep = MockCreep;

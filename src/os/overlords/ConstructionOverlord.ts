@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { Overlord } from "./Overlord";
-import { Colony } from "../colony/Colony";
+import type { Colony } from "../colony/Colony";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { Logger } from "../../utils/Logger";
 
