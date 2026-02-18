@@ -50,6 +50,23 @@ const log = new Logger("OS");
     return "No error caught";
 };
 
+/**
+ * Full bot reset — wipes Memory, heap, and colony registry.
+ * Run from the Screeps console: resetBot()
+ */
+(global as any).resetBot = (): string => {
+    // Nuke Memory
+    for (const key in Memory) {
+        delete (Memory as any)[key];
+    }
+    // Nuke heap
+    GlobalCache.clear();
+    (global as any)._heap = undefined;
+    // Clear static colony registry
+    ColonyProcess.colonies = {};
+    return "🔄 Bot reset complete. Fresh bootstrap will run next tick.";
+};
+
 // -------------------------------------------------------------------------
 // Register all process factories (must happen before deserialization)
 // -------------------------------------------------------------------------
@@ -193,7 +210,10 @@ export const loop = ErrorMapper.wrapLoop(() => {
         }
     }
 
-    // --- 4. Bootstrap initial processes if the table is empty ---
+    // --- 4. Prune stale colony processes (handles respawn) ---
+    pruneStaleColonies(kernel);
+
+    // --- 5. Bootstrap initial processes if the table is empty ---
     if (kernel.processCount === 0) {
         bootstrapProcesses(kernel);
     }
@@ -265,6 +285,33 @@ function bootstrapProcesses(kernel: Kernel): void {
         const proc = new ColonyProcess(0, 5, null, roomName);
         kernel.addProcess(proc);
         log.info(`→ Bootstrapped ColonyProcess for ${roomName} (PID ${proc.pid})`);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Prune Stale Colonies — detect respawn and remove dead colony processes
+// -------------------------------------------------------------------------
+
+function pruneStaleColonies(kernel: Kernel): void {
+    const colonyProcs = kernel.getProcessesByName("colony");
+    let pruned = 0;
+
+    for (const proc of colonyProcs) {
+        const colonyName = (proc as ColonyProcess).colonyName;
+        const room = Game.rooms[colonyName];
+
+        // If we can see the room but don't own it, or it has no controller, prune it
+        if (room && (!room.controller || !room.controller.my)) {
+            log.warning(`Pruning stale colony process for ${colonyName} (no longer owned)`);
+            kernel.removeProcess(proc.pid);
+            delete ColonyProcess.colonies[colonyName];
+            pruned++;
+        }
+        // If we can't see the room at all, it might be a remote — leave it for now
+    }
+
+    if (pruned > 0) {
+        log.info(`Pruned ${pruned} stale colony processes`);
     }
 }
 
