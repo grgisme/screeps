@@ -31,6 +31,8 @@ export class Hatchery {
         this.extensions = this.colony.room.find(FIND_MY_STRUCTURES, {
             filter: (s: Structure) => s.structureType === STRUCTURE_EXTENSION
         }) as StructureExtension[];
+        // Clear queue each tick — overlords re-enqueue during init()
+        this.queue = [];
     }
 
     /**
@@ -125,8 +127,11 @@ export class Hatchery {
                     // Name collision? Just drop it or rename?
                     console.log(`Hatchery: Name exists '${request.name}', dropping request.`);
                     this.queue.shift();
+                } else if (result === ERR_BUSY) {
+                    // Spawn is already working — expected, just wait
+                    break;
                 } else {
-                    console.log(`Hatchery: Check spawn error ${result} for ${request.name}`);
+                    console.log(`Hatchery: Spawn error ${result} for ${request.name}`);
                 }
             }
         }
