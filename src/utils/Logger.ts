@@ -220,7 +220,7 @@ export class Logger {
         const styledLabel = `<font color="${color}">[${label}]</font>`;
         const styledMsg = `<font color="${color}">${resolved}</font>`;
 
-        console.log(`${emoji} ${styledLabel} ${styledTag} ${styledMsg}`);
+        console.log(`<font color="${color}">${emoji} ${styledLabel} ${styledTag} ${styledMsg}</font>`);
     }
 
     // -----------------------------------------------------------------------
