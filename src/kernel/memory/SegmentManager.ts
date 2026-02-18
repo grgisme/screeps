@@ -68,10 +68,11 @@ export class SegmentManager {
         if (requested.size > 0) {
             const ids = Array.from(requested).sort((a, b) => a - b);
             RawMemory.setActiveSegments(ids);
-            // We clear the request list? No, we might want to keep them active.
-            // For now, let's keep them active until explicitly released? 
-            // Or simplified: Just set them. The buffers might need to rotate.
-            // Requirement says "async fetch".
+            // CRITICAL: Clear the request set so processes must re-request
+            // segments each tick they need them. Without this, the set grows
+            // monotonically and permanently locks up after 10 unique requests
+            // (the Screeps active segment limit).
+            requested.clear();
         }
     }
 

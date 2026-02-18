@@ -1,5 +1,5 @@
 // ============================================================================
-// Kernel.test.ts — Unit tests for the Kernel scheduler + advanced lifecycle
+// Kernel.test.ts — Unit tests for the refactored Kernel scheduler
 // ============================================================================
 
 import "../mock.setup";
@@ -41,6 +41,28 @@ class TestProcess extends Process {
 
     serialize(): Record<string, unknown> {
         return { marker: "test-data" };
+    }
+}
+
+// Generator test process that yields across ticks
+class CoroutineProcess extends Process {
+    public readonly processName = "coroutine";
+    public steps: number[] = [];
+
+    constructor(pid: number, priority: number) {
+        super(pid, priority);
+    }
+
+    *run(): Generator<void, void, unknown> {
+        this.steps.push(1);
+        yield;
+        this.steps.push(2);
+        yield;
+        this.steps.push(3);
+    }
+
+    serialize(): Record<string, unknown> {
+        return {};
     }
 }
 
@@ -99,7 +121,7 @@ describe("Kernel", () => {
         });
     });
 
-    describe("Process ID Lookup (Stable IDs)", () => {
+    describe("O(1) Process ID Index", () => {
         it("should lookup process by custom processId", () => {
             const kernel = new Kernel();
             const proc = new TestProcess(0, 10, [], "miner", "mining:W1N1:source1");
@@ -117,6 +139,16 @@ describe("Kernel", () => {
 
             expect(kernel.hasProcessId("mining:W1N1:source1")).to.be.true;
             expect(kernel.hasProcessId("mining:W1N1:source2")).to.be.false;
+        });
+
+        it("should clean up indexes on removeProcess", () => {
+            const kernel = new Kernel();
+            const proc = new TestProcess(0, 10, [], "miner", "mining:W1N1:source1");
+            kernel.addProcess(proc);
+
+            kernel.removeProcess(proc.pid);
+            expect(kernel.hasProcessId("mining:W1N1:source1")).to.be.false;
+            expect(kernel.getProcessesByName("miner")).to.have.length(0);
         });
     });
 
@@ -159,12 +191,14 @@ describe("Kernel", () => {
             expect(procCrash.status).to.equal(ProcessStatus.DEAD);
         });
 
-        it("should stop when soft CPU ceiling is reached", () => {
+        it("should stop when soft CPU ceiling is reached (burst mode)", () => {
             const kernel = new Kernel();
             const order: number[] = [];
 
             let cpuUsed = 0;
             (globalThis as any).Game.cpu.getUsed = () => cpuUsed;
+            // Bucket healthy → softLimit = tickLimit * 0.95 = 20 * 0.95 = 19
+            (globalThis as any).Game.cpu.tickLimit = 20;
             (globalThis as any).Game.cpu.limit = 20;
 
             const proc1 = new TestProcess(0, 5, order);
@@ -176,7 +210,34 @@ describe("Kernel", () => {
             const origRun = proc1.run.bind(proc1);
             proc1.run = () => {
                 origRun();
-                cpuUsed = 19; // Over 90% of 20
+                cpuUsed = 19; // >= 95% of tickLimit (20)
+            };
+
+            kernel.run();
+            expect(order).to.deep.equal([proc1.pid]);
+        });
+
+        it("should use conservative soft limit when bucket is draining", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+
+            let cpuUsed = 0;
+            (globalThis as any).Game.cpu.getUsed = () => cpuUsed;
+            (globalThis as any).Game.cpu.limit = 20;
+            (globalThis as any).Game.cpu.tickLimit = 500;
+            // Bucket below BUCKET_NORMAL → softLimit = limit * 0.95 = 19
+            (globalThis as any).Game.cpu.bucket = 300;
+
+            const proc1 = new TestProcess(0, 0, order, "critical");
+            const proc2 = new TestProcess(0, 0, order, "critical2");
+
+            kernel.addProcess(proc1);
+            kernel.addProcess(proc2);
+
+            const origRun = proc1.run.bind(proc1);
+            proc1.run = () => {
+                origRun();
+                cpuUsed = 19; // >= 95% of limit (20), but << tickLimit
             };
 
             kernel.run();
@@ -299,71 +360,7 @@ describe("Kernel", () => {
         });
     });
 
-    describe("Priority Boosting (Starvation Prevention)", () => {
-        it("should boost priority after 50 consecutive skips", () => {
-            const kernel = new Kernel();
-            const order: number[] = [];
-
-            // Start in SAFE mode (bucket 300)
-            (globalThis as any).Game.cpu.bucket = 300;
-
-            // Priority 10 process (normally skipped in SAFE mode)
-            const starved = new TestProcess(0, 10, order, "starved");
-            kernel.addProcess(starved);
-
-            // Run 50 ticks - should all skip
-            for (let i = 0; i < 50; i++) {
-                kernel.run();
-            }
-            expect(starved.runCount).to.equal(0);
-            expect(kernel.getSchedulerReport().skipped.get(10)).to.equal(1);
-
-            // Tick 51: Boost kicks in! 
-            // 51 skips / 50 = boost 1. Effective priority 10 - 1 = 9. Still > 2. 
-            // Wait, we need it to reach priority <= 2 to run in SAFE mode.
-            // 10 - X <= 2  => X >= 8.
-            // Need 8 * 50 = 400 ticks to boost from 10 to 2? That's the design.
-            // Let's test a priority 3 process (just above threshold)
-
-            const justAbove = new TestProcess(0, 3, order, "justAbove");
-            kernel.addProcess(justAbove);
-
-            // Run 50 ticks (skipping priority 3)
-            for (let i = 0; i < 50; i++) {
-                kernel.run();
-            }
-            expect(justAbove.runCount).to.equal(0);
-
-            // Tick 51: Boost = 1. Effective priority = 2. Should RUN in SAFE mode.
-            kernel.run();
-
-            expect(justAbove.runCount).to.equal(1);
-            expect(kernel.getSchedulerReport().boosted).to.include(`justAbove:${justAbove.pid} (3→2)`);
-        });
-
-        it("should reset skip counter after execution", () => {
-            const kernel = new Kernel();
-            const order: number[] = [];
-            (globalThis as any).Game.cpu.bucket = 300; // SAFE mode
-
-            // Priority 3 process
-            const proc = new TestProcess(0, 3, order);
-            kernel.addProcess(proc);
-
-            // Skip 50 times
-            for (let i = 0; i < 50; i++) kernel.run();
-
-            // Run once (boosted)
-            kernel.run();
-            expect(proc.runCount).to.equal(1);
-
-            // Next run: should be skipped again (counter reset)
-            kernel.run();
-            expect(proc.runCount).to.equal(1); // Still 1
-        });
-    });
-
-    describe("Timed Sleep", () => {
+    describe("O(1) Wake Map", () => {
         it("should skip sleeping processes without checking priority", () => {
             const kernel = new Kernel();
             const order: number[] = [];
@@ -380,19 +377,22 @@ describe("Kernel", () => {
             kernel.run();
 
             expect(proc.runCount).to.equal(0);
-            // Should be counted as sleeping in report
             expect(kernel.getSchedulerReport().sleeping).to.equal(1);
         });
 
-        it("should auto-wake process when time is reached", () => {
+        it("should auto-wake process via wake map when time is reached", () => {
             const kernel = new Kernel();
             const order: number[] = [];
 
             const proc = new TestProcess(0, 10, order);
+            (globalThis as any).Game.time = 100;
             kernel.addProcess(proc);
 
-            (globalThis as any).Game.time = 100;
             proc.sleep(5); // Wake at 105
+            // kernel.run() detects that proc is SLEEP with sleepUntil=105,
+            // registers it in wakeMap, and skips execution
+            kernel.run();
+            expect(proc.runCount).to.equal(0);
 
             // Time 104: still sleeping
             (globalThis as any).Game.time = 104;
@@ -400,13 +400,81 @@ describe("Kernel", () => {
             expect(proc.runCount).to.equal(0);
             expect(proc.status).to.equal(ProcessStatus.SLEEP);
 
-            // Time 105: wake up and run
+            // Time 105: wake map fires, process resumes and runs
             (globalThis as any).Game.time = 105;
-            kernel.run(); // Checks wakes -> sets status ALIVE -> runs
+            kernel.run();
 
             expect(proc.status).to.equal(ProcessStatus.ALIVE);
             expect(proc.sleepUntil).to.be.null;
             expect(proc.runCount).to.equal(1);
+        });
+
+        it("should handle stale PIDs in wake map gracefully", () => {
+            const kernel = new Kernel();
+            const order: number[] = [];
+
+            const proc = new TestProcess(0, 10, order);
+            kernel.addProcess(proc);
+
+            (globalThis as any).Game.time = 100;
+            proc.sleep(5);
+            kernel.run(); // Registers wake at 105
+
+            // Remove the process before wake time
+            kernel.removeProcess(proc.pid);
+
+            // Time 105: wake map fires but PID is gone — no crash
+            (globalThis as any).Game.time = 105;
+            expect(() => kernel.run()).to.not.throw();
+        });
+    });
+
+    describe("Generator Coroutines", () => {
+        it("should execute generator across multiple ticks", () => {
+            const kernel = new Kernel();
+            const proc = new CoroutineProcess(0, 5);
+            kernel.addProcess(proc);
+
+            // Tick 1: run() returns generator, first .next() executes step 1
+            kernel.run();
+            expect(proc.steps).to.deep.equal([1]);
+            expect(proc.thread).to.not.be.undefined;
+
+            // Tick 2: resumes generator, executes step 2
+            kernel.run();
+            expect(proc.steps).to.deep.equal([1, 2]);
+            expect(proc.thread).to.not.be.undefined;
+
+            // Tick 3: resumes generator, executes step 3, generator done
+            kernel.run();
+            expect(proc.steps).to.deep.equal([1, 2, 3]);
+            expect(proc.thread).to.be.undefined;
+        });
+
+        it("should clean up thread on process crash", () => {
+            const kernel = new Kernel();
+
+            // A coroutine that crashes on the second step
+            class CrashCoroutine extends Process {
+                public readonly processName = "crashcoro";
+                *run(): Generator<void, void, unknown> {
+                    yield;
+                    throw new Error("crash mid-coroutine");
+                }
+                serialize() { return {}; }
+            }
+
+            const proc = new CrashCoroutine(0, 5);
+            kernel.addProcess(proc);
+
+            // Tick 1: starts coroutine
+            kernel.run();
+            expect(proc.thread).to.not.be.undefined;
+
+            // Tick 2: resumes and crashes
+            kernel.run();
+            expect(proc.thread).to.be.undefined;
+            expect(proc.status).to.equal(ProcessStatus.DEAD);
         });
     });
 
@@ -473,6 +541,33 @@ describe("Kernel", () => {
             expect(proc.processId).to.equal("restored-id");
             expect(proc.sleepUntil).to.equal(12345);
             expect(proc.status).to.equal(ProcessStatus.SLEEP);
+        });
+
+        it("should rebuild all indexes on deserialize", () => {
+            Kernel.registerProcess("test", (pid, prio, _parent, _data) =>
+                new TestProcess(pid, prio, [], "test")
+            );
+
+            Memory.kernel = {
+                processTable: [{
+                    pid: 1,
+                    priority: 10,
+                    parentPID: null,
+                    processName: "test",
+                    processId: "test:one",
+                    status: ProcessStatus.ALIVE,
+                    data: {}
+                }],
+                nextPID: 2
+            };
+
+            const kernel = Kernel.deserialize();
+
+            // O(1) index lookups should work
+            expect(kernel.hasProcessId("test:one")).to.be.true;
+            expect(kernel.getProcessById("test:one")?.pid).to.equal(1);
+            expect(kernel.getProcessesByName("test")).to.have.length(1);
+            expect(kernel.getPriorityLevels()).to.deep.equal([10]);
         });
     });
 });

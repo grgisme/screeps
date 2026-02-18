@@ -65,18 +65,24 @@ export class GlobalCache {
      * Restore a value from global heap if available, otherwise generate it
      * and persist to heap.
      *
+     * After a global reset, the heap is empty but `Memory.heap[key]` may
+     * still contain serialized state from the previous lifecycle. The
+     * `generator` receives this saved state so objects can restore
+     * themselves instead of starting from scratch (the "Amnesia Bug" fix).
+     *
      * @param key Unique key for the object (e.g., 'RoomManager:E1S1')
-     * @param generator Function to create the object if not in heap
+     * @param generator Creates the object; receives `Memory.heap[key]` if available
      * @param serializer Optional function to return a serializable version for Memory
      */
-    static rehydrate<T>(key: string, generator: () => T, serializer?: (obj: T) => unknown): T {
+    static rehydrate<T>(key: string, generator: (savedState?: unknown) => T, serializer?: (obj: T) => unknown): T {
         const heap = ensureHeap();
         if (heap._cache.has(key)) {
             return heap._cache.get(key) as T;
         }
 
-        // Not in heap - generate it
-        const value = generator();
+        // Not in heap — pass saved state from Memory so the object can restore
+        const savedState = Memory.heap?.[key];
+        const value = generator(savedState);
         heap._cache.set(key, value);
 
         // If a serializer is provided, future commits will save this key

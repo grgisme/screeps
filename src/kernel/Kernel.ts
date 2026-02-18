@@ -1,5 +1,6 @@
 // ============================================================================
-// Kernel — Process scheduler with load shedding, priority boosting, and panic
+// Kernel — Process scheduler with bucketed priorities, O(1) wake map,
+//          generator coroutines, and 3-tier load shedding
 // ============================================================================
 
 import { Process } from "./Process";
@@ -23,7 +24,7 @@ export type ProcessFactory = (
 // ---------------------------------------------------------------------------
 
 export const SchedulerMode = {
-    /** bucket > 500 — all processes execute */
+    /** bucket > 500 — all processes execute, burst CPU allowed */
     NORMAL: "NORMAL",
     /** bucket < 500 — skip processes with priority > 2 */
     SAFE: "SAFE",
@@ -44,8 +45,6 @@ export interface SchedulerReport {
     skipped: Map<number, number>;
     /** Number of sleeping processes (not checked at all) */
     sleeping: number;
-    /** Process names that received a priority boost this tick */
-    boosted: string[];
     /** Scheduler mode for this tick */
     mode: SchedulerModeType;
 }
@@ -59,39 +58,91 @@ export interface SchedulerReport {
  * processes, schedules them by priority, and enforces per-tick CPU
  * budgets with a 3-tier load shedding governor.
  *
+ * Performance characteristics (N = number of processes):
+ * - Process lookup by PID:        O(1) via processTable
+ * - Process lookup by processId:  O(1) via processIdIndex
+ * - Process lookup by name:       O(1) via processNameIndex
+ * - Scheduling (per tick):        O(P + R) where P = priority levels, R = runnable
+ * - Wake from sleep:              O(W) where W = processes waking THIS tick
+ *
  * Advanced features:
- * - Timed sleep: processes auto-wake after N ticks
- * - Priority boosting: starved processes get temporary priority increases
- * - Kernel panic: emergency protocol when bucket is critically low
+ * - Generator coroutines: processes can yield across ticks
+ * - O(1) wake map: sleeping processes auto-wake without full-table scan
+ * - Dynamic CPU bursting: uses tickLimit when bucket is healthy
+ * - Bucketed priority queue: O(P) iteration replaces O(N log N) sort
  * - Stable processId: purpose-derived identifiers for deduplication
  */
 export class Kernel {
+    // -----------------------------------------------------------------------
+    // Primary State
+    // -----------------------------------------------------------------------
+
     /** All active processes keyed by PID. */
     private processTable: Map<number, Process> = new Map();
 
     /** Monotonically increasing PID counter. */
     private nextPID: number = 1;
 
+    // -----------------------------------------------------------------------
+    // Secondary Indexes — O(1) Lookups
+    // -----------------------------------------------------------------------
+
+    /** processId → Process. Synchronized in addProcess/removeProcess. */
+    private processIdIndex: Map<string, Process> = new Map();
+
+    /** processName → Set<Process>. Synchronized in addProcess/removeProcess. */
+    private processNameIndex: Map<string, Set<Process>> = new Map();
+
+    // -----------------------------------------------------------------------
+    // Bucketed Priority Queue
+    // -----------------------------------------------------------------------
+
+    /**
+     * Processes grouped by priority level: priorityBuckets.get(priority) = Process[].
+     * Iterated in ascending priority order (0 = highest priority).
+     * Replaces O(N log N) Array.prototype.sort() with O(P) bucket walk.
+     */
+    private priorityBuckets: Map<number, Process[]> = new Map();
+
+    // -----------------------------------------------------------------------
+    // O(1) Wake Map
+    // -----------------------------------------------------------------------
+
+    /**
+     * Maps Game.time tick → Set of PIDs to wake on that tick.
+     * Replaces the O(N) shouldWake() full-table scan.
+     * Entries are deleted after processing. Stale PIDs (from terminated
+     * processes) are harmlessly ignored at wake time.
+     */
+    private wakeMap: Map<number, Set<number>> = new Map();
+
+    // -----------------------------------------------------------------------
+    // Static Registry
+    // -----------------------------------------------------------------------
+
     /** Registry of factories used to reconstruct processes after global reset. */
     private static registry: Map<string, ProcessFactory> = new Map();
 
+    // -----------------------------------------------------------------------
+    // Per-Tick State (reused to reduce GC pressure)
+    // -----------------------------------------------------------------------
+
     /**
      * Per-tick CPU usage by process name.
-     * Accumulated during `run()`, reset at the start of each `run()` call.
+     * Cleared (never reallocated) at the start of each run() call.
      */
     private _cpuProfile: Map<string, number> = new Map();
 
-    /** Current scheduler mode, determined at the start of each `run()`. */
+    /** Current scheduler mode, determined at the start of each run(). */
     private _schedulerMode: SchedulerModeType = SchedulerMode.NORMAL;
 
-    /** Per-tick scheduler diagnostics. */
-    private _schedulerReport: SchedulerReport = Kernel.emptyReport();
-
-    /**
-     * Consecutive ticks each process (by PID) has been skipped by the governor.
-     * Reset to 0 when the process actually executes.
-     */
-    private _skipCounter: Map<number, number> = new Map();
+    /** Per-tick scheduler diagnostics. Maps are cleared, not reallocated. */
+    private _schedulerReport: SchedulerReport = {
+        executed: new Map(),
+        skipped: new Map(),
+        sleeping: 0,
+        mode: SchedulerMode.NORMAL,
+    };
 
     /** Whether the kernel is in panic state (bucket < 100). */
     private _panicActive: boolean = false;
@@ -100,14 +151,14 @@ export class Kernel {
     // Constants
     // -----------------------------------------------------------------------
 
-    /** Bucket above which all processes run. */
-    private static readonly BUCKET_NORMAL = 500;
+    /** Bucket above which burst CPU is allowed (softLimit = tickLimit * 0.95). */
+    static readonly BUCKET_NORMAL = 500;
+
     /** Bucket below which only emergency processes run. */
     private static readonly BUCKET_EMERGENCY = 100;
+
     /** Maximum priority value allowed in Safe Mode (load shedding). */
     private static readonly SAFE_MODE_MAX_PRIORITY = 2;
-    /** Consecutive skips before a process gets priority boosted. */
-    private static readonly BOOST_THRESHOLD = 50;
 
     // -----------------------------------------------------------------------
     // Process Registration (static)
@@ -125,46 +176,86 @@ export class Kernel {
         const pid = this.nextPID++;
         process.pid = pid;
         this.processTable.set(pid, process);
+
+        // --- Secondary indexes ---
+        if (process.processId) {
+            this.processIdIndex.set(process.processId, process);
+        }
+
+        let nameSet = this.processNameIndex.get(process.processName);
+        if (!nameSet) {
+            nameSet = new Set();
+            this.processNameIndex.set(process.processName, nameSet);
+        }
+        nameSet.add(process);
+
+        // --- Priority bucket ---
+        let bucket = this.priorityBuckets.get(process.priority);
+        if (!bucket) {
+            bucket = [];
+            this.priorityBuckets.set(process.priority, bucket);
+        }
+        bucket.push(process);
+
+        // --- Wake map (if process is sleeping with a timed wake) ---
+        if (process.sleepUntil !== null && process.status === ProcessStatus.SLEEP) {
+            this.registerWake(pid, process.sleepUntil);
+        }
+
         return pid;
     }
 
     removeProcess(pid: number): void {
+        const process = this.processTable.get(pid);
+        if (!process) return;
+
         this.processTable.delete(pid);
-        this._skipCounter.delete(pid);
+
+        // --- Secondary indexes ---
+        if (process.processId) {
+            this.processIdIndex.delete(process.processId);
+        }
+
+        const nameSet = this.processNameIndex.get(process.processName);
+        if (nameSet) {
+            nameSet.delete(process);
+            if (nameSet.size === 0) {
+                this.processNameIndex.delete(process.processName);
+            }
+        }
+
+        // --- Priority bucket ---
+        const bucket = this.priorityBuckets.get(process.priority);
+        if (bucket) {
+            const idx = bucket.indexOf(process);
+            if (idx !== -1) bucket.splice(idx, 1);
+            if (bucket.length === 0) {
+                this.priorityBuckets.delete(process.priority);
+            }
+        }
+
+        // Note: wakeMap entries are NOT cleaned here. Stale PIDs are
+        // harmlessly ignored at wake time since we verify processTable membership.
     }
 
     getProcess(pid: number): Process | undefined {
         return this.processTable.get(pid);
     }
 
-    /**
-     * Lookup a process by its stable, purpose-derived processId.
-     */
+    /** O(1) lookup by stable, purpose-derived processId. */
     getProcessById(id: string): Process | undefined {
-        for (const proc of this.processTable.values()) {
-            if (proc.processId === id) {
-                return proc;
-            }
-        }
-        return undefined;
+        return this.processIdIndex.get(id);
     }
 
-    /**
-     * Check if a process with the given stable processId exists.
-     * Useful for deduplication before spawning a new process.
-     */
+    /** O(1) existence check by stable processId. */
     hasProcessId(id: string): boolean {
-        return this.getProcessById(id) !== undefined;
+        return this.processIdIndex.has(id);
     }
 
+    /** O(1) lookup of all processes with the given name. */
     getProcessesByName(name: string): Process[] {
-        const results: Process[] = [];
-        for (const proc of this.processTable.values()) {
-            if (proc.processName === name) {
-                results.push(proc);
-            }
-        }
-        return results;
+        const set = this.processNameIndex.get(name);
+        return set ? Array.from(set) : [];
     }
 
     get processCount(): number {
@@ -191,53 +282,47 @@ export class Kernel {
         return this._panicActive;
     }
 
-    /**
-     * Returns the set of distinct priority values across all processes.
-     */
+    /** Returns the sorted distinct priority levels from the bucketed queue. */
     getPriorityLevels(): number[] {
-        const levels = new Set<number>();
-        for (const proc of this.processTable.values()) {
-            levels.add(proc.priority);
+        return Array.from(this.priorityBuckets.keys()).sort((a, b) => a - b);
+    }
+
+    // -----------------------------------------------------------------------
+    // Wake Map Management
+    // -----------------------------------------------------------------------
+
+    /** Register a PID to be woken at the given Game.time tick. */
+    private registerWake(pid: number, tick: number): void {
+        let set = this.wakeMap.get(tick);
+        if (!set) {
+            set = new Set();
+            this.wakeMap.set(tick, set);
         }
-        return Array.from(levels).sort((a, b) => a - b);
+        set.add(pid);
     }
 
     // -----------------------------------------------------------------------
-    // Priority Boosting
+    // Scheduler — 3-tier CPU Governor with coroutines
     // -----------------------------------------------------------------------
 
     /**
-     * Calculate the effective priority of a process, accounting for
-     * starvation prevention. After BOOST_THRESHOLD consecutive skips,
-     * the process's effective priority decreases (becomes more urgent)
-     * by 1 per threshold interval, clamped to 0.
-     */
-    getEffectivePriority(process: Process): number {
-        const skipCount = this._skipCounter.get(process.pid) ?? 0;
-        const boost = Math.floor(skipCount / Kernel.BOOST_THRESHOLD);
-        return Math.max(0, process.priority - boost);
-    }
-
-    // -----------------------------------------------------------------------
-    // Scheduler — 3-tier CPU Governor with boosting and sleep
-    // -----------------------------------------------------------------------
-
-    /**
-     * Run processes in priority order with load shedding, timed sleep,
-     * and priority boosting.
+     * Run processes by priority bucket with load shedding, O(1) wake map,
+     * dynamic CPU bursting, and generator coroutine support.
      */
     run(): void {
-        // Reset per-tick state
-        this._cpuProfile = new Map();
-        this._schedulerReport = Kernel.emptyReport();
+        // --- Reset per-tick state (reuse maps, don't reallocate) ---
+        this._cpuProfile.clear();
+        this._schedulerReport.executed.clear();
+        this._schedulerReport.skipped.clear();
+        this._schedulerReport.sleeping = 0;
 
         // --- 1. Determine scheduler mode ---
-        const bucket = Game.cpu.bucket;
+        const cpuBucket = Game.cpu.bucket;
         const prevMode = this._schedulerMode;
 
-        if (bucket < Kernel.BUCKET_EMERGENCY) {
+        if (cpuBucket < Kernel.BUCKET_EMERGENCY) {
             this._schedulerMode = SchedulerMode.EMERGENCY;
-        } else if (bucket < Kernel.BUCKET_NORMAL) {
+        } else if (cpuBucket < Kernel.BUCKET_NORMAL) {
             this._schedulerMode = SchedulerMode.SAFE;
         } else {
             this._schedulerMode = SchedulerMode.NORMAL;
@@ -248,7 +333,7 @@ export class Kernel {
         // Log mode transitions
         if (this._schedulerMode !== prevMode) {
             log.warning(
-                `Scheduler mode: ${prevMode} → ${this._schedulerMode} (bucket: ${bucket})`
+                `Scheduler mode: ${prevMode} → ${this._schedulerMode} (bucket: ${cpuBucket})`
             );
         }
 
@@ -260,93 +345,130 @@ export class Kernel {
             log.info("Kernel panic cleared — bucket recovering");
         }
 
-        // --- 3. Auto-wake sleeping processes ---
-        for (const process of this.processTable.values()) {
-            if (process.shouldWake()) {
-                process.resume();
-                log.info(
-                    `Process ${process.processName} (PID ${process.pid}) woke up after sleep`
-                );
+        // --- 3. O(1) Wake Map — only process PIDs scheduled to wake NOW ---
+        const waking = this.wakeMap.get(Game.time);
+        if (waking) {
+            for (const pid of waking) {
+                const proc = this.processTable.get(pid);
+                if (proc && proc.status === ProcessStatus.SLEEP &&
+                    proc.sleepUntil !== null && Game.time >= proc.sleepUntil) {
+                    proc.resume();
+                    log.debug(
+                        () => `Process ${proc.processName} (PID ${pid}) woke from timed sleep`
+                    );
+                }
             }
+            this.wakeMap.delete(Game.time);
         }
 
-        // --- 4. Build sorted list using effective priority ---
-        const sorted = this.getSortedProcesses();
+        // --- 4. Dynamic CPU limits ---
+        // When bucket is healthy, burst up to tickLimit. Otherwise clamp to base rate.
+        const softLimit = cpuBucket > Kernel.BUCKET_NORMAL
+            ? Game.cpu.tickLimit * 0.95   // Burst mode
+            : Game.cpu.limit * 0.95;      // Conservative
+        const hardLimit = Game.cpu.tickLimit * 0.95; // Absolute safety ceiling
 
-        // CPU ceilings
-        const softLimit = Game.cpu.limit * 0.9;
-        const hardLimit = Game.cpu.tickLimit * 0.95;
+        // --- 5. Execute by priority bucket (ascending order) ---
+        const sortedPriorities = Array.from(this.priorityBuckets.keys())
+            .sort((a, b) => a - b);
 
-        for (const process of sorted) {
-            // Hard ceiling — never exceed tickLimit (burst)
-            if (Game.cpu.getUsed() >= hardLimit) {
-                log.error(
-                    `HARD CPU ceiling hit (${Game.cpu.getUsed().toFixed(1)}/${hardLimit.toFixed(1)}), aborting tick`
-                );
-                break;
+        let aborted = false;
+
+        for (const priority of sortedPriorities) {
+            if (aborted) break;
+
+            // Entire-bucket load shedding: skip all processes above threshold
+            if (this._schedulerMode === SchedulerMode.EMERGENCY && priority > 0) {
+                this.recordBucketSkip(priority);
+                continue;
             }
-
-            // Soft ceiling — normal operations
-            if (Game.cpu.getUsed() >= softLimit) {
-                log.warning(
-                    `CPU ceiling reached (${Game.cpu.getUsed().toFixed(1)}/${softLimit.toFixed(1)}), deferring remaining`
-                );
-                break;
-            }
-
-            // Skip sleeping processes (zero CPU cost)
-            if (!process.isAlive()) {
-                if (process.status === ProcessStatus.SLEEP) {
-                    this._schedulerReport.sleeping++;
-                }
+            if (this._schedulerMode === SchedulerMode.SAFE &&
+                priority > Kernel.SAFE_MODE_MAX_PRIORITY) {
+                this.recordBucketSkip(priority);
                 continue;
             }
 
-            // Load shedding — filter by effective priority based on mode
-            const effectivePriority = this.getEffectivePriority(process);
+            const processes = this.priorityBuckets.get(priority);
+            if (!processes) continue;
 
-            if (this._schedulerMode === SchedulerMode.EMERGENCY) {
-                if (effectivePriority > 0) {
-                    this.recordSkip(process);
+            for (const process of processes) {
+                // Hard ceiling — never exceed tickLimit
+                if (Game.cpu.getUsed() >= hardLimit) {
+                    log.error(
+                        `HARD CPU ceiling hit (${Game.cpu.getUsed().toFixed(1)}/${hardLimit.toFixed(1)}), aborting tick`
+                    );
+                    aborted = true;
+                    break;
+                }
+
+                // Soft ceiling — normal operations
+                if (Game.cpu.getUsed() >= softLimit) {
+                    log.warning(
+                        `CPU ceiling reached (${Game.cpu.getUsed().toFixed(1)}/${softLimit.toFixed(1)}), deferring remaining`
+                    );
+                    aborted = true;
+                    break;
+                }
+
+                // Skip sleeping/dead processes (zero CPU cost)
+                if (!process.isAlive()) {
+                    if (process.status === ProcessStatus.SLEEP) {
+                        this._schedulerReport.sleeping++;
+                        // Ensure sleeping processes are registered in the wake map.
+                        // This handles processes that called sleep() outside of run()
+                        // (e.g., between ticks or during initialization).
+                        if (process.sleepUntil !== null) {
+                            this.registerWake(process.pid, process.sleepUntil);
+                        }
+                    }
                     continue;
                 }
-            } else if (this._schedulerMode === SchedulerMode.SAFE) {
-                if (effectivePriority > Kernel.SAFE_MODE_MAX_PRIORITY) {
-                    this.recordSkip(process);
-                    continue;
+
+                // --- Execute with generator coroutine support ---
+                const cpuBefore = Game.cpu.getUsed();
+                try {
+                    if (process.thread) {
+                        // Resume existing coroutine
+                        const result = process.thread.next();
+                        if (result.done) {
+                            process.thread = undefined;
+                        }
+                    } else {
+                        // First call — may return void or a Generator
+                        const result = process.run();
+                        if (result && typeof (result as Generator).next === "function") {
+                            process.thread = result as Generator<void, void, unknown>;
+                            // Execute first chunk immediately (don't waste a tick)
+                            const first = process.thread.next();
+                            if (first.done) {
+                                process.thread = undefined;
+                            }
+                        }
+                    }
+                } catch (e: unknown) {
+                    const raw = e instanceof Error ? e.stack ?? e.message : String(e);
+                    const mapped = ErrorMapper.mapTrace(raw);
+                    console.log(
+                        `❌ [Kernel] Process ${process.processName} (PID ${process.pid}) crashed:\n${mapped}`
+                    );
+                    process.thread = undefined; // Clean up coroutine on crash
+                    process.terminate();
                 }
+
+                // If the process went to sleep during execution, register wake
+                if (process.status === ProcessStatus.SLEEP && process.sleepUntil !== null) {
+                    this.registerWake(process.pid, process.sleepUntil);
+                }
+
+                const delta = Game.cpu.getUsed() - cpuBefore;
+                this.recordExec(process);
+
+                const existing = this._cpuProfile.get(process.processName) ?? 0;
+                this._cpuProfile.set(process.processName, existing + delta);
             }
-
-            // Track if this process was boosted
-            if (effectivePriority < process.priority) {
-                this._schedulerReport.boosted.push(
-                    `${process.processName}:${process.pid} (${process.priority}→${effectivePriority})`
-                );
-            }
-
-            // Profile: record CPU before and after
-            const cpuBefore = Game.cpu.getUsed();
-            try {
-                process.run();
-            } catch (e: unknown) {
-                const raw = e instanceof Error ? e.stack ?? e.message : String(e);
-                const mapped = ErrorMapper.mapTrace(raw);
-                console.log(
-                    `❌ [Kernel] Process ${process.processName} (PID ${process.pid}) crashed:\n${mapped}`
-                );
-                process.terminate();
-            }
-            const cpuAfter = Game.cpu.getUsed();
-            const delta = cpuAfter - cpuBefore;
-
-            // Record execution in report + CPU profile
-            this.recordExec(process);
-
-            const existing = this._cpuProfile.get(process.processName) ?? 0;
-            this._cpuProfile.set(process.processName, existing + delta);
         }
 
-        // Sweep dead processes
+        // Sweep dead processes (cleans all indexes via removeProcess)
         this.sweepDead();
     }
 
@@ -354,34 +476,27 @@ export class Kernel {
     // Scheduler helpers
     // -----------------------------------------------------------------------
 
-    /** Record that a process was skipped (load shedding). */
-    private recordSkip(process: Process): void {
-        const count = (this._skipCounter.get(process.pid) ?? 0) + 1;
-        this._skipCounter.set(process.pid, count);
-
-        const existing = this._schedulerReport.skipped.get(process.priority) ?? 0;
-        this._schedulerReport.skipped.set(process.priority, existing + 1);
+    /** Record that all alive processes in a priority bucket were skipped. */
+    private recordBucketSkip(priority: number): void {
+        const bucket = this.priorityBuckets.get(priority);
+        if (!bucket) return;
+        let count = 0;
+        for (const proc of bucket) {
+            if (proc.isAlive()) count++;
+        }
+        if (count > 0) {
+            const existing = this._schedulerReport.skipped.get(priority) ?? 0;
+            this._schedulerReport.skipped.set(priority, existing + count);
+        }
     }
 
-    /** Record that a process was executed (reset skip counter). */
+    /** Record that a process was executed. */
     private recordExec(process: Process): void {
-        this._skipCounter.set(process.pid, 0);
-
         const existing = this._schedulerReport.executed.get(process.priority) ?? 0;
         this._schedulerReport.executed.set(process.priority, existing + 1);
     }
 
-    /** Returns processes sorted by effective priority (ascending). */
-    private getSortedProcesses(): Process[] {
-        const procs: Process[] = [];
-        for (const process of this.processTable.values()) {
-            procs.push(process);
-        }
-        procs.sort((a, b) => this.getEffectivePriority(a) - this.getEffectivePriority(b));
-        return procs;
-    }
-
-    /** Remove all processes marked DEAD. */
+    /** Remove all processes marked DEAD, cleaning up all indexes. */
     private sweepDead(): void {
         const toRemove: number[] = [];
         for (const [pid, process] of this.processTable) {
@@ -390,20 +505,8 @@ export class Kernel {
             }
         }
         for (const pid of toRemove) {
-            this.processTable.delete(pid);
-            this._skipCounter.delete(pid);
+            this.removeProcess(pid);
         }
-    }
-
-    /** Create an empty scheduler report. */
-    private static emptyReport(): SchedulerReport {
-        return {
-            executed: new Map(),
-            skipped: new Map(),
-            sleeping: 0,
-            boosted: [],
-            mode: SchedulerMode.NORMAL,
-        };
     }
 
     // -----------------------------------------------------------------------
@@ -412,8 +515,7 @@ export class Kernel {
 
     /**
      * Triggered when bucket drops below BUCKET_EMERGENCY.
-     * Logs a critical error and sets the panic flag so the main loop
-     * can force non-essential creeps to idle.
+     * Sets the panic flag so the main loop can force non-essential creeps to idle.
      */
     private onKernelPanic(): void {
         this._panicActive = true;
@@ -465,7 +567,34 @@ export class Kernel {
             process.status = desc.status as ProcessStatusType;
             process.processId = desc.processId ?? "";
             process.sleepUntil = desc.sleepUntil ?? null;
+
+            // --- Direct insertion (bypass addProcess to preserve PID) ---
             kernel.processTable.set(desc.pid, process);
+
+            // Secondary indexes
+            if (process.processId) {
+                kernel.processIdIndex.set(process.processId, process);
+            }
+
+            let nameSet = kernel.processNameIndex.get(process.processName);
+            if (!nameSet) {
+                nameSet = new Set();
+                kernel.processNameIndex.set(process.processName, nameSet);
+            }
+            nameSet.add(process);
+
+            // Priority bucket
+            let bucket = kernel.priorityBuckets.get(process.priority);
+            if (!bucket) {
+                bucket = [];
+                kernel.priorityBuckets.set(process.priority, bucket);
+            }
+            bucket.push(process);
+
+            // Wake map
+            if (process.sleepUntil !== null && process.status === ProcessStatus.SLEEP) {
+                kernel.registerWake(desc.pid, process.sleepUntil);
+            }
         }
 
         return kernel;

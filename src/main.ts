@@ -191,10 +191,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
         }
     }
 
-    // --- 2. Global Manager Init (Warm Start) ---
-    GlobalManager.init();
-
-    // --- 3. Kernel init / restore ---
+    // --- 2. Kernel init / restore ---
     const isReset = GlobalCache.isGlobalReset();
     let kernel: Kernel;
 
@@ -210,13 +207,11 @@ export const loop = ErrorMapper.wrapLoop(() => {
         }
     }
 
-    // --- 4. Prune stale colony processes (handles respawn) ---
+    // --- 3. Prune stale colony processes (handles respawn) ---
     pruneStaleColonies(kernel);
 
-    // --- 5. Bootstrap initial processes if the table is empty ---
-    if (kernel.processCount === 0) {
-        bootstrapProcesses(kernel);
-    }
+    // --- 4. Global Manager — spawn colony processes for owned rooms ---
+    GlobalManager.init(kernel);
 
     // --- 5. Ensure profiler process exists ---
     ensureProfiler(kernel);
@@ -254,7 +249,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
 });
 
 // -------------------------------------------------------------------------
-// Bootstrap — create initial processes for each owned room
+// Colony Process Factory — required for deserialization after global reset
 // -------------------------------------------------------------------------
 
 Kernel.registerProcess(
@@ -263,30 +258,6 @@ Kernel.registerProcess(
         return new ColonyProcess(pid, priority, parentPID, data.colonyName as string);
     }
 );
-
-// ... (existing profiler registration)
-
-// -------------------------------------------------------------------------
-// Bootstrap — create initial processes for each owned room
-// -------------------------------------------------------------------------
-
-function bootstrapProcesses(kernel: Kernel): void {
-    for (const roomName in Game.rooms) {
-        const room = Game.rooms[roomName];
-        if (!room.controller || !room.controller.my) {
-            continue;
-        }
-
-        const procId = `colony:${roomName}`;
-        if (kernel.hasProcessId(procId)) {
-            continue;
-        }
-
-        const proc = new ColonyProcess(0, 5, null, roomName);
-        kernel.addProcess(proc);
-        log.info(`→ Bootstrapped ColonyProcess for ${roomName} (PID ${proc.pid})`);
-    }
-}
 
 // -------------------------------------------------------------------------
 // Prune Stale Colonies — detect respawn and remove dead colony processes

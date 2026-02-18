@@ -10,6 +10,29 @@ import { ProcessStatus, ProcessStatusType } from "./ProcessStatus";
  *
  * Processes are managed by the Kernel's scheduler and executed in
  * priority order (lower number = higher priority).
+ *
+ * ## Generator Coroutines
+ * `run()` may return a `Generator` to split work across multiple ticks.
+ * The Kernel stores the generator as `this.thread` and calls `.next()`
+ * on subsequent ticks until the generator completes.
+ *
+ * ## ⚠️ GETTER PATTERN RULE — V8 Memory Leak Prevention ⚠️
+ *
+ * **NEVER** store live Game objects (`Creep`, `Room`, `Structure`, etc.)
+ * directly as class properties on heap-persisted Process instances.
+ * The V8 VM creates new Game objects every tick; storing old references
+ * prevents garbage collection of the ENTIRE previous tick's game state,
+ * causing a fatal memory leak that crashes the isolate.
+ *
+ * **CORRECT:** Store the string `name` or `Id<T>` and use a getter:
+ * ```typescript
+ * private _creepName: string;
+ * get creep(): Creep | undefined {
+ *     return Game.creeps[this._creepName];
+ * }
+ * ```
+ *
+ * **WRONG:** `this.creep = Game.creeps['Alice'];` on a heap-cached object.
  */
 export abstract class Process {
     public pid: number;
@@ -29,6 +52,12 @@ export abstract class Process {
      * `null` means the process is not on a timed sleep.
      */
     public sleepUntil: number | null = null;
+
+    /**
+     * Active generator coroutine. When set, the Kernel calls `.next()`
+     * each tick instead of `run()`. Cleared when the generator completes.
+     */
+    public thread?: Generator<void, void, unknown>;
 
     /** Human-readable identifier used for serialization / logging */
     public abstract readonly processName: string;
@@ -129,6 +158,12 @@ export abstract class Process {
     // Core — implemented by every concrete process
     // -------------------------------------------------------------------------
 
-    /** Execute one tick of work for this process. */
-    abstract run(): void;
+    /**
+     * Execute one tick of work for this process.
+     *
+     * May return a Generator to split work across multiple ticks.
+     * The Kernel will store the generator and call `.next()` each tick
+     * until it completes (`.done === true`).
+     */
+    abstract run(): void | Generator<void, void, unknown>;
 }

@@ -113,18 +113,17 @@ describe("Data Layer Optimization", () => {
 
     describe("GlobalManager", () => {
         it("should init globals on reset", () => {
-            // 1. Simulate reset
-            GlobalManager.init();
-            expect(GlobalCache.isGlobalReset()).to.be.false; // Init calls checking, so second check is false
-            // Actually init() calls isGlobalReset internaly.
-            // Lets reset cache first
+            const { Kernel } = require("../../src/kernel/Kernel");
+            const kernel = new Kernel();
+
+            // GlobalManager.init(kernel) should not throw
+            GlobalManager.init(kernel);
+
+            // Reset cache and try again — still should not throw
             GlobalCache.clear();
             (globalThis as any)._heap = undefined;
 
-            // Mock Logger to verify init log
-            // ... assuming logger works
-            GlobalManager.init();
-            // Not throwing is a good start.
+            GlobalManager.init(kernel);
         });
     });
 });

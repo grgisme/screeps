@@ -1,61 +1,54 @@
 // ============================================================================
-// GlobalManager — Centralized entry point for Heap-First Architecture
+// GlobalManager — Tick-wide system init + Colony bootstrapping
+//
+// This module is the "warm start" initializer. It ensures colonies are
+// registered as Kernel processes, rather than executing them directly.
+// Colony objects are data/state containers; execution is handled by
+// ColonyProcess under the Kernel's scheduler (load shedding, CPU budgets).
 // ============================================================================
 
-import { GlobalCache } from "./GlobalCache";
+import { Kernel } from "./Kernel";
+import { ColonyProcess } from "../os/processes/ColonyProcess";
 import { Logger } from "../utils/Logger";
-import { Colony } from "../os/colony/Colony";
 
 const log = new Logger("GlobalManager");
 
-/**
- * Manages the "Warm Start" lifecycle.
- * initializes and validates global state managers (RoomManager, StatsManager, etc.)
- * on global reset, and triggers their rehydration from Memory.
- */
 export class GlobalManager {
-
-    static colonies: Map<string, Colony> = new Map();
-
     /**
-     * Run at the start of the tick to ensure all global components are ready.
-     * This is the "Warm Start" entry point.
+     * Initialize the global game state for the current tick.
+     *
+     * Iterates all owned rooms and ensures each has a corresponding
+     * ColonyProcess registered with the Kernel. This replaces the
+     * previous pattern of instantiating Colony objects directly
+     * (the "Two Masters" anti-pattern) which bypassed load shedding
+     * and kernel panics.
+     *
+     * @param kernel The Kernel instance to register colony processes with
      */
-    static init(): void {
-        const isReset = GlobalCache.isGlobalReset();
-
-        // Initialize Colonies for all owned rooms
+    static init(kernel: Kernel): void {
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
-            if (room && room.controller && room.controller.my) {
-                if (!this.colonies.has(roomName)) {
-                    // Rehydrate or create new Colony
-                    const colony = GlobalCache.rehydrate(
-                        `Colony:${roomName}`,
-                        () => new Colony(roomName)
-                    );
-                    this.colonies.set(roomName, colony);
-                }
+            if (!room.controller || !room.controller.my) {
+                continue;
             }
-        }
 
-        if (isReset) {
-            log.info("GlobalManager initialized (New Isolate)");
+            const processId = `colony:${roomName}`;
+            if (kernel.hasProcessId(processId)) {
+                continue;
+            }
+
+            // Spawn a new ColonyProcess (Priority 0 = critical)
+            const proc = new ColonyProcess(0, 0, null, roomName);
+            kernel.addProcess(proc);
+            log.info(`→ Spawned ColonyProcess for ${roomName} (PID ${proc.pid})`);
         }
     }
 
     /**
-     * Run at the end of the tick to persist dirty state.
+     * End-of-tick commit. Currently a placeholder for future
+     * global-scope bookkeeping (stats, inter-colony comms, etc.).
      */
     static run(): void {
-        // Run all colonies? No, Colony.run() should be called by Kernel or Main loop?
-        // For now, let's have main loop call colonies.run() or Kernel manage them.
-        // But Kernel manages processes.
-        // We are "treating Colonies as top-level processes" per requirements.
-        // So we should wrap Colony in a Process? or just run them here?
-        // Requirement: "Update the Kernel to treat Colonies as top-level processes"
-
-        // 2. Commit dirty state from GlobalCache to Memory
-        GlobalCache.commit();
+        // Reserved for end-of-tick operations
     }
 }

@@ -29,7 +29,6 @@ export class ProfilerProcess extends Process {
     /** Rolling scheduler report accumulator. */
     private totalSkipped: Map<number, number> = new Map();
     private totalSleeping: number = 0;
-    private boostedNames: Set<string> = new Set();
 
     constructor(
         pid: number,
@@ -80,9 +79,6 @@ export class ProfilerProcess extends Process {
             this.totalSkipped.set(priority, existing + count);
         }
         this.totalSleeping += report.sleeping;
-        for (const name of report.boosted) {
-            this.boostedNames.add(name);
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -133,9 +129,6 @@ export class ProfilerProcess extends Process {
             schedLines.push(`  Sleeping: ${this.totalSleeping} process-ticks`);
         }
 
-        if (this.boostedNames.size > 0) {
-            schedLines.push(`  Boosted: ${Array.from(this.boostedNames).join(", ")}`);
-        }
 
         if (schedLines.length > 0) {
             console.log(
@@ -149,7 +142,6 @@ export class ProfilerProcess extends Process {
         this.cpuAccumulator.clear();
         this.totalSkipped.clear();
         this.totalSleeping = 0;
-        this.boostedNames.clear();
         this.ticksSinceReport = 0;
     }
 
