@@ -45,7 +45,21 @@ export class MiningOverlord extends Overlord {
         }
     }
 
+    /**
+     * True when mining infrastructure isn't ready (no containers/links/storage).
+     * Workers should compensate when this is true.
+     */
+    get isSuspended(): boolean {
+        return this.sites.every(s => !s.container && !s.link)
+            && !this.colony.room.storage;
+    }
+
     private handleSpawning(site: MiningSite): void {
+        // Gate: require container, link, or storage before spawning specialized miners
+        if (!site.container && !site.link && !this.colony.room.storage) {
+            return;
+        }
+
         const siteMiners = this.miners.filter(m => m.site === site);
         if (siteMiners.length < 1) {
             this.colony.hatchery.enqueue({

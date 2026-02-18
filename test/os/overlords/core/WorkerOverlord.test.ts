@@ -1,11 +1,13 @@
 import { expect } from "chai";
 import { WorkerOverlord } from "../../../../src/os/overlords/core/WorkerOverlord";
+import { MiningOverlord } from "../../../../src/os/overlords/MiningOverlord";
 import { Colony } from "../../../../src/os/colony/Colony";
 import { MockColony, MockRoom, MockCreep } from "../../../mock.setup";
 
 describe("WorkerOverlord", () => {
     let colony: Colony;
     let overlord: WorkerOverlord;
+    let mockMiningOverlord: any;
 
     beforeEach(() => {
         // Reset Global Mocks
@@ -29,6 +31,12 @@ describe("WorkerOverlord", () => {
         colony.room = room as any;
         colony.hatchery = { enqueue: () => { } } as any;
         colony.registerZerg = (creep: Creep) => ({ creep, task: null } as any);
+
+        // Setup Mock MiningOverlord so WorkerOverlord can find it
+        mockMiningOverlord = Object.create(MiningOverlord.prototype);
+        mockMiningOverlord.sites = [];
+        mockMiningOverlord.colony = colony;
+        (colony as any).overlords = [mockMiningOverlord];
 
         overlord = new WorkerOverlord(colony);
     });
@@ -56,7 +64,7 @@ describe("WorkerOverlord", () => {
         // Mock construction sites
         const site1 = { progress: 0, progressTotal: 3000 };
         const site2 = { progress: 0, progressTotal: 3000 };
-        // Total remaining = 6000. 6000 / 2000 = 3 extras + 1 base = 4.
+        // Total remaining = 6000. 6000 / 2000 = 3 extras + 4 base (suspended) = 7 -> cap 6.
 
         colony.room.find = (type: number) => {
             if (type === FIND_MY_CONSTRUCTION_SITES) return [site1, site2];
@@ -69,12 +77,15 @@ describe("WorkerOverlord", () => {
 
         overlord.init();
 
-        // We have 0 workers, target should be 4. Should request spawn.
+        // We have 0 workers, target should be > 0. Should request spawn.
         expect(request).to.not.be.null;
         expect(request.memory.role).to.equal("worker");
     });
 
-    it("should cap workers at 5", () => {
+    it("should cap workers at 5 when mining is active", () => {
+        // Give MiningOverlord a site with a container (mining active)
+        mockMiningOverlord.sites = [{ container: { id: "c1" }, link: undefined }];
+
         // Mock massive construction
         const site = { progress: 0, progressTotal: 50000 }; // 25 extras -> Cap 5
 
@@ -88,11 +99,25 @@ describe("WorkerOverlord", () => {
 
         overlord.init();
 
-        // If we logic checks (workers.length < target), it requests 1.
-        // We verify logic mathematically in integration or trusting code structure.
-        // Here we just ensure it requests spawn.
         expect(request).to.not.be.null;
     });
+
+    it("should spawn workers at high priority when mining is suspended (Genesis)", () => {
+        // MiningOverlord has no containers → isSuspended = true
+        mockMiningOverlord.sites = [{ container: undefined, link: undefined }];
+
+        colony.room.find = (_type: number) => [];
+
+        let request: any = null;
+        colony.hatchery.enqueue = (req: any) => { request = req; return "test"; };
+
+        overlord.init();
+
+        expect(request).to.not.be.null;
+        expect(request.priority).to.equal(80); // High priority during genesis
+        expect(request.memory.role).to.equal("worker");
+    });
+
     it("should prioritize Containers over Extensions", () => {
         // Setup construction sites
         const containerSite = {
@@ -121,3 +146,4 @@ describe("WorkerOverlord", () => {
         expect((best as any).structureType).to.equal(STRUCTURE_CONTAINER);
     });
 });
+

@@ -49,16 +49,33 @@ describe("MiningOverlord", () => {
         expect(overlord.sites[0].source.id).to.equal("src1");
     });
 
-    it("should request miner if missing", () => {
+    it("should NOT request miner without a container (Genesis gate)", () => {
         const overlord = new MiningOverlord(mockColony);
         overlord.zergs = [];
         overlord.init();
 
-        // 1 site, 0 miners -> request miner
-        expect(hatcheryQueue).to.have.length.greaterThan(0);
+        // No containers exist — mining should be suspended
+        const minerRequest = hatcheryQueue.find(r => r.memory.role === "miner");
+        expect(minerRequest).to.be.undefined;
+        expect(overlord.isSuspended).to.be.true;
+    });
+
+    it("should request miner when container exists", () => {
+        const overlord = new MiningOverlord(mockColony);
+        overlord.zergs = [];
+        overlord.init();
+
+        // Simulate a built container on the site
+        const site = overlord.sites[0];
+        site.container = { id: "container1" } as any;
+
+        hatcheryQueue = [];
+        (overlord as any).handleSpawning(site);
+
         const minerRequest = hatcheryQueue.find(r => r.memory.role === "miner");
         expect(minerRequest).to.not.be.undefined;
         expect(minerRequest.priority).to.equal(100);
+        expect(overlord.isSuspended).to.be.false;
     });
 
     it("should request hauler if capacity is low", () => {
@@ -68,6 +85,7 @@ describe("MiningOverlord", () => {
         // Mock site to require power
         overlord.init();
         const site = overlord.sites[0];
+        site.container = { id: "container1" } as any; // Container gate requires this
         site.containerPos = new RoomPosition(11, 11, "W1N1");
         site.distance = 10;
         // Mock calculateHaulingPowerNeeded

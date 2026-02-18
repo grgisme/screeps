@@ -1,5 +1,6 @@
 import { Overlord } from "../Overlord";
 import { Worker } from "../../zerg/Worker";
+import { MiningOverlord } from "../MiningOverlord";
 
 export class WorkerOverlord extends Overlord {
     workers: Worker[];
@@ -41,7 +42,15 @@ export class WorkerOverlord extends Overlord {
     }
 
     private handleSpawning(): void {
-        let target = 1;
+        // Check if mining is suspended (no containers/storage yet)
+        const miningOverlord = (this as any).colony.overlords
+            .find((o: any) => o instanceof MiningOverlord) as MiningOverlord | undefined;
+        const miningSuspended = miningOverlord ? miningOverlord.isSuspended : true;
+
+        // Base target: 4 workers if mining suspended (Genesis), 1 if active
+        let target = miningSuspended ? 4 : 1;
+
+        // Scale up for construction work
         const sites = (this as any).colony.room.find(FIND_MY_CONSTRUCTION_SITES);
         const progressTotal = sites.reduce((sum: number, site: ConstructionSite) => sum + (site.progressTotal - site.progress), 0);
 
@@ -49,11 +58,14 @@ export class WorkerOverlord extends Overlord {
             target += Math.floor(progressTotal / 2000);
         }
 
-        if (target > 5) target = 5;
+        // Cap: higher during genesis, normal otherwise
+        const maxWorkers = miningSuspended ? 6 : 5;
+        if (target > maxWorkers) target = maxWorkers;
 
         if (this.workers.length < target) {
             (this as any).colony.hatchery.enqueue({
-                priority: 3,
+                // Higher priority during genesis so workers spawn before haulers/upgraders
+                priority: miningSuspended ? 80 : 3,
                 bodyTemplate: [WORK, CARRY, MOVE],
                 overlord: this,
                 memory: { role: "worker" }
