@@ -31,7 +31,7 @@ export class DefenseOverlord extends Overlord {
         const hostiles = room.find(FIND_HOSTILE_CREEPS);
         if (hostiles.length > 0) {
             if (!Memory.rooms[room.name].isDangerous) {
-                log.alert(`Hostiles detected in ${room.name}! Activating Defense Protocols.`);
+                log.alert(`defense-${room.name}`, `Hostiles detected in ${room.name}! Activating Defense Protocols.`);
                 Memory.rooms[room.name].isDangerous = true;
             }
             Memory.rooms[room.name].dangerUntil = Game.time + 100;

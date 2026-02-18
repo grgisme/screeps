@@ -42,7 +42,7 @@ export class RemoteMiningOverlord extends Overlord {
 
         if (hostiles.length > 0) {
             if (!Memory.rooms[room.name].isDangerous) {
-                log.alert(`Invader detected in ${this.targetRoom}! Suspending mining operations.`);
+                log.alert(`invader-${this.targetRoom}`, `Invader detected in ${this.targetRoom}! Suspending mining operations.`);
                 Memory.rooms[room.name].isDangerous = true;
             }
             Memory.rooms[room.name].dangerUntil = Game.time + 100; // Extend danger period

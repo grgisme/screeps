@@ -3,6 +3,9 @@ import type { Colony } from "../colony/Colony";
 import { MiningSite } from "../colony/MiningSite";
 import { Miner } from "../zerg/Miner";
 import { Zerg } from "../zerg/Zerg";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("Mining");
 
 export class MiningOverlord extends Overlord {
     sites: MiningSite[] = [];
@@ -84,7 +87,7 @@ export class MiningOverlord extends Overlord {
             .filter(h => (h.memory as any).state.siteId === site.source.id)
             .reduce((sum, h) => sum + h.creep.store.getCapacity(), 0);
 
-        console.log(`MiningSite [${site.source.id}]: Distance [${site.distance}], Required Haul Capacity [${powerNeeded}], Current [${currentPower}]`);
+        log.throttle(100, () => `Site [${site.source.id.slice(-4)}]: Dist=${site.distance}, HaulNeeded=${powerNeeded}, HaulCurrent=${currentPower}`, site.source.id.charCodeAt(0));
 
         if (currentPower < powerNeeded) {
             this.colony.hatchery.enqueue({

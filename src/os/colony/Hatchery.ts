@@ -1,6 +1,9 @@
 import type { Colony } from "./Colony";
 import { Overlord } from "../overlords/Overlord";
 import { CreepBody } from "../../utils/CreepBody";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("Hatchery");
 
 export interface SpawnRequest {
     priority: number;
@@ -62,7 +65,7 @@ export class Hatchery {
             const spawn = this.spawns[0];
             // Skip if spawn is already busy or Bootstrapper exists
             if (!spawn.spawning && !Game.creeps["Bootstrapper"]) {
-                console.log(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.`);
+                log.warn(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.`);
                 const result = spawn.spawnCreep([WORK, CARRY, MOVE], "Bootstrapper", {
                     memory: { role: 'worker', room: this.colony.name } as any
                 });
@@ -102,7 +105,7 @@ export class Hatchery {
                     // Cannot spawn yet.
                     // If we can NEVER afford it (cost > capacity), we must fix or discard.
                     if (bodyCost > energyCapacity) {
-                        console.log(`Hatchery: Dropping impossible spawn request ${request.name} (Cost ${bodyCost} > Cap ${energyCapacity})`);
+                        log.warn(() => `Dropping impossible spawn request ${request.name} (Cost ${bodyCost} > Cap ${energyCapacity})`);
                         this.queue.shift();
                         continue;
                     }
@@ -121,17 +124,17 @@ export class Hatchery {
                 });
 
                 if (result === OK) {
-                    console.log(`Hatchery: Spawning '${request.name}' (Cost: ${bodyCost}) for Overlord '${request.overlord.processId}'.`);
+                    log.info(() => `Spawning '${request.name}' (Cost: ${bodyCost}) for Overlord '${request.overlord.processId}'.`);
                     this.queue.shift(); // Remove from queue
                 } else if (result === ERR_NAME_EXISTS) {
                     // Name collision? Just drop it or rename?
-                    console.log(`Hatchery: Name exists '${request.name}', dropping request.`);
+                    log.warn(`Name exists '${request.name}', dropping request.`);
                     this.queue.shift();
                 } else if (result === ERR_BUSY) {
                     // Spawn is already working — expected, just wait
                     break;
                 } else {
-                    console.log(`Hatchery: Spawn error ${result} for ${request.name}`);
+                    log.error(`Spawn error ${result} for ${request.name}`);
                 }
             }
         }

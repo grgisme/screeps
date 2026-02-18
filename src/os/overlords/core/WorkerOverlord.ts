@@ -1,6 +1,9 @@
 import { Overlord } from "../Overlord";
 import { Worker } from "../../zerg/Worker";
 import { MiningOverlord } from "../MiningOverlord";
+import { Logger } from "../../../utils/Logger";
+
+const log = new Logger("Worker");
 
 export class WorkerOverlord extends Overlord {
     workers: Worker[];
@@ -47,7 +50,7 @@ export class WorkerOverlord extends Overlord {
             const worker = new Worker(orphan);
             worker.overlord = this;
             this.workers.push(worker);
-            console.log(`${(this as any).colony.name}: Adopted orphan worker ${orphan.name}`);
+            log.info(`${(this as any).colony.name}: Adopted orphan worker ${orphan.name}`);
         }
     }
 

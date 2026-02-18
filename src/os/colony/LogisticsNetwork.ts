@@ -1,6 +1,9 @@
 
 import type { Colony } from "./Colony";
 import type { Zerg } from "../zerg/Zerg";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("Logistics");
 
 export interface TransportRequest {
     target: Structure | Resource;
@@ -47,7 +50,7 @@ export class LogisticsNetwork {
     }
 
     init(): void {
-        console.log(`LogisticsNetwork Online: [${this.providers.length}] Providers, [${this.requesters.length}] Requesters registered.`);
+        log.throttle(50, () => `Online: [${this.providers.length}] Providers, [${this.requesters.length}] Requesters registered.`);
     }
 
     requestInput(target: Structure, opts: { resourceType?: ResourceConstant, amount?: number, priority?: number } = {}): void {
@@ -204,7 +207,7 @@ export class LogisticsNetwork {
             }
         }
 
-        console.log(`Matched [${this.unassignedRequests.length}] requests, [${reservedEnergy}] energy reserved.`);
+        log.debug(() => `Matched [${this.unassignedRequests.length}] requests, [${reservedEnergy}] energy reserved.`);
     }
 
     requestTask(zerg: Zerg): MatchedRequest | null {
@@ -269,7 +272,7 @@ export class LogisticsNetwork {
 
             const providerName = 'structureType' in provider ? provider.structureType : 'resource';
 
-            console.log(`Predictive Match: Dispatched hauler to ${providerName}@${provider.pos.x},${provider.pos.y} (Current: ${currentAmount}, Predicted: ${predictedAmount.toFixed(1)}, Score: ${maxScore.toFixed(2)})`);
+            log.debug(() => `Predictive Match: hauler → ${providerName}@${provider.pos.x},${provider.pos.y} (Current: ${currentAmount}, Predicted: ${predictedAmount.toFixed(1)}, Score: ${maxScore.toFixed(2)})`);
 
             this.unassignedRequests.splice(bestIndex, 1); // Remove from pool
             return bestRequest;

@@ -1,4 +1,7 @@
 import type { Colony } from "./Colony";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("MiningSite");
 
 
 export class MiningSite {
@@ -35,7 +38,7 @@ export class MiningSite {
             const site = this.containerPos.lookFor(LOOK_CONSTRUCTION_SITES).find(s => s.structureType === STRUCTURE_CONTAINER);
             if (!site) {
                 this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
-                console.log(`MiningSite: Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+                log.info(`Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
             }
         }
 
