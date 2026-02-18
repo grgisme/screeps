@@ -28,47 +28,56 @@ export class Worker extends Zerg {
     private refuel(): void {
         const room = this.creep.room;
 
-        // 1. Check for Emergency Mode (Room has no energy in spawns/extensions)
-        // If energyAvailable is very low, we might need to harvest to restart the colony
-        const emergency = room.energyAvailable < 300 && room.find(FIND_MY_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-                s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-        }).length === 0;
+        // 0. Early-Game Bypass: If there are NO containers and NO storage,
+        //    skip all logistics and harvest directly from sources.
+        const hasInfrastructure = room.storage ||
+            room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && (s as StructureContainer).store.energy > 0
+            }).length > 0;
 
-        // 2. Withdraw from Storage/Containers (Standard Logistics)
-        if (!emergency) {
-            // Priority: Storage -> Container -> Source
-            // Actually, if we have a logistics network, we should use it?
-            // But Workers are "Universal", they often work in early RCL where logistics is weak.
-
-            // Target Storage
-            if (room.storage && room.storage.store.energy > 0) {
-                if (this.creep.withdraw(room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    this.travelTo(room.storage);
+        if (!hasInfrastructure) {
+            // No logistics infrastructure — harvest directly
+            this.creep.say("⛏️");
+            const source = this.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+            if (source) {
+                if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                    this.travelTo(source);
                 }
-                return;
+            } else {
+                this.creep.say("💤");
             }
-
-            // Target Containers
-            const container = this.pos.findClosestByRange(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.energy > 0
-            });
-            if (container) {
-                if (this.creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    this.travelTo(container);
-                }
-                return;
-            }
+            return;
         }
 
-        // 3. Harvest from Sources (Fallback / Emergency)
+        // 1. Standard Logistics: withdraw from Storage or Containers
+        if (room.storage && room.storage.store.energy > 0) {
+            this.creep.say("🏦");
+            if (this.creep.withdraw(room.storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                this.travelTo(room.storage);
+            }
+            return;
+        }
+
+        const container = this.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && (s as StructureContainer).store.energy > 0
+        }) as StructureContainer | null;
+        if (container) {
+            this.creep.say("📦");
+            if (this.creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                this.travelTo(container);
+            }
+            return;
+        }
+
+        // 2. Fallback: all containers are empty, harvest from source
+        this.creep.say("⛏️");
         const source = this.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
         if (source) {
             if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
                 this.travelTo(source);
             }
         } else {
-            this.creep.say("No Src");
+            this.creep.say("💤");
         }
     }
 
