@@ -15,12 +15,35 @@ export class UpgradingOverlord extends Overlord {
     }
 
     init(): void {
+        // Refresh creep references for this tick (same pattern as WorkerOverlord)
+        this.upgraders = this.upgraders.filter(u => {
+            const alive = !!Game.creeps[u.name];
+            if (alive) u.refresh();
+            return alive;
+        });
+
+        this.adoptOrphans();
         this.handleSpawning();
     }
 
     run(): void {
         for (const upgrader of this.upgraders) {
             upgrader.run();
+        }
+    }
+
+    private adoptOrphans(): void {
+        const orphans = this.colony.room.find(FIND_MY_CREEPS, {
+            filter: (creep: Creep) => creep.memory.role === "upgrader" && !this.colony.getZerg(creep.name)
+        });
+
+        for (const orphan of orphans) {
+            const zerg = this.colony.registerZerg(orphan);
+            zerg.task = null;
+            this.zergs.push(zerg);
+            const upgrader = new Upgrader(orphan);
+            this.upgraders.push(upgrader);
+            log.info(`${this.colony.name}: Adopted orphan upgrader ${orphan.name}`);
         }
     }
 
