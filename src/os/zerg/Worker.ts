@@ -2,6 +2,8 @@ import { Zerg } from "./Zerg";
 // import { Overlord } from "../overlords/Overlord";
 
 export class Worker extends Zerg {
+    overlord: any; // Type as any to avoid circular dependency for now
+
     constructor(creep: Creep) {
         super(creep);
     }
@@ -89,8 +91,8 @@ export class Worker extends Zerg {
             }
         }
 
-        // 2. Build Construction Sites
-        const site = this.pos.findClosestByRange(FIND_MY_CONSTRUCTION_SITES);
+        // 2. Build Construction Sites (Prioritized by Overlord)
+        const site = (this.overlord as any).getBestConstructionSite();
         if (site) {
             if (this.creep.build(site) === ERR_NOT_IN_RANGE) {
                 this.travelTo(site);

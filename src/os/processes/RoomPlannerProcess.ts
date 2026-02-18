@@ -40,8 +40,10 @@ export class RoomPlannerProcess extends Process {
 
         // Check if anchor is already set
         if (this.colony.memory && this.colony.memory.anchor) {
-            // Plan is set. We can sleep or suspend.
-            // For visualization re-requests, we can keep running but do nothing heavy.
+            // Genesis Architect: Place structures
+            if (Game.time % 100 === 0) { // Run sparingly
+                this.placeStructures();
+            }
             return;
         }
 
@@ -73,6 +75,41 @@ export class RoomPlannerProcess extends Process {
             if (bestPos) {
                 if (!this.colony.memory) this.colony.memory = {} as any;
                 this.colony.memory.anchor = { x: bestPos.x, y: bestPos.y };
+            }
+        }
+    }
+
+    private placeStructures(): void {
+        const anchor = this.colony.memory!.anchor!; // Safebang
+        // const anchorPos = new RoomPosition(anchor.x, anchor.y, this.colony.name);
+        const rcl = this.colony.room.controller?.level || 0;
+
+        const allowed = (global as any).CONTROLLER_STRUCTURES || CONTROLLER_STRUCTURES;
+        const structureTypes = Object.keys(allowed) as StructureConstant[];
+
+        console.log(`Genesis Architect: Bunker layout calculated. Build Priority: Containers > Extensions`);
+
+        for (const type of structureTypes) {
+            const layout = (require("../infrastructure/BunkerLayout").BunkerLayout.structures as any)[type];
+            if (!layout) continue;
+
+            const max = allowed[type][rcl];
+            if (max === 0) continue;
+
+            for (let i = 0; i < layout.length; i++) {
+                if (i >= max) break;
+
+                const coord = layout[i];
+                const pos = new RoomPosition(anchor.x + coord.x, anchor.y + coord.y, this.colony.name);
+
+                if (Game.map.getRoomTerrain(this.colony.name).get(pos.x, pos.y) === TERRAIN_MASK_WALL) continue;
+
+                const struct = pos.lookFor(LOOK_STRUCTURES).find(s => s.structureType === type);
+                const site = pos.lookFor(LOOK_CONSTRUCTION_SITES).find(s => s.structureType === type);
+
+                if (!struct && !site) {
+                    pos.createConstructionSite(type);
+                }
             }
         }
     }

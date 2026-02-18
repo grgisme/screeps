@@ -93,4 +93,31 @@ describe("WorkerOverlord", () => {
         // Here we just ensure it requests spawn.
         expect(request).to.not.be.null;
     });
+    it("should prioritize Containers over Extensions", () => {
+        // Setup construction sites
+        const containerSite = {
+            id: "site1",
+            structureType: STRUCTURE_CONTAINER,
+            progress: 0,
+            progressTotal: 1000
+        };
+        const extensionSite = {
+            id: "site2",
+            structureType: STRUCTURE_EXTENSION,
+            progress: 0,
+            progressTotal: 1000
+        };
+
+        // Mock room.find to return reasonable objects that mimic construction sites
+        (colony as any).room.find = (type: number) => {
+            if (type === (global as any).FIND_MY_CONSTRUCTION_SITES) {
+                return [extensionSite, containerSite];
+            }
+            return [];
+        };
+
+        const best = overlord.getBestConstructionSite();
+        expect(best).to.not.be.null;
+        expect((best as any).structureType).to.equal(STRUCTURE_CONTAINER);
+    });
 });

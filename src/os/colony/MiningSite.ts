@@ -30,6 +30,15 @@ export class MiningSite {
             this.calculateContainerPos();
         }
 
+        // 3. Ensure Container Site exists (Static Mining Alignment)
+        if (this.containerPos && !this.container) {
+            const site = this.containerPos.lookFor(LOOK_CONSTRUCTION_SITES).find(s => s.structureType === STRUCTURE_CONTAINER);
+            if (!site) {
+                this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
+                console.log(`MiningSite: Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+            }
+        }
+
         if (this.distance === 0) {
             this.calculateDistance();
         }
