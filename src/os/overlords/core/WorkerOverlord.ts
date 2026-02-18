@@ -15,6 +15,16 @@ export class WorkerOverlord extends Overlord {
     }
 
     init(): void {
+        // Refresh all worker creep references for this tick
+        // Workers are separate objects from colony.zergs and don't get
+        // refreshed by Colony.refresh() — without this, this.pos is stale
+        // and PathFinder computes paths from the wrong origin!
+        this.workers = this.workers.filter(w => {
+            const alive = !!Game.creeps[w.name];
+            if (alive) w.refresh();
+            return alive;
+        });
+
         this.adoptOrphans();
         this.handleSpawning();
     }

@@ -14,6 +14,12 @@ export class MiningOverlord extends Overlord {
     }
 
     init(): void {
+        // Refresh all zerg creep references for this tick and prune dead
+        this.zergs = this.zergs.filter(z => {
+            const alive = !!Game.creeps[z.name];
+            if (alive) z.refresh();
+            return alive;
+        });
         // 1. Instantiate Sites if not done
         if (this.sites.length === 0) {
             const sources = this.colony.room.find(FIND_SOURCES);
