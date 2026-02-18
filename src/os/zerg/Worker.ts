@@ -27,17 +27,24 @@ export class Worker extends Zerg {
 
     private refuel(): void {
         const room = this.creep.room;
-
-        // Stuck Detection: if refueling for 10+ ticks with 0 energy, force unstick
         const mem = this.memory as any;
+
+        // Clear source lock when full
+        if (this.creep.store.getFreeCapacity() === 0) {
+            delete mem._lockedSourceId;
+            delete mem._refuelTicks;
+            return;
+        }
+
+        // Stuck Detection: if refueling for 15+ ticks with 0 energy, clear lock and unstick
         if (this.creep.store.getUsedCapacity() === 0) {
             mem._refuelTicks = (mem._refuelTicks || 0) + 1;
-            if (mem._refuelTicks > 10) {
-                this.creep.say("⛔ Stuck");
-                // Move to a random adjacent tile to unblock
+            if (mem._refuelTicks > 15) {
+                this.creep.say("⛔ Reset");
+                delete mem._lockedSourceId; // Force re-target
                 const dirs: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
                 this.creep.move(dirs[Math.floor(Math.random() * dirs.length)]);
-                mem._refuelTicks = 0; // Reset counter after unstick attempt
+                mem._refuelTicks = 0;
                 return;
             }
         } else {
@@ -52,16 +59,7 @@ export class Worker extends Zerg {
             }).length > 0;
 
         if (!hasInfrastructure) {
-            // No logistics infrastructure — harvest directly
-            const source = this.findOptimalSource();
-            if (source) {
-                this.creep.say("⛏️ S" + source.id.slice(-2));
-                if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    this.travelTo(source);
-                }
-            } else {
-                this.creep.say("💤");
-            }
+            this.harvestFromSource(mem);
             return;
         }
 
@@ -86,28 +84,63 @@ export class Worker extends Zerg {
         }
 
         // 2. Fallback: all containers are empty, harvest from source
-        const source = this.findOptimalSource();
-        if (source) {
-            this.creep.say("⛏️ S" + source.id.slice(-2));
-            if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                this.travelTo(source);
+        this.harvestFromSource(mem);
+    }
+
+    /**
+     * Harvest from a locked source. If no lock exists, find and lock one.
+     * Force harvest if adjacent. Travel otherwise.
+     */
+    private harvestFromSource(mem: any): void {
+        // Resolve locked source
+        let source: Source | null = null;
+
+        if (mem._lockedSourceId) {
+            source = Game.getObjectById(mem._lockedSourceId as Id<Source>);
+            // Validate: source must exist, be in this room, and have energy
+            if (!source || source.pos.roomName !== this.room.name || source.energy === 0) {
+                delete mem._lockedSourceId;
+                source = null;
             }
-        } else {
-            this.creep.say("💤");
         }
+
+        // No lock or lock invalidated — find and lock a new source
+        if (!source) {
+            source = this.findOptimalSource();
+            if (source) {
+                mem._lockedSourceId = source.id;
+            }
+        }
+
+        if (!source) {
+            this.creep.say("💤");
+            return;
+        }
+
+        this.creep.say("⛏️ S" + source.id.slice(-2));
+
+        // Force harvest: if adjacent, harvest immediately — no movement
+        if (this.pos.isNearTo(source)) {
+            this.creep.harvest(source);
+            return;
+        }
+
+        // Not adjacent — travel to source
+        this.travelTo(source);
     }
 
     /**
      * Find the best source to harvest from, distributing workers evenly.
-     * Picks the source with the fewest creeps targeting it.
+     * Strictly filters to current room only.
+     * Picks the source with the fewest creeps nearby.
      * Tie-break: closest by range.
      */
     private findOptimalSource(): Source | null {
-        const sources = this.creep.room.find(FIND_SOURCES_ACTIVE);
+        // FIND_SOURCES: includes depleted sources. Filter to current room + energy > 0.
+        const sources = this.room.find(FIND_SOURCES).filter(s => s.energy > 0);
         if (sources.length === 0) return null;
         if (sources.length === 1) return sources[0];
 
-        // Count creeps at each source (within range 1 = actively harvesting)
         let best: Source | null = null;
         let bestScore = Infinity;
         let bestRange = Infinity;
@@ -116,7 +149,6 @@ export class Worker extends Zerg {
             const nearbyCreeps = source.pos.findInRange(FIND_MY_CREEPS, 1).length;
             const range = this.pos.getRangeTo(source);
 
-            // Lower score = better. Prefer fewer creeps, then closer distance.
             if (nearbyCreeps < bestScore || (nearbyCreeps === bestScore && range < bestRange)) {
                 best = source;
                 bestScore = nearbyCreeps;
