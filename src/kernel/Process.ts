@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { ProcessStatus, ProcessStatusType } from "./ProcessStatus";
+import type { Kernel } from "./Kernel";
 
 /**
  * Every unit of work in the Screeps OS is modelled as a Process.
@@ -59,6 +60,16 @@ export abstract class Process {
      */
     public thread?: Generator<void, void, unknown>;
 
+    /**
+     * Back-reference to the owning Kernel, injected via `addProcess()` or
+     * `deserialize()`. Enables `sleep()` to self-register in the wake map
+     * exactly once at call time, avoiding the CPU leak of per-tick
+     * re-registration in the scheduler loop.
+     *
+     * Uses `import type` to avoid circular dependencies.
+     */
+    public kernel?: Kernel;
+
     /** Human-readable identifier used for serialization / logging */
     public abstract readonly processName: string;
 
@@ -91,10 +102,17 @@ export abstract class Process {
      * The Kernel will automatically wake it when `Game.time >= sleepUntil`.
      * This is far cheaper than running a process that does nothing — the
      * Kernel skips sleeping processes entirely without any CPU overhead.
+     *
+     * If the Kernel reference is set (DI), the process self-registers
+     * in the wake map exactly once. This avoids the CPU leak of
+     * re-registering every tick in the scheduler loop.
      */
     sleep(ticks: number): void {
         this.sleepUntil = Game.time + ticks;
         this.status = ProcessStatus.SLEEP;
+        if (this.kernel) {
+            this.kernel.registerWake(this.pid, this.sleepUntil);
+        }
     }
 
     /** Mark this process for removal on the next scheduler sweep. */

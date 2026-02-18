@@ -13,6 +13,8 @@ import { ProfilerProcess } from "./os/processes/ProfilerProcess";
 import { ColonyProcess } from "./os/processes/ColonyProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
 import { TrafficManager } from "./os/infrastructure/TrafficManager";
+import { GlobalManager } from "./kernel/GlobalManager";
+import { SegmentManager } from "./kernel/memory/SegmentManager";
 
 const log = new Logger("OS");
 
@@ -51,7 +53,7 @@ const log = new Logger("OS");
 };
 
 /**
- * Full bot reset — wipes Memory, heap, and colony registry.
+ * Full bot reset — wipes Memory, heap, and forces a fresh bootstrap.
  * Run from the Screeps console: resetBot()
  */
 (global as any).resetBot = (): string => {
@@ -62,13 +64,16 @@ const log = new Logger("OS");
     // Nuke heap
     GlobalCache.clear();
     (global as any)._heap = undefined;
-    // Clear static colony registry
-    ColonyProcess.colonies = {};
+    // Fix #2: Removed dead reference to ColonyProcess.colonies (static registry
+    // no longer exists — colonies are tracked by the Kernel's process table).
     return "🔄 Bot reset complete. Fresh bootstrap will run next tick.";
 };
 
 // -------------------------------------------------------------------------
-// Register all process factories (must happen before deserialization)
+// Register ALL process factories (must happen before deserialization)
+// Fix #5: Colony registration moved here alongside the others.
+// All factories MUST be registered before rehydrateKernel() or
+// Kernel.deserialize() can reconstruct processes after a global reset.
 // -------------------------------------------------------------------------
 
 Kernel.registerProcess(
@@ -105,8 +110,17 @@ Kernel.registerProcess(
     }
 );
 
+Kernel.registerProcess(
+    "colony",
+    (pid, priority, parentPID, data) => {
+        return new ColonyProcess(pid, priority, parentPID, data.colonyName as string);
+    }
+);
+
 // -------------------------------------------------------------------------
 // Foundation Status Report — printed on every global reset
+// Fix #1: Removed require("main.js.map") + JSON.stringify CPU bomb.
+// Fix #4: Called AFTER kernel.run() so SchedulerMode is accurate.
 // -------------------------------------------------------------------------
 
 function printFoundationStatus(kernel: Kernel): void {
@@ -114,23 +128,11 @@ function printFoundationStatus(kernel: Kernel): void {
     const priorityLevels = kernel.getPriorityLevels();
     const mode = kernel.getSchedulerMode();
 
-    // Bundle size: try to read main.js module length
-    let bundleSizeKB = "unknown";
-    try {
-        const mapData = require("main.js.map");
-        if (mapData && mapData.mappings) {
-            bundleSizeKB = `~${(JSON.stringify(mapData).length / 1024).toFixed(1)}`;
-        }
-    } catch {
-        bundleSizeKB = "N/A";
-    }
-
     const statusLines = [
         `═══════════════════════════════════════════`,
         `  FOUNDATION STATUS (v${SCRIPT_VERSION})`,
         `═══════════════════════════════════════════`,
         `  Source Mapping:  ${sourceMapActive ? "✅ Active" : "❌ Inactive"}`,
-        `  Bundle Size:     ${bundleSizeKB} KB`,
         `  Scheduler:       ${priorityLevels.length} priority levels ${JSON.stringify(priorityLevels)}`,
         `  Processes:       ${kernel.processCount} running`,
         `  Bucket:          ${Game.cpu.bucket} / 10000`,
@@ -157,37 +159,26 @@ function rehydrateKernel(): Kernel {
     return kernel;
 }
 
-// -------------------------------------------------------------------------
-// Kernel Panic — force non-essential creeps to idle
-// -------------------------------------------------------------------------
-
-function handleKernelPanic(): void {
-    log.error("Kernel panic active — forcing all non-essential creeps to idle");
-    for (const name in Game.creeps) {
-        const creep = Game.creeps[name];
-        // Only idle non-essential roles (not harvesters/defenders)
-        const role = creep.memory.role;
-        if (role !== "miner" && role !== "defender") {
-            // Clear any movement intent — just sit still
-            creep.say("⚠️ IDLE");
-        }
-    }
-}
+// Fix #3: Deleted handleKernelPanic() entirely.
+// The Kernel's 3-tier load shedding already skips all non-critical processes
+// in EMERGENCY mode. Skipped processes issue zero intents, so their creeps
+// naturally sit still at 0.0 CPU. Manually iterating 100+ creeps to call
+// creep.say() during a bucket crisis would actively worsen the death spiral.
 
 // -------------------------------------------------------------------------
 // Main Loop
 // -------------------------------------------------------------------------
 
-import { GlobalManager } from "./kernel/GlobalManager";
-import { SegmentManager } from "./kernel/memory/SegmentManager";
-
-// ... (existing imports)
-
 export const loop = ErrorMapper.wrapLoop(() => {
     // --- 1. Clean dead creep memory ---
-    for (const name in Memory.creeps) {
-        if (!Game.creeps[name]) {
-            delete Memory.creeps[name];
+    // Fix #6: Throttled to once per 100 ticks. Creeps live 1500 ticks;
+    // checking every tick wastes CPU on an O(N) iteration that rarely finds
+    // anything to clean. 100-tick cadence is more than sufficient.
+    if (Game.time % 100 === 0) {
+        for (const name in Memory.creeps) {
+            if (!Game.creeps[name]) {
+                delete Memory.creeps[name];
+            }
         }
     }
 
@@ -216,24 +207,27 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // --- 5. Ensure profiler process exists ---
     ensureProfiler(kernel);
 
-    // --- 6. Foundation Status on global reset ---
+    // --- 6. Run the scheduler ---
+    kernel.run();
+
+    // --- 7. Foundation Status AFTER kernel.run() ---
+    // Fix #4: Moved after kernel.run() so SchedulerMode, processCount,
+    // and priority levels reflect the actual state of this tick.
     if (isReset) {
         printFoundationStatus(kernel);
     }
 
-    // --- 7. Run the scheduler ---
-    kernel.run();
-
-    // --- 8. Run Traffic Manager ---
+    // --- 8. Run Traffic Manager (Intent Resolution Order) ---
+    // Must run AFTER kernel.run() so all process move intents are queued
+    // before TrafficManager resolves conflicts and executes moves.
     TrafficManager.run();
 
-    // --- 9. Handle kernel panic ---
-    if (kernel.isPanicActive()) {
-        handleKernelPanic();
-    }
+    // Fix #3: Removed handleKernelPanic() call. Trust the Kernel's
+    // EMERGENCY load shedding — it skips priority > 0 processes, leaving
+    // their creeps idle at zero CPU cost.
 
     // --- 9. Persist state (Heap-First) ---
-    kernel.serialize(); // Updates Kernel memory structure (but implies heap modification)
+    kernel.serialize();
 
     // Commit all heap-first managers
     GlobalManager.run();
@@ -249,18 +243,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
 });
 
 // -------------------------------------------------------------------------
-// Colony Process Factory — required for deserialization after global reset
-// -------------------------------------------------------------------------
-
-Kernel.registerProcess(
-    "colony",
-    (pid, priority, parentPID, data) => {
-        return new ColonyProcess(pid, priority, parentPID, data.colonyName as string);
-    }
-);
-
-// -------------------------------------------------------------------------
 // Prune Stale Colonies — detect respawn and remove dead colony processes
+// Fix #2: Removed dead reference to ColonyProcess.colonies[colonyName].
 // -------------------------------------------------------------------------
 
 function pruneStaleColonies(kernel: Kernel): void {
@@ -275,7 +259,6 @@ function pruneStaleColonies(kernel: Kernel): void {
         if (room && (!room.controller || !room.controller.my)) {
             log.warning(`Pruning stale colony process for ${colonyName} (no longer owned)`);
             kernel.removeProcess(proc.pid);
-            delete ColonyProcess.colonies[colonyName];
             pruned++;
         }
         // If we can't see the room at all, it might be a remote — leave it for now

@@ -98,11 +98,12 @@ export class Kernel {
     // -----------------------------------------------------------------------
 
     /**
-     * Processes grouped by priority level: priorityBuckets.get(priority) = Process[].
+     * Processes grouped by priority level: priorityBuckets.get(priority) = Set<Process>.
      * Iterated in ascending priority order (0 = highest priority).
      * Replaces O(N log N) Array.prototype.sort() with O(P) bucket walk.
+     * Uses Set instead of Array for O(1) removal in removeProcess().
      */
-    private priorityBuckets: Map<number, Process[]> = new Map();
+    private priorityBuckets: Map<number, Set<Process>> = new Map();
 
     // -----------------------------------------------------------------------
     // O(1) Wake Map
@@ -175,6 +176,7 @@ export class Kernel {
     addProcess(process: Process): number {
         const pid = this.nextPID++;
         process.pid = pid;
+        process.kernel = this; // Kernel DI — enables process.sleep() to self-register
         this.processTable.set(pid, process);
 
         // --- Secondary indexes ---
@@ -189,13 +191,13 @@ export class Kernel {
         }
         nameSet.add(process);
 
-        // --- Priority bucket ---
+        // --- Priority bucket (Set for O(1) removal) ---
         let bucket = this.priorityBuckets.get(process.priority);
         if (!bucket) {
-            bucket = [];
+            bucket = new Set<Process>();
             this.priorityBuckets.set(process.priority, bucket);
         }
-        bucket.push(process);
+        bucket.add(process);
 
         // --- Wake map (if process is sleeping with a timed wake) ---
         if (process.sleepUntil !== null && process.status === ProcessStatus.SLEEP) {
@@ -224,12 +226,11 @@ export class Kernel {
             }
         }
 
-        // --- Priority bucket ---
+        // --- Priority bucket (O(1) Set removal) ---
         const bucket = this.priorityBuckets.get(process.priority);
         if (bucket) {
-            const idx = bucket.indexOf(process);
-            if (idx !== -1) bucket.splice(idx, 1);
-            if (bucket.length === 0) {
+            bucket.delete(process);
+            if (bucket.size === 0) {
                 this.priorityBuckets.delete(process.priority);
             }
         }
@@ -291,8 +292,12 @@ export class Kernel {
     // Wake Map Management
     // -----------------------------------------------------------------------
 
-    /** Register a PID to be woken at the given Game.time tick. */
-    private registerWake(pid: number, tick: number): void {
+    /**
+     * Register a PID to be woken at the given Game.time tick.
+     * Public so that Process.sleep() can self-register via Kernel DI,
+     * ensuring registration happens exactly once at sleep time.
+     */
+    public registerWake(pid: number, tick: number): void {
         let set = this.wakeMap.get(tick);
         if (!set) {
             set = new Set();
@@ -345,20 +350,24 @@ export class Kernel {
             log.info("Kernel panic cleared — bucket recovering");
         }
 
-        // --- 3. O(1) Wake Map — only process PIDs scheduled to wake NOW ---
-        const waking = this.wakeMap.get(Game.time);
-        if (waking) {
-            for (const pid of waking) {
-                const proc = this.processTable.get(pid);
-                if (proc && proc.status === ProcessStatus.SLEEP &&
-                    proc.sleepUntil !== null && Game.time >= proc.sleepUntil) {
-                    proc.resume();
-                    log.debug(
-                        () => `Process ${proc.processName} (PID ${pid}) woke from timed sleep`
-                    );
+        // --- 3. O(1) Wake Map — handles skipped ticks gracefully ---
+        // The Screeps MMO server can skip ticks under heavy load (e.g., 100 → 102).
+        // Iterating entries ≤ Game.time ensures processes scheduled at skipped
+        // ticks are still woken. Typically 0-1 entries exist per tick.
+        for (const [tick, wakingPids] of this.wakeMap.entries()) {
+            if (tick <= Game.time) {
+                for (const pid of wakingPids) {
+                    const proc = this.processTable.get(pid);
+                    if (proc && proc.status === ProcessStatus.SLEEP &&
+                        proc.sleepUntil !== null && Game.time >= proc.sleepUntil) {
+                        proc.resume();
+                        log.debug(
+                            () => `Process ${proc.processName} (PID ${pid}) woke from timed sleep`
+                        );
+                    }
                 }
+                this.wakeMap.delete(tick);
             }
-            this.wakeMap.delete(Game.time);
         }
 
         // --- 4. Dynamic CPU limits ---
@@ -414,12 +423,6 @@ export class Kernel {
                 if (!process.isAlive()) {
                     if (process.status === ProcessStatus.SLEEP) {
                         this._schedulerReport.sleeping++;
-                        // Ensure sleeping processes are registered in the wake map.
-                        // This handles processes that called sleep() outside of run()
-                        // (e.g., between ticks or during initialization).
-                        if (process.sleepUntil !== null) {
-                            this.registerWake(process.pid, process.sleepUntil);
-                        }
                     }
                     continue;
                 }
@@ -455,10 +458,8 @@ export class Kernel {
                     process.terminate();
                 }
 
-                // If the process went to sleep during execution, register wake
-                if (process.status === ProcessStatus.SLEEP && process.sleepUntil !== null) {
-                    this.registerWake(process.pid, process.sleepUntil);
-                }
+                // Note: sleep registration is handled by Process.sleep() via Kernel DI.
+                // No manual registerWake() call needed here.
 
                 const delta = Game.cpu.getUsed() - cpuBefore;
                 this.recordExec(process);
@@ -567,6 +568,7 @@ export class Kernel {
             process.status = desc.status as ProcessStatusType;
             process.processId = desc.processId ?? "";
             process.sleepUntil = desc.sleepUntil ?? null;
+            process.kernel = kernel; // Kernel DI
 
             // --- Direct insertion (bypass addProcess to preserve PID) ---
             kernel.processTable.set(desc.pid, process);
@@ -583,13 +585,13 @@ export class Kernel {
             }
             nameSet.add(process);
 
-            // Priority bucket
+            // Priority bucket (Set for O(1) removal)
             let bucket = kernel.priorityBuckets.get(process.priority);
             if (!bucket) {
-                bucket = [];
+                bucket = new Set<Process>();
                 kernel.priorityBuckets.set(process.priority, bucket);
             }
-            bucket.push(process);
+            bucket.add(process);
 
             // Wake map
             if (process.sleepUntil !== null && process.status === ProcessStatus.SLEEP) {
