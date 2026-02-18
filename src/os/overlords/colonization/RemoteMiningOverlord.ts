@@ -36,6 +36,10 @@ export class RemoteMiningOverlord extends Overlord {
             c.body.some(p => p.type === ATTACK || p.type === RANGED_ATTACK)
         );
 
+        // Ensure Memory.rooms structure exists
+        if (!Memory.rooms) Memory.rooms = {};
+        if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
+
         if (hostiles.length > 0) {
             if (!Memory.rooms[room.name].isDangerous) {
                 log.alert(`Invader detected in ${this.targetRoom}! Suspending mining operations.`);

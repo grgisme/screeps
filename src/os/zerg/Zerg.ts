@@ -171,6 +171,7 @@ export class Zerg {
      */
     avoidDanger(): boolean {
         const room = this.creep.room;
+        if (!Memory.rooms) Memory.rooms = {};
         const mem = Memory.rooms[room.name];
 
         // 1. Check Danger Signs

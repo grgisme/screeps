@@ -23,6 +23,10 @@ export class DefenseOverlord extends Overlord {
             filter: (s: AnyOwnedStructure) => s.structureType === STRUCTURE_TOWER
         }) as StructureTower[];
 
+        // Ensure Memory.rooms structure exists
+        if (!Memory.rooms) Memory.rooms = {};
+        if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {} as any;
+
         // 1. Detect Hostiles
         const hostiles = room.find(FIND_HOSTILE_CREEPS);
         if (hostiles.length > 0) {
