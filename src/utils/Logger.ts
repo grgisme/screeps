@@ -164,7 +164,7 @@ export class Logger {
      * @param color  CSS color value (hex, named, rgb)
      */
     static style(text: string, color: string): string {
-        return `<span style=\"color:${color}\">${text}</span>`;
+        return `<span style="color:${color}">${text}</span>`;
     }
 
     /**
@@ -173,7 +173,7 @@ export class Logger {
      * Use this for critical alerts that must render everywhere.
      */
     static font(text: string, color: string): string {
-        return `<font color=\"${color}\">${text}</font>`;
+        return `<font color="${color}">${text}</font>`;
     }
 
     /**
@@ -185,7 +185,7 @@ export class Logger {
      */
     static roomLink(roomName: string): string {
         const shard = getShardName();
-        return `<a href=\"#!/room/${shard}/${roomName}\">${roomName}</a>`;
+        return `<a href="#!/room/${shard}/${roomName}">${roomName}</a>`;
     }
 
     /**
@@ -219,9 +219,9 @@ export class Logger {
         const color = LEVEL_COLORS[level] ?? "#ffffff";
 
         // Color-coded output: tag and label are styled, message body is styled
-        const styledTag = `<span style=\"color:#999999\">[${this.tag}]</span>`;
-        const styledLabel = `<span style=\"color:${color}\">[${label}]</span>`;
-        const styledMsg = `<span style=\"color:${color}\">${resolved}</span>`;
+        const styledTag = `<span style="color:#999999">[${this.tag}]</span>`;
+        const styledLabel = `<span style="color:${color}">[${label}]</span>`;
+        const styledMsg = `<span style="color:${color}">${resolved}</span>`;
 
         console.log(`${emoji} ${styledLabel} ${styledTag} ${styledMsg}`);
     }
