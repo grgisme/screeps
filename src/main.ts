@@ -171,10 +171,11 @@ function rehydrateKernel(): Kernel {
 
 export const loop = ErrorMapper.wrapLoop(() => {
     // --- 1. Clean dead creep memory ---
-    // Fix #6: Throttled to once per 100 ticks. Creeps live 1500 ticks;
+    // Throttled to once per 100 ticks. Creeps live 1500 ticks;
     // checking every tick wastes CPU on an O(N) iteration that rarely finds
     // anything to clean. 100-tick cadence is more than sufficient.
-    if (Game.time % 100 === 0) {
+    // Guard: Memory.creeps may be undefined after resetBot() nukes Memory.
+    if (Game.time % 100 === 0 && Memory.creeps) {
         for (const name in Memory.creeps) {
             if (!Game.creeps[name]) {
                 delete Memory.creeps[name];
@@ -220,16 +221,20 @@ export const loop = ErrorMapper.wrapLoop(() => {
     // --- 8. Run Traffic Manager (Intent Resolution Order) ---
     // Must run AFTER kernel.run() so all process move intents are queued
     // before TrafficManager resolves conflicts and executes moves.
-    TrafficManager.run();
-
-    // Fix #3: Removed handleKernelPanic() call. Trust the Kernel's
-    // EMERGENCY load shedding — it skips priority > 0 processes, leaving
-    // their creeps idle at zero CPU cost.
+    // Wrapped in try/catch to guarantee the persistence layer (step 9)
+    // always executes. A freak pathing bug must never prevent state saves.
+    try {
+        TrafficManager.run();
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.stack ?? e.message : String(e);
+        log.error(`TrafficManager crashed (non-fatal):\n${ErrorMapper.mapTrace(msg)}`);
+    }
 
     // --- 9. Persist state (Heap-First) ---
     kernel.serialize();
 
     // Commit all heap-first managers
+    GlobalCache.commit();    // Flush dirty heap objects to Memory.heap
     GlobalManager.run();
     SegmentManager.commit(); // Set active segments for next tick
 
@@ -255,13 +260,14 @@ function pruneStaleColonies(kernel: Kernel): void {
         const colonyName = (proc as ColonyProcess).colonyName;
         const room = Game.rooms[colonyName];
 
-        // If we can see the room but don't own it, or it has no controller, prune it
-        if (room && (!room.controller || !room.controller.my)) {
+        // In Screeps, owning a controller grants permanent visibility.
+        // If the room is undefined, we absolutely do not own it anymore
+        // (e.g., we respawned in a new sector). Aggressively prune.
+        if (!room || !room.controller || !room.controller.my) {
             log.warning(`Pruning stale colony process for ${colonyName} (no longer owned)`);
             kernel.removeProcess(proc.pid);
             pruned++;
         }
-        // If we can't see the room at all, it might be a remote — leave it for now
     }
 
     if (pruned > 0) {
