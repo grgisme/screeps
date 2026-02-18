@@ -245,18 +245,18 @@ describe("Logger", () => {
 
     describe("HTML Formatting", () => {
         describe("style()", () => {
-            it("should wrap text in a span with escaped double quotes", () => {
+            it("should wrap text in a font tag with color", () => {
                 const result = Logger.style("hello", "#ff0000");
-                expect(result).to.include("style=");
-                expect(result).to.include("color:#ff0000");
+                expect(result).to.include("color=");
+                expect(result).to.include("#ff0000");
                 expect(result).to.include("hello");
-                expect(result).to.include("<span");
-                expect(result).to.include("</span>");
+                expect(result).to.include("<font");
+                expect(result).to.include("</font>");
             });
 
             it("should not use single quotes for attributes", () => {
                 const result = Logger.style("test", "red");
-                expect(result).to.not.include("style='");
+                expect(result).to.not.include("color='");
             });
         });
 
@@ -322,7 +322,7 @@ describe("Logger", () => {
         it("should include color styling in output", () => {
             const log = new Logger("Test");
             log.info("colored message");
-            expect(logOutput[0]).to.include("style=");
+            expect(logOutput[0]).to.include("<font");
             expect(logOutput[0]).to.include("colored message");
         });
 

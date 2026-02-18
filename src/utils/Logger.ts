@@ -154,17 +154,14 @@ export class Logger {
     // -----------------------------------------------------------------------
 
     /**
-     * Wrap text in a colored `<span>` using escaped double quotes.
-     * This is the ONLY safe pattern for Screeps console HTML.
-     *
-     * Bad:  `<span style='color:red'>`   — parser may reject
-     * Good: `<span style=\"color:red\">`  — always works
+     * Wrap text in a colored `<font>` tag.
+     * Screeps console only supports `<font color="...">` — NOT `<span>`.
      *
      * @param text   The text to colorize
      * @param color  CSS color value (hex, named, rgb)
      */
     static style(text: string, color: string): string {
-        return `<span style="color:${color}">${text}</span>`;
+        return `<font color="${color}">${text}</font>`;
     }
 
     /**
@@ -218,10 +215,10 @@ export class Logger {
         const label = LEVEL_LABELS[level] ?? "???";
         const color = LEVEL_COLORS[level] ?? "#ffffff";
 
-        // Color-coded output: tag and label are styled, message body is styled
-        const styledTag = `<span style="color:#999999">[${this.tag}]</span>`;
-        const styledLabel = `<span style="color:${color}">[${label}]</span>`;
-        const styledMsg = `<span style="color:${color}">${resolved}</span>`;
+        // Color-coded output using <font> — the only tag Screeps console renders
+        const styledTag = `<font color="#999999">[${this.tag}]</font>`;
+        const styledLabel = `<font color="${color}">[${label}]</font>`;
+        const styledMsg = `<font color="${color}">${resolved}</font>`;
 
         console.log(`${emoji} ${styledLabel} ${styledTag} ${styledMsg}`);
     }
