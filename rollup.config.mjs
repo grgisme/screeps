@@ -12,7 +12,7 @@ export default {
         // Inject version banner at top of bundle for easy identification
         banner: '/* Screeps Bot - Built: ' + new Date().toISOString() + ' */',
     },
-    external: ['lodash', 'source-map'],
+    external: ['lodash'],
     treeshake: {
         moduleSideEffects: false,  // Aggressive tree-shaking
         propertyReadSideEffects: false,
