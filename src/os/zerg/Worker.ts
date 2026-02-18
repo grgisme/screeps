@@ -28,6 +28,22 @@ export class Worker extends Zerg {
     private refuel(): void {
         const room = this.creep.room;
 
+        // Stuck Detection: if refueling for 10+ ticks with 0 energy, force unstick
+        const mem = this.memory as any;
+        if (this.creep.store.getUsedCapacity() === 0) {
+            mem._refuelTicks = (mem._refuelTicks || 0) + 1;
+            if (mem._refuelTicks > 10) {
+                this.creep.say("⛔ Stuck");
+                // Move to a random adjacent tile to unblock
+                const dirs: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
+                this.creep.move(dirs[Math.floor(Math.random() * dirs.length)]);
+                mem._refuelTicks = 0; // Reset counter after unstick attempt
+                return;
+            }
+        } else {
+            mem._refuelTicks = 0;
+        }
+
         // 0. Early-Game Bypass: If there are NO containers and NO storage,
         //    skip all logistics and harvest directly from sources.
         const hasInfrastructure = room.storage ||
@@ -37,9 +53,9 @@ export class Worker extends Zerg {
 
         if (!hasInfrastructure) {
             // No logistics infrastructure — harvest directly
-            this.creep.say("⛏️");
-            const source = this.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+            const source = this.findOptimalSource();
             if (source) {
+                this.creep.say("⛏️ S" + source.id.slice(-2));
                 if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
                     this.travelTo(source);
                 }
@@ -70,15 +86,45 @@ export class Worker extends Zerg {
         }
 
         // 2. Fallback: all containers are empty, harvest from source
-        this.creep.say("⛏️");
-        const source = this.pos.findClosestByRange(FIND_SOURCES_ACTIVE);
+        const source = this.findOptimalSource();
         if (source) {
+            this.creep.say("⛏️ S" + source.id.slice(-2));
             if (this.creep.harvest(source) === ERR_NOT_IN_RANGE) {
                 this.travelTo(source);
             }
         } else {
             this.creep.say("💤");
         }
+    }
+
+    /**
+     * Find the best source to harvest from, distributing workers evenly.
+     * Picks the source with the fewest creeps targeting it.
+     * Tie-break: closest by range.
+     */
+    private findOptimalSource(): Source | null {
+        const sources = this.creep.room.find(FIND_SOURCES_ACTIVE);
+        if (sources.length === 0) return null;
+        if (sources.length === 1) return sources[0];
+
+        // Count creeps at each source (within range 1 = actively harvesting)
+        let best: Source | null = null;
+        let bestScore = Infinity;
+        let bestRange = Infinity;
+
+        for (const source of sources) {
+            const nearbyCreeps = source.pos.findInRange(FIND_MY_CREEPS, 1).length;
+            const range = this.pos.getRangeTo(source);
+
+            // Lower score = better. Prefer fewer creeps, then closer distance.
+            if (nearbyCreeps < bestScore || (nearbyCreeps === bestScore && range < bestRange)) {
+                best = source;
+                bestScore = nearbyCreeps;
+                bestRange = range;
+            }
+        }
+
+        return best;
     }
 
     private work(): void {
