@@ -91,9 +91,11 @@ export class Logger {
     /**
      * Heap-cached previous values for delta alerting.
      * Key = alert id, Value = last logged value.
+     * Uses Map instead of Record so `.size` is O(1) — avoids the
+     * Object.keys() array allocation + GC spike on every alert() call.
      * Pruned when size exceeds 1000 entries to prevent unbounded growth.
      */
-    private static _deltaCache: Record<string, string> = {};
+    private static _deltaCache: Map<string, string> = new Map();
 
     constructor(tag: string) {
         this.tag = tag;
@@ -144,14 +146,14 @@ export class Logger {
      *   log.alert("worker-state", "Upgrading");   // logs (changed!)
      */
     alert(key: string, value: string, level: LogLevelType = LogLevel.INFO): void {
-        // Prune if cache has grown too large (dynamic keys like creep IDs)
-        if (Object.keys(Logger._deltaCache).length > 1000) {
-            Logger._deltaCache = {};
+        // Map.size is an O(1) property lookup — no array allocation.
+        if (Logger._deltaCache.size > 1000) {
+            Logger._deltaCache.clear();
         }
 
         const fullKey = `${this.tag}:${key}`;
-        if (Logger._deltaCache[fullKey] === value) return; // No change
-        Logger._deltaCache[fullKey] = value;
+        if (Logger._deltaCache.get(fullKey) === value) return; // No change
+        Logger._deltaCache.set(fullKey, value);
         this.log(level, `[Δ] ${key}: ${value}`);
     }
 
@@ -293,7 +295,7 @@ export class Logger {
 
     /** Clear the delta cache (call on global reset if needed). */
     static resetDeltaCache(): void {
-        Logger._deltaCache = {};
+        Logger._deltaCache.clear();
     }
 
     /** Clear the cached log level (forces re-read from Memory next call). */
