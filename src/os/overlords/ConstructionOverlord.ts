@@ -12,7 +12,7 @@ import { Logger } from "../../utils/Logger";
 const log = new Logger("ConstructionOverlord");
 
 export class ConstructionOverlord extends Overlord {
-    private checkFrequency = 100;
+    private checkFrequency = 20;
 
     constructor(colony: Colony) {
         super(colony, "construction");
@@ -29,14 +29,16 @@ export class ConstructionOverlord extends Overlord {
             return;
         }
 
+        // 2. Global Guard: yield 0 CPU while workers are busy
+        const activeSites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES).length ?? 0;
+        if (activeSites >= 3) return;
+
         // Only run periodically or on RCL change
         if (Game.time % this.checkFrequency !== 0 && !this.colony.state.rclChanged) {
             return;
         }
 
-        // 2. Global Guard: Never exceed 3 active sites per room
-        const activeSites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES).length ?? 0;
-        if (activeSites >= 3) return;
+        const budget = { count: 3 - activeSites };
 
         // 3. Parse anchor and RCL
         const anchor = this.colony.memory.anchor;
@@ -44,9 +46,9 @@ export class ConstructionOverlord extends Overlord {
         const rcl = this.colony.room?.controller?.level || 0;
 
         // 4. Place structures
-        this.checkBunker(anchorPos, rcl);
-        if (rcl >= 3) {
-            this.checkRoads(anchorPos, rcl);
+        this.checkBunker(anchorPos, rcl, budget);
+        if (rcl >= 3 && budget.count > 0) {
+            this.checkRoads(anchorPos, rcl, budget);
         }
 
         // 5. Reset the RCL changed flag
@@ -63,9 +65,9 @@ export class ConstructionOverlord extends Overlord {
         let maxDist = 0;
         let bestPos: { x: number; y: number } | null = null;
 
-        // Scan x:6..43, y:6..43 to ensure the 13x13 bunker fits
-        for (let x = 6; x < 44; x++) {
-            for (let y = 6; y < 44; y++) {
+        // Scan x:8..41, y:8..41 to ensure the bunker leaves a 2-tile border near exits
+        for (let x = 8; x < 42; x++) {
+            for (let y = 8; y < 42; y++) {
                 if (dt.get(x, y) > maxDist) {
                     maxDist = dt.get(x, y);
                     bestPos = { x, y };
@@ -100,7 +102,7 @@ export class ConstructionOverlord extends Overlord {
     // Bunker Construction — O(1) hash set, one site per tick
     // ========================================================================
 
-    private checkBunker(anchor: RoomPosition, rcl: number): void {
+    private checkBunker(anchor: RoomPosition, rcl: number, budget: { count: number }): void {
         const room = this.colony.room;
         if (!room) return;
 
@@ -132,7 +134,8 @@ export class ConstructionOverlord extends Overlord {
 
                 if (pos.createConstructionSite(type) === OK) {
                     log.info(`Architect: Placed ${type} site at ${pos.x}, ${pos.y}`);
-                    return; // 🛑 One site per tick — prevent queue flooding
+                    budget.count--;
+                    if (budget.count <= 0) return;
                 }
             }
         }
@@ -142,7 +145,7 @@ export class ConstructionOverlord extends Overlord {
     // Road Construction — drip-feed placement
     // ========================================================================
 
-    private checkRoads(anchor: RoomPosition, rcl: number): void {
+    private checkRoads(anchor: RoomPosition, rcl: number, budget: { count: number }): void {
         if (rcl < 3) return;
         const room = this.colony.room;
         if (!room) return;
@@ -159,12 +162,36 @@ export class ConstructionOverlord extends Overlord {
 
         for (const dest of destinations) {
             if (!dest) continue;
-            const path = PathFinder.search(anchor, { pos: dest, range: 1 }, { plainCost: 2, swampCost: 2 });
+            const path = PathFinder.search(anchor, { pos: dest, range: 1 }, {
+                plainCost: 2,
+                swampCost: 5, // Reflects 5x energy cost to build roads on swamps
+                roomCallback: (roomName) => {
+                    if (roomName !== this.colony.name) return false;
+                    const cm = new PathFinder.CostMatrix();
+                    const cbRoom = Game.rooms[roomName];
+                    if (!cbRoom) return cm;
+
+                    cbRoom.find(FIND_STRUCTURES).forEach(s => {
+                        if (s.structureType === STRUCTURE_ROAD) {
+                            cm.set(s.pos.x, s.pos.y, 1); // Prefer existing roads
+                        } else if (s.structureType !== STRUCTURE_CONTAINER && s.structureType !== STRUCTURE_RAMPART) {
+                            cm.set(s.pos.x, s.pos.y, 255); // Solid buildings are unwalkable
+                        }
+                    });
+                    cbRoom.find(FIND_MY_CONSTRUCTION_SITES).forEach(s => {
+                        if (s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART && s.structureType !== STRUCTURE_CONTAINER) {
+                            cm.set(s.pos.x, s.pos.y, 255);
+                        }
+                    });
+                    return cm;
+                }
+            });
 
             for (const pos of path.path) {
                 if (existing.has(`${pos.x},${pos.y}`)) continue;
                 if (pos.createConstructionSite(STRUCTURE_ROAD) === OK) {
-                    return; // Drip-feed: one road per tick
+                    budget.count--;
+                    if (budget.count <= 0) return;
                 }
             }
         }

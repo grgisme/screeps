@@ -26,6 +26,7 @@ import { HarvestDirective } from "../directives/resource/HarvestDirective";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };
+    lastRcl?: number;
 }
 
 export interface ColonyState {
@@ -123,6 +124,15 @@ export class Colony {
         if (this.linkNetwork) this.linkNetwork.refresh();
 
         if (!this.room) return;
+
+        // Detect RCL change
+        if (this.room.controller) {
+            const currentRcl = this.room.controller.level;
+            if (this.memory.lastRcl !== currentRcl) {
+                this.state.rclChanged = true;
+                this.memory.lastRcl = currentRcl;
+            }
+        }
 
         // Prune dead zergs
         for (const [name, zerg] of this.zergs.entries()) {

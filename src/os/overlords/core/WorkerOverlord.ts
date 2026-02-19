@@ -64,12 +64,13 @@ export class WorkerOverlord extends Overlord {
             } else {
                 // Has energy — work priority cascade
 
-                // 1. Emergency repairs (structures below 50% HP, excluding walls/ramparts)
+                // 1. Emergency repairs
                 const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
-                    filter: (s: Structure) =>
-                        s.hits < s.hitsMax * 0.5 &&
-                        s.structureType !== STRUCTURE_WALL &&
-                        s.structureType !== STRUCTURE_RAMPART
+                    filter: (s: Structure) => {
+                        if (s.structureType === STRUCTURE_WALL) return false; // Walls are handled by Masons/Defense
+                        if (s.structureType === STRUCTURE_RAMPART) return s.hits < 10000; // Save newborn ramparts from decay
+                        return s.hits < s.hitsMax * 0.5;
+                    }
                 });
                 if (damaged) {
                     worker.setTask(new RepairTask(damaged.id));
