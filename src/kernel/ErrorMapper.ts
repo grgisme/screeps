@@ -12,6 +12,14 @@
 // ============================================================================
 
 import { SourceMapConsumer } from "source-map";
+import { Logger } from "../utils/Logger";
+
+const log = new Logger("ErrorMapper");
+
+/** Safely escape untrusted HTML before logging to the Screeps console */
+function sanitize(str: string): string {
+    return str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // ---------------------------------------------------------------------------
 // Heap-cached consumer — survives between ticks, dies on global reset
@@ -118,19 +126,12 @@ export const ErrorMapper = {
             } catch (e: unknown) {
                 if (e instanceof Error) {
                     if ("sim" in Game.rooms) {
-                        // Source maps don't work in the simulator
-                        console.log(
-                            `❌ [ERROR] Source maps unavailable in sim\n${e.stack}`
-                        );
+                        log.error(`Source maps unavailable in sim\n${sanitize(e.stack || e.message)}`);
                     } else {
-                        console.log(
-                            `❌ [ERROR] ${sourceMappedStackTrace(e)}`
-                        );
+                        log.error(sanitize(sourceMappedStackTrace(e)));
                     }
                 } else {
-                    console.log(
-                        `❌ [ERROR] Non-Error thrown: ${String(e)}`
-                    );
+                    log.error(`Non-Error thrown: ${sanitize(String(e))}`);
                 }
             }
         };

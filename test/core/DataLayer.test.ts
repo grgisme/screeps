@@ -106,6 +106,8 @@ describe("Data Layer Optimization", () => {
         });
 
         it("should save data immediately to RawMemory active cache", () => {
+            // Segment must be active (non-undefined) before writing
+            RawMemory.segments[5] = "";
             SegmentManager.save(5, "some data");
             expect(RawMemory.segments[5]).to.equal("some data");
         });

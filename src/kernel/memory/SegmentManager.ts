@@ -50,13 +50,23 @@ export class SegmentManager {
 
     /**
      * Write data to a segment immediately.
-     * Note: This adds the segment to the active list for the *current* tick automatically
-     * in terms of saving, but not necessarily for reading if it wasn't active at start.
+     * The segment must be currently active (requested in the previous tick).
+     * Screeps enforces a hard limit of 100 KB (100,000 characters) per segment.
      */
     static save(id: number, data: string): void {
         this.validateId(id);
+
+        if (data.length > 100000) {
+            log.error(`Segment ${id} exceeds 100KB limit! (${data.length} chars). Skipping.`);
+            return;
+        }
+
+        if (RawMemory.segments[id] === undefined) {
+            log.error(`Cannot save to inactive segment ${id}. It must be requested first.`);
+            return;
+        }
+
         RawMemory.segments[id] = data;
-        // Optionally cache it in heap?
     }
 
     /**
@@ -65,15 +75,15 @@ export class SegmentManager {
      */
     static commit(): void {
         const requested = this.getRequestedSegments();
-        if (requested.size > 0) {
-            const ids = Array.from(requested).sort((a, b) => a - b);
-            RawMemory.setActiveSegments(ids);
-            // CRITICAL: Clear the request set so processes must re-request
-            // segments each tick they need them. Without this, the set grows
-            // monotonically and permanently locks up after 10 unique requests
-            // (the Screeps active segment limit).
-            requested.clear();
-        }
+
+        // Always set active segments. If empty, passes [] which clears the
+        // active list, freeing up the 10-segment limit for the next tick.
+        const ids = Array.from(requested).sort((a, b) => a - b);
+        RawMemory.setActiveSegments(ids);
+
+        // CRITICAL: Clear the request set so processes must re-request
+        // segments each tick they need them.
+        requested.clear();
     }
 
     // --- Private Helpers ---

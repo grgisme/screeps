@@ -43,9 +43,7 @@ const log = new Logger("OS");
     } catch (e: unknown) {
         if (e instanceof Error) {
             const mapped = ErrorMapper.mapTrace(e.stack ?? e.message);
-            console.log(
-                `❌ [TEST ERROR] ${mapped}`
-            );
+            log.error(`[TEST ERROR] ${mapped}`);
             return mapped;
         }
     }
@@ -118,7 +116,7 @@ function printFoundationStatus(kernel: Kernel): void {
         `═══════════════════════════════════════════`,
     ];
 
-    console.log(
+    log.info(
         statusLines.join("\n")
     );
 }
@@ -149,13 +147,15 @@ function rehydrateKernel(): Kernel {
 
 export const loop = ErrorMapper.wrapLoop(() => {
     // --- 1. Clean dead creep memory ---
-    // Throttled to once per 100 ticks. Creeps live 1500 ticks;
-    // checking every tick wastes CPU on an O(N) iteration that rarely finds
-    // anything to clean. 100-tick cadence is more than sufficient.
+    // Offset to tick 3 to prevent synchronized spikes (Temporal Throttling)
     // Guard: Memory.creeps may be undefined after resetBot() nukes Memory.
-    if (Game.time % 100 === 0 && Memory.creeps) {
+    if (Game.time % 100 === 3 && Memory.creeps) {
+        // Fetch the pending spawns registry (populated by Hatchery on spawnCreep OK)
+        const pendingSpawns = GlobalCache.get<Set<string>>("pendingSpawns") ?? new Set<string>();
+
         for (const name in Memory.creeps) {
-            if (!Game.creeps[name]) {
+            // Guard: Do not delete if the creep is currently in-utero
+            if (!Game.creeps[name] && !pendingSpawns.has(name)) {
                 delete Memory.creeps[name];
             }
         }
@@ -216,12 +216,13 @@ export const loop = ErrorMapper.wrapLoop(() => {
     GlobalManager.run();
     SegmentManager.commit(); // Set active segments for next tick
 
-    // Memory Usage Report (Console)
-    if (Game.time % 100 === 0) {
+    // --- 10. Memory Usage Report (Console) ---
+    // Offset by 47 ticks to avoid collision with Memory cleanup
+    if (Game.time % 100 === 47) {
         const heap = Game.cpu.getHeapStatistics?.();
         const heapUsed = heap ? (heap.used_heap_size / 1024 / 1024).toFixed(2) : "N/A";
         const bucket = Game.cpu.bucket;
-        console.log(`⚙️ [System] Heap: ${heapUsed} MB | Bucket: ${bucket}`);
+        log.info(`⚙️ [System] Heap: ${heapUsed} MB | Bucket: ${bucket}`);
     }
 });
 
