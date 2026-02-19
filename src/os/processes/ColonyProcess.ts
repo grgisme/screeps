@@ -1,58 +1,36 @@
 // ============================================================================
 // ColonyProcess — Kernel-managed process for Colony tick execution
-//
-// Colony is a data/state container. ColonyProcess is the Kernel adapter
-// that handles the tick lifecycle (refresh → run) under the scheduler's
-// CPU budget, load shedding, and panic protocols.
 // ============================================================================
 
 import { Process } from "../../kernel/Process";
 import { Colony } from "../colony/Colony";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 export class ColonyProcess extends Process {
-    /** Room name this colony manages. Stored as a string (Getter Pattern). */
     readonly colonyName: string;
-
-    /** Stable process identifier for deduplication. */
     processId: string;
-
-    /** Process type name used for serialization and lookup. */
     readonly processName = "colony";
 
-    /**
-     * Static registry for Colony data objects.
-     * Allows lookup by room name from anywhere in the codebase.
-     * Keyed by room name to avoid storing live Game objects.
+    /** 
+     * The colony data object. Tied to the instance, NOT a static registry, 
+     * to prevent memory leaks when a room is lost and the process is pruned.
      */
-    static colonies: { [name: string]: Colony } = {};
+    colony: Colony;
 
     constructor(pid: number, priority: number, parentPID: number | null, colonyName: string) {
         super(pid, priority, parentPID);
         this.colonyName = colonyName;
         this.processId = `colony:${colonyName}`;
 
-        // Initialize colony data object if not already in registry
-        if (!ColonyProcess.colonies[this.colonyName]) {
-            this.colony = new Colony(this.colonyName);
-            ColonyProcess.colonies[this.colonyName] = this.colony;
-        }
-    }
-
-    /**
-     * Colony data object accessor.
-     * Uses the static registry to avoid storing a direct reference
-     * that could hold stale Game object references.
-     */
-    get colony(): Colony {
-        return ColonyProcess.colonies[this.colonyName];
-    }
-
-    set colony(c: Colony) {
-        ColonyProcess.colonies[this.colonyName] = c;
+        // Rehydrate ensures the Colony object survives a global reset without 
+        // tying it to a permanent static registry that leaks when rooms are lost.
+        this.colony = GlobalCache.rehydrate(
+            `ColonyObj:${this.colonyName}`,
+            () => new Colony(this.colonyName)
+        );
     }
 
     run(): void {
-        // Colony refresh + run under Kernel's CPU budget
         this.colony.refresh();
         this.colony.run();
     }

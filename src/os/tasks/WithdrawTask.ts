@@ -55,7 +55,8 @@ export class WithdrawTask implements ITask {
             // Only abort on fatal errors
             if (
                 result === ERR_INVALID_TARGET ||
-                result === ERR_NOT_OWNER
+                result === ERR_NOT_OWNER ||
+                result === ERR_NOT_ENOUGH_RESOURCES
             ) {
                 return true;
             }

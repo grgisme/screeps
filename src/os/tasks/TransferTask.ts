@@ -62,7 +62,8 @@ export class TransferTask implements ITask {
             if (
                 result === ERR_INVALID_TARGET ||
                 result === ERR_NOT_OWNER ||
-                result === ERR_FULL
+                result === ERR_FULL ||
+                result === ERR_NOT_ENOUGH_RESOURCES
             ) {
                 return true;
             }

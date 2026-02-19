@@ -9,6 +9,9 @@ import { Zerg } from "../zerg/Zerg";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("TransporterOverlord");
 
 export class TransporterOverlord extends Overlord {
 
@@ -31,23 +34,33 @@ export class TransporterOverlord extends Overlord {
         for (const transporter of this.transporters) {
             if (!transporter.isAlive() || transporter.task) continue;
 
-            if (transporter.store?.getUsedCapacity() === 0) {
-                // Empty hauler — find something to withdraw from
+            const mem = transporter.memory as any;
+
+            // ── Fix 5: State Machine transitions ──
+            if (transporter.store?.getUsedCapacity() === 0) mem.collecting = true;
+            if (transporter.store?.getFreeCapacity() === 0) mem.collecting = false;
+
+            if (mem.collecting) {
                 const targetId = this.colony.logistics.matchWithdraw(transporter);
                 if (targetId) {
                     const target = Game.getObjectById(targetId);
                     if (target && 'amount' in target) {
-                        // Dropped resource — use pickup
                         transporter.setTask(new PickupTask(targetId as Id<Resource>));
                     } else {
                         transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
                     }
+                } else if ((transporter.store?.getUsedCapacity() ?? 0) > 0) {
+                    mem.collecting = false; // Nothing to withdraw, go deliver what we have
                 }
-            } else {
-                // Loaded hauler — find somewhere to deliver to
+            }
+
+            // Separate if, not else, so it can pivot in the same tick
+            if (!mem.collecting) {
                 const targetId = this.colony.logistics.matchTransfer(transporter);
                 if (targetId) {
                     transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
+                } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
+                    mem.collecting = true; // Nothing to deliver, go collect more
                 }
             }
         }
@@ -64,33 +77,54 @@ export class TransporterOverlord extends Overlord {
             (sum, z) => sum + (z.store?.getCapacity() ?? 0), 0
         );
 
-        if (transportPower < deficit) {
-            const template = [CARRY, MOVE];
+        // Cap max transporters to prevent a queue death-spiral
+        const maxTransporters = 3;
+
+        if (transportPower < deficit && this.transporters.length < maxTransporters) {
+            // [CARRY, CARRY, MOVE] is optimal 2:1 ratio for moving on roads 
+            const template = [CARRY, CARRY, MOVE];
 
             this.colony.hatchery.enqueue({
-                priority: 1,
+                priority: 4,
                 bodyTemplate: template,
                 overlord: this,
                 name: `Transporter_${this.colony.name}_${Game.time}`
             });
 
-            console.log(`TransporterOverlord: Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
+            log.info(`Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
         }
     }
 
     private calculateTransportDeficit(): number {
-        let total = 0;
+        // 1. Calculate Sink Deficit
+        let sinkDeficit = 0;
         for (const req of this.colony.logistics.requesters) {
             const target = Game.getObjectById(req.targetId);
             const isBuffer = target && 'structureType' in target &&
                 ((target as Structure).structureType === STRUCTURE_STORAGE ||
                     (target as Structure).structureType === STRUCTURE_TERMINAL);
 
-            if (isBuffer) continue; // Ignore infinite sinks for spawn calculations
+            if (isBuffer) continue; // Ignore infinite sinks
 
             const incoming = this.colony.logistics.incomingReservations.get(req.targetId) || 0;
-            total += Math.max(0, req.amount - incoming);
+            sinkDeficit += Math.max(0, req.amount - incoming);
         }
-        return total;
+
+        // 2. Calculate Source Surplus so haulers spawn for dropped energy
+        let sourceSurplus = 0;
+        for (const offerId of this.colony.logistics.offerIds) {
+            const target = Game.getObjectById(offerId);
+            const isBuffer = target && 'structureType' in target &&
+                ((target as Structure).structureType === STRUCTURE_STORAGE ||
+                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+
+            if (isBuffer) continue; // Ignore infinite sources
+
+            const effectiveAmount = this.colony.logistics.getEffectiveAmount(offerId);
+            sourceSurplus += Math.max(0, effectiveAmount);
+        }
+
+        // Return whichever demand is higher
+        return Math.max(sinkDeficit, sourceSurplus);
     }
 }

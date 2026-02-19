@@ -68,14 +68,21 @@ export class Colony {
     // Getters — resolve live Game objects each tick (no V8 leaks)
     // -----------------------------------------------------------------------
 
+    private _creeps?: Creep[];
+    private _creepsTick?: number;
+
     /** Resolve the live Room from Game.rooms. Returns undefined if not visible. */
     get room(): Room | undefined {
         return Game.rooms[this.name];
     }
 
-    /** Find all owned creeps in this colony's room. */
+    /** Find all owned creeps in this colony's room (Memoized per-tick to save CPU) */
     get creeps(): Creep[] {
-        return this.room?.find(FIND_MY_CREEPS) ?? [];
+        if (this._creepsTick !== Game.time) {
+            this._creeps = this.room?.find(FIND_MY_CREEPS) ?? [];
+            this._creepsTick = Game.time;
+        }
+        return this._creeps!;
     }
 
     // -----------------------------------------------------------------------

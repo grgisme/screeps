@@ -143,3 +143,4 @@ vite.config.ts.timestamp-*
 screeps.json
 .mcp/
 .DS_Store
+.claude/

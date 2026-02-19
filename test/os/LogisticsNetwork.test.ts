@@ -155,14 +155,15 @@ describe("LogisticsNetwork", () => {
             }
         } as any;
 
-        // req1: score = 10 / max(1, ~28) ≈ 0.36
-        // req2: score = 5 / max(1, 2) = 2.5
-        // req2 wins (closer)
+        // With strict priority bands: (priority * 1000) - distance
+        // req1: score = (10 * 1000) - ~28 = 9972
+        // req2: score = (5 * 1000) - 2  = 4998
+        // req1 wins (higher priority is absolute, distance is only a tie-breaker)
         const result = network.matchTransfer(zerg);
-        expect(result).to.equal("req2");
+        expect(result).to.equal("req1");
 
         // Check reservation was set
-        expect(network.incomingReservations.get("req2")).to.equal(100);
+        expect(network.incomingReservations.get("req1")).to.equal(100);
     });
 
     it("should prevent double-booking via reservations on matchWithdraw", () => {

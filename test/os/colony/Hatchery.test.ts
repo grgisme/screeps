@@ -40,6 +40,7 @@ describe("Hatchery", () => {
             name: "W1N1",
             room: room,
             get creeps() { return room.find(FIND_MY_CREEPS); },
+            overlords: [],
             logistics: {
                 requestInput: () => { }
             }

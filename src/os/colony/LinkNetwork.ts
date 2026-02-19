@@ -122,17 +122,22 @@ export class LinkNetwork {
         const hubLink = this.hubLink;
         const controllerLink = this.controllerLink;
 
+        // ── Fix 6: Track virtual capacity to prevent simultaneous transfer overfills ──
+        let virtualHubFreeCapacity = hubLink ? hubLink.store.getFreeCapacity(RESOURCE_ENERGY) : 0;
+
         // 1. Collection Phase: Source -> Hub
         for (const sourceLink of this.sourceLinks) {
             if (sourceLink.cooldown > 0) continue;
-            if (sourceLink.store.getUsedCapacity(RESOURCE_ENERGY) >= 750) {
-                // If Hub exists and has space, send to Hub
-                if (hubLink && hubLink.store.getFreeCapacity(RESOURCE_ENERGY) >= 750) {
-                    sourceLink.transferEnergy(hubLink);
+
+            const amountToSend = sourceLink.store.getUsedCapacity(RESOURCE_ENERGY);
+            if (amountToSend >= 750) {
+                if (hubLink && virtualHubFreeCapacity >= amountToSend) {
+                    if (sourceLink.transferEnergy(hubLink) === OK) {
+                        virtualHubFreeCapacity -= amountToSend; // Deduct from virtual ledger
+                    }
                     continue;
                 }
 
-                // Fallback: Send to Controller if empty-ish
                 if (controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
                     sourceLink.transferEnergy(controllerLink);
                     continue;
@@ -142,18 +147,19 @@ export class LinkNetwork {
 
         // 2. Distribution Phase: Hub -> Receivers/Controller
         if (hubLink && hubLink.cooldown === 0 && hubLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+            let transferred = false;
             // Priority 1: Receivers (Towers/Extensions)
             for (const receiver of this.receiverLinks) {
                 if (receiver.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
                     hubLink.transferEnergy(receiver);
-                    return; // Only one transfer per tick
+                    transferred = true;
+                    break; // Only one transfer per tick
                 }
             }
 
             // Priority 2: Controller Link
-            if (controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
+            if (!transferred && controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
                 hubLink.transferEnergy(controllerLink);
-                return;
             }
         }
     }

@@ -85,21 +85,39 @@ export class LogisticsNetwork {
             if (storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                 this.requestInput(storage.id as Id<Structure | Resource>, {
                     amount: storage.store.getFreeCapacity(RESOURCE_ENERGY),
-                    priority: 0
+                    priority: 0.1 // 0.1 prevents math from zeroing out
                 });
             }
         }
 
-        // ── Fix #1: Hatchery Integration (moved from Hatchery.registerRefillRequests) ──
-        const target = this.colony.hatchery.spawns.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) ||
-            this.colony.hatchery.extensions.find(e => e.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+        // ── Fix 1: Hatchery Integration (Individual Registration) ──
+        for (const spawn of this.colony.hatchery.spawns) {
+            const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);
+            if (free > 0) {
+                this.requestInput(spawn.id as Id<Structure | Resource>, { amount: free, priority: 10 });
+            }
+        }
 
-        if (target) {
-            const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
-            const available = this.colony.room?.energyAvailable ?? 0;
-            const deficit = capacity - available;
-            if (deficit > 0) {
-                this.requestInput(target.id as Id<Structure | Resource>, { amount: deficit, priority: 10 });
+        for (const ext of this.colony.hatchery.extensions) {
+            const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
+            if (free > 0) {
+                this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
+            }
+        }
+
+        // ── Fix 2: Tower Integration (Critical Defense Sinks) ──
+        const towers = this.colony.room?.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_TOWER
+        }) as StructureTower[] ?? [];
+
+        const isUnderAttack = (this.colony.room?.find(FIND_HOSTILE_CREEPS)?.length ?? 0) > 0;
+
+        for (const t of towers) {
+            const free = t.store.getFreeCapacity(RESOURCE_ENERGY);
+            if (free > 400) {
+                this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: isUnderAttack ? 15 : 8 });
+            } else if (free > 0) {
+                this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: 5 });
             }
         }
 
@@ -223,9 +241,9 @@ export class LogisticsNetwork {
                     (target as Structure).structureType === STRUCTURE_TERMINAL);
 
             if (isBuffer) {
-                // Only withdraw from buffers if there is real demand (priority > 1)
+                // Only withdraw from buffers if there is real demand (priority > 0)
                 const realDemand = this.requesters.some(r =>
-                    r.priority > 1 &&
+                    r.priority > 0 &&
                     (r.amount - (this.incomingReservations.get(r.targetId) || 0)) > 0
                 );
                 if (!realDemand) continue;
@@ -269,7 +287,10 @@ export class LogisticsNetwork {
             if (!target) continue;
 
             const distance = zerg.pos.getRangeTo(target.pos);
-            const score = req.priority / Math.max(1, distance);
+
+            // ── Fix 4: Strict Priority Bands ──
+            // Priority is absolute. Distance acts only as a tie-breaker within the same tier.
+            const score = (req.priority * 1000) - distance;
 
             if (score > bestScore) {
                 bestScore = score;
