@@ -66,10 +66,8 @@ export class DestroyerOverlord extends Overlord {
                     const rallyPoint = home.storage?.pos || home.find(FIND_MY_SPAWNS)[0]?.pos;
                     if (rallyPoint) destroyer.travelTo(rallyPoint, 5);
                 }
-                // Self-heal while retreating (uses work pipeline)
-                if (creep.getActiveBodyparts(HEAL) > 0) {
-                    destroyer.heal(creep);
-                }
+                // Pre-heal self while retreating
+                if (creep.getActiveBodyparts(HEAL) > 0) destroyer.heal(creep);
                 continue;
             }
 
@@ -78,10 +76,8 @@ export class DestroyerOverlord extends Overlord {
             // ────────────────────────────────────────────────────────
             if (creep.room.name !== this.targetRoom) {
                 destroyer.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
-                // Self-heal in transit
-                if (creep.getActiveBodyparts(HEAL) > 0 && creep.hits < creep.hitsMax) {
-                    destroyer.heal(creep);
-                }
+                // Pre-heal self in transit
+                if (creep.getActiveBodyparts(HEAL) > 0) destroyer.heal(creep);
                 continue;
             }
 
@@ -136,19 +132,21 @@ export class DestroyerOverlord extends Overlord {
                 log.info("Target room clear.");
             }
 
-            // 3c. Healing (Post-Combat)
+            // 3c. Pre-Healing (Post-Combat intent registration)
             if (creep.getActiveBodyparts(HEAL) > 0) {
-                if (creep.hits < creep.hitsMax) {
-                    if (!meleeEngaged) destroyer.heal(creep);
-                } else {
-                    const wounded = destroyer.pos.findInRange(FIND_MY_CREEPS, 3, {
-                        filter: (c: Creep) => c.hits < c.hitsMax
-                    });
-                    if (wounded.length > 0) {
-                        const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
-                        if (destroyer.pos.isNearTo(healTarget) && !meleeEngaged) destroyer.heal(healTarget);
-                        else if (!rangedEngaged) destroyer.rangedHeal(healTarget);
-                    }
+                const wounded = destroyer.pos.findInRange(FIND_MY_CREEPS, 3, {
+                    filter: (c: Creep) => c.hits < c.hitsMax
+                });
+
+                // Pre-heal self if no one is hurt, otherwise heal lowest HP ally
+                const healTarget = wounded.length > 0 ? wounded.sort((a, b) => a.hits - b.hits)[0] : creep;
+
+                if (destroyer.pos.isNearTo(healTarget) && !meleeEngaged) {
+                    destroyer.heal(healTarget);
+                } else if (!rangedEngaged && destroyer.pos.getRangeTo(healTarget) <= 3) {
+                    destroyer.rangedHeal(healTarget);
+                } else if (!meleeEngaged) {
+                    destroyer.heal(creep); // Fallback: always pre-heal self
                 }
             }
         }

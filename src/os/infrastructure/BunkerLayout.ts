@@ -77,9 +77,19 @@ export class BunkerLayout {
             { x: -1, y: -3 }, { x: 0, y: -3 }, { x: 1, y: -3 },
             { x: -1, y: 3 }, { x: 0, y: 3 }, { x: 1, y: 3 }
         ],
-        [STRUCTURE_RAMPART]: [
-            // Ramparts should cover everything, but we'll specific criticals for now
-            { x: 0, y: 0 }, { x: 0, y: -1 }, { x: -1, y: 0 }, { x: 1, y: 0 }
-        ]
+        [STRUCTURE_RAMPART]: (() => {
+            const ramparts: BuildingCoord[] = [
+                // Core protection
+                { x: 0, y: 0 }, { x: 0, y: -1 }, { x: -1, y: 0 }, { x: 1, y: 0 }
+            ];
+            // 13×13 Outer Shell (Radius 6) to prevent MassAttack piercing
+            for (let i = -6; i <= 6; i++) {
+                ramparts.push({ x: i, y: -6 }, { x: i, y: 6 }); // Top & Bottom edges
+                if (i > -6 && i < 6) {
+                    ramparts.push({ x: -6, y: i }, { x: 6, y: i }); // Left & Right edges
+                }
+            }
+            return ramparts;
+        })()
     };
 }

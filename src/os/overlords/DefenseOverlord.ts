@@ -44,6 +44,20 @@ export class DefenseOverlord extends Overlord {
     }
 
     /**
+     * Calculate damage reduction from TOUGH parts.
+     * XGHO2 = 70% reduction (0.3 multiplier).
+     */
+    private calculateEnemyToughMultiplier(hostile: Creep): number {
+        const toughParts = hostile.body.filter(p => p.type === TOUGH && p.hits > 0);
+        if (toughParts.length === 0) return 1.0;
+
+        if (toughParts.some(p => p.boost === 'XGHO2')) return 0.3;
+        if (toughParts.some(p => p.boost === 'GHO2')) return 0.5;
+        if (toughParts.some(p => p.boost === 'GO')) return 0.7;
+        return 1.0;
+    }
+
+    /**
      * Calculate tower damage at a given range.
      *
      * Tower damage formula (from Screeps engine):
@@ -137,7 +151,7 @@ export class DefenseOverlord extends Overlord {
 
         if (hostiles.length > 0) {
             // ────────────────────────────────────────────────────────────
-            // 1. Safe Mode Fail-Safe (Anti-Scout & Anti-NPC Filter)
+            // 1. Safe Mode Fail-Safe (Pathfinding Threat Detection)
             // ────────────────────────────────────────────────────────────
             const spawns = room.find(FIND_MY_SPAWNS);
             const dangerousHostiles = hostiles.filter(h =>
@@ -146,26 +160,51 @@ export class DefenseOverlord extends Overlord {
                     h.getActiveBodyparts(RANGED_ATTACK) > 0 ||
                     h.getActiveBodyparts(WORK) > 0)
             );
-            const breached = dangerousHostiles.some(h => spawns.some(s => h.pos.getRangeTo(s) <= 3));
-            if (breached && room.controller && room.controller.safeModeAvailable > 0 && !room.controller.safeMode && !room.controller.safeModeCooldown) {
+
+            let pathBreached = false;
+            if (spawns.length > 0 && dangerousHostiles.length > 0) {
+                // Check if there is an open path to the spawn (Ramparts breached)
+                const cm = new PathFinder.CostMatrix();
+                room.find(FIND_STRUCTURES).forEach(s => {
+                    if (s.structureType === STRUCTURE_RAMPART && (s as OwnedStructure).my) cm.set(s.pos.x, s.pos.y, 255);
+                    if (s.structureType === STRUCTURE_WALL) cm.set(s.pos.x, s.pos.y, 255);
+                });
+
+                const path = PathFinder.search(spawns[0].pos, dangerousHostiles.map(h => ({ pos: h.pos, range: 1 })), {
+                    maxOps: 2000,
+                    roomCallback: () => cm
+                });
+
+                if (!path.incomplete) pathBreached = true;
+            }
+
+            if (pathBreached && room.controller && room.controller.safeModeAvailable > 0 && !room.controller.safeMode && !room.controller.safeModeCooldown) {
                 room.controller.activateSafeMode();
-                log.alert(`safemode-${room.name}`, `CRITICAL BREACH! Safe mode activated in ${room.name}`);
+                log.error(`CRITICAL BREACH! Safe mode activated in ${room.name} due to Pathfinding Threat!`);
             }
 
             // ────────────────────────────────────────────────────────────
-            // 2. Synchronized Tower Network (Anti-Drainer)
+            // 2. Synchronized Tower Network (Target Sweeping & TOUGH Math)
             // ────────────────────────────────────────────────────────────
             if (towers.length > 0) {
-                const target = towers[0].pos.findClosestByRange(hostiles);
-                if (target) {
-                    const totalDpt = towers.reduce((sum, t) => sum + this.calculateTowerDamage(t, target.pos), 0);
+                let fired = false;
+
+                // Iterate ALL hostiles and apply TOUGH Math
+                for (const target of hostiles) {
+                    const rawDpt = towers.reduce((sum, t) => sum + this.calculateTowerDamage(t, target.pos), 0);
+                    const toughMult = this.calculateEnemyToughMultiplier(target);
+                    const effectiveDpt = rawDpt * toughMult;
                     const totalHpt = this.calculateEnemyHeal(target);
 
-                    if (totalDpt > totalHpt * 1.1 || target.owner.username === "Invader") {
+                    if (effectiveDpt > totalHpt * 1.1 || target.owner.username === "Invader") {
                         towers.forEach(t => t.attack(target));
-                    } else {
-                        log.warning(`HOLD FIRE in ${room.name}: Enemy HPT (${totalHpt}) exceeds Tower DPT (${totalDpt}).`);
+                        fired = true;
+                        break; // Found a killable target! Focus fire.
                     }
+                }
+
+                if (!fired) {
+                    log.warning(`HOLD FIRE in ${room.name}: Enemies out-healing effective DPT.`);
                 }
             }
         } else if (towers.length > 0) {
@@ -230,17 +269,19 @@ export class DefenseOverlord extends Overlord {
                 if (rallyPoint) defender.travelTo(rallyPoint, 3);
             }
 
-            // 4b. Healing (Post-Combat to avoid locking the attack pipeline)
+            // 4b. Pre-Healing (Execute regardless of current hits to negate burst damage)
             if (creep.getActiveBodyparts(HEAL) > 0) {
-                if (creep.hits < creep.hitsMax) {
-                    if (!meleeEngaged) defender.heal(creep);
-                } else {
-                    const wounded = defender.pos.findInRange(FIND_MY_CREEPS, 3, { filter: (c: Creep) => c.hits < c.hitsMax });
-                    if (wounded.length > 0) {
-                        const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
-                        if (defender.pos.isNearTo(healTarget) && !meleeEngaged) defender.heal(healTarget);
-                        else if (!rangedEngaged) defender.rangedHeal(healTarget);
-                    }
+                const wounded = defender.pos.findInRange(FIND_MY_CREEPS, 3, { filter: (c: Creep) => c.hits < c.hitsMax });
+
+                // Unconditional Pre-Heal: prioritize most damaged ally, otherwise pre-heal self
+                const healTarget = wounded.length > 0 ? wounded.sort((a, b) => a.hits - b.hits)[0] : creep;
+
+                if (defender.pos.isNearTo(healTarget) && !meleeEngaged) {
+                    defender.heal(healTarget);
+                } else if (!rangedEngaged && defender.pos.getRangeTo(healTarget) <= 3) {
+                    defender.rangedHeal(healTarget);
+                } else if (!meleeEngaged) {
+                    defender.heal(creep); // Fallback: always pre-heal self
                 }
             }
         }
