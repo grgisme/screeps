@@ -1,0 +1,107 @@
+ai_context_structure.txt
+.gitignore
+README.md
+docs/architecture.md
+docs/automated_planning.md
+docs/colony_management.md
+docs/index.md
+docs/mining.md
+docs/remote_mining.md
+package-lock.json
+package.json
+research/2026-02-18 - Screeps Research Combined.pdf
+research/Modernizing Screeps Military AI.pdf
+research/Screeps Architecture Code Review.pdf
+research/Screeps Genesis Protocol Report.pdf
+research/Screeps Lab Automation & Boosting.pdf
+research/Screeps Link & Terminal Automation.pdf
+research/Screeps Logging Best Practices Research.pdf
+research/Screeps Logistics Broker Best Practices.pdf
+research/Screeps Resource Engine Optimization.pdf
+research/Screeps Spawn System Architecture.pdf
+rollup.config.mjs
+src/kernel/ErrorMapper.ts
+src/kernel/GlobalCache.ts
+src/kernel/GlobalManager.ts
+src/kernel/Kernel.ts
+src/kernel/Process.ts
+src/kernel/ProcessStatus.ts
+src/kernel/memory/SegmentManager.ts
+src/main.ts
+src/os/colony/Colony.ts
+src/os/colony/Hatchery.ts
+src/os/colony/LinkNetwork.ts
+src/os/colony/LogisticsNetwork.ts
+src/os/colony/MiningSite.ts
+src/os/directives/Directive.ts
+src/os/directives/resource/HarvestDirective.ts
+src/os/infrastructure/BunkerLayout.ts
+src/os/infrastructure/TrafficManager.ts
+src/os/overlords/ConstructionOverlord.ts
+src/os/overlords/MiningOverlord.ts
+src/os/overlords/Overlord.ts
+src/os/overlords/TransporterOverlord.ts
+src/os/overlords/colonization/RemoteMiningOverlord.ts
+src/os/overlords/colonization/ReserverOverlord.ts
+src/os/overlords/colonization/ScoutOverlord.ts
+src/os/overlords/combat/DestroyerOverlord.ts
+src/os/overlords/core/UpgradingOverlord.ts
+src/os/overlords/core/WorkerOverlord.ts
+src/os/overlords/core/defense/DefenseOverlord.ts
+src/os/overlords/economy/TerminalOverlord.ts
+src/os/processes/ColonyProcess.ts
+src/os/processes/ProfilerProcess.ts
+src/os/tasks/BuildTask.ts
+src/os/tasks/HarvestTask.ts
+src/os/tasks/ITask.ts
+src/os/tasks/PickupTask.ts
+src/os/tasks/RepairTask.ts
+src/os/tasks/TransferTask.ts
+src/os/tasks/UpgradeTask.ts
+src/os/tasks/WithdrawTask.ts
+src/os/zerg/CombatZerg.ts
+src/os/zerg/Miner.ts
+src/os/zerg/Transporter.ts
+src/os/zerg/Upgrader.ts
+src/os/zerg/Worker.ts
+src/os/zerg/Zerg.ts
+src/types.d.ts
+src/utils/Algorithms.ts
+src/utils/CreepBody.ts
+src/utils/Logger.ts
+src/utils/RoomPosition.ts
+src/version.ts
+sync.js
+test/core/DataLayer.test.ts
+test/kernel/Kernel.test.ts
+test/kernel/Process.test.ts
+test/mock.setup.ts
+test/os/LogisticsNetwork.test.ts
+test/os/Overlord.test.ts
+test/os/TrafficManager.test.ts
+test/os/colony/Hatchery.test.ts
+test/os/colony/LinkNetwork.test.ts
+test/os/colony/MiningSite.test.ts
+test/os/directives/Directive.test.ts
+test/os/directives/colonization/ReserverOverlord.test.ts
+test/os/directives/resource/HarvestDirective.test.ts
+test/os/infrastructure/BunkerLayout.test.ts
+test/os/overlords/colonization/RemoteMiningOverlord.defense.test.ts
+test/os/overlords/colonization/RemoteMiningOverlord.test.ts
+test/os/overlords/core/UpgradingOverlord.test.ts
+test/os/overlords/core/WorkerOverlord.test.ts
+test/os/overlords/economy/TerminalOverlord.test.ts
+test/os/processes/ProfilerProcess.test.ts
+test/os/processes/economy/MiningOverlord.test.ts
+test/os/processes/overlords/TransporterOverlord.test.ts
+test/os/zerg/CombatZerg.test.ts
+test/os/zerg/Transporter.test.ts
+test/utils/Algorithms.test.ts
+test/utils/CreepBody.test.ts
+test/utils/GlobalCache.test.ts
+test/utils/Logger.test.ts
+tsc_errors.txt
+tsc_out.txt
+tsconfig.build.json
+tsconfig.json
+upload.js

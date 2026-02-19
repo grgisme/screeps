@@ -6,14 +6,14 @@
 // Colony.run() iterates all zergs and calls zerg.run() once per tick.
 // ============================================================================
 
-import { Overlord } from "../Overlord";
-import type { Colony } from "../../colony/Colony";
-import { Upgrader } from "../../zerg/Upgrader";
-import { WithdrawTask } from "../../tasks/WithdrawTask";
-import { PickupTask } from "../../tasks/PickupTask";
-import { HarvestTask } from "../../tasks/HarvestTask";
-import { UpgradeTask } from "../../tasks/UpgradeTask";
-import { Logger } from "../../../utils/Logger";
+import { Overlord } from "./Overlord";
+import type { Colony } from "../colony/Colony";
+import { Upgrader } from "../zerg/Upgrader";
+import { WithdrawTask } from "../tasks/WithdrawTask";
+import { PickupTask } from "../tasks/PickupTask";
+import { HarvestTask } from "../tasks/HarvestTask";
+import { UpgradeTask } from "../tasks/UpgradeTask";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("Upgrading");
 

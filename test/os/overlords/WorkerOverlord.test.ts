@@ -1,8 +1,8 @@
 import { expect } from "chai";
-import { WorkerOverlord } from "../../../../src/os/overlords/core/WorkerOverlord";
-import { MiningOverlord } from "../../../../src/os/overlords/MiningOverlord";
-import { Colony } from "../../../../src/os/colony/Colony";
-import { MockColony, MockRoom, MockCreep } from "../../../mock.setup";
+import { WorkerOverlord } from "../../../src/os/overlords/WorkerOverlord";
+import { MiningOverlord } from "../../../src/os/overlords/MiningOverlord";
+import { Colony } from "../../../src/os/colony/Colony";
+import { MockColony, MockRoom, MockCreep } from "../../mock.setup";
 
 describe("WorkerOverlord", () => {
     let colony: Colony;

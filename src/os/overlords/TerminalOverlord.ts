@@ -1,6 +1,6 @@
-import { Overlord } from "../Overlord";
-import type { Colony } from "../../colony/Colony";
-import { Logger } from "../../../utils/Logger";
+import { Overlord } from "./Overlord";
+import type { Colony } from "../colony/Colony";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("TerminalOverlord");
 

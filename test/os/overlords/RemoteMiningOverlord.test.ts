@@ -1,8 +1,8 @@
-import "../../../mock.setup";
-import { resetMocks } from "../../../mock.setup";
+import "../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { RemoteMiningOverlord } from "../../../../src/os/overlords/colonization/RemoteMiningOverlord";
-import { Colony } from "../../../../src/os/colony/Colony";
+import { RemoteMiningOverlord } from "../../../src/os/overlords/RemoteMiningOverlord";
+import { Colony } from "../../../src/os/colony/Colony";
 
 describe("RemoteMiningOverlord", () => {
     let overlord: RemoteMiningOverlord;

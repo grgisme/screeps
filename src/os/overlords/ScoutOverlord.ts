@@ -2,9 +2,9 @@
 // ScoutOverlord — Sends a minimal creep to explore an invisible room
 // ============================================================================
 
-import { Overlord } from "../Overlord";
-import type { Colony } from "../../colony/Colony";
-import { Logger } from "../../../utils/Logger";
+import { Overlord } from "./Overlord";
+import type { Colony } from "../colony/Colony";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("ScoutOverlord");
 

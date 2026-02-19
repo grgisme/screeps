@@ -1,7 +1,7 @@
 import { expect } from "chai";
-import { RemoteMiningOverlord } from "../../../../src/os/overlords/colonization/RemoteMiningOverlord";
-import { Colony } from "../../../../src/os/colony/Colony";
-import { MockColony, MockRoom, MockCreep, MockRoomPosition } from "../../../mock.setup";
+import { RemoteMiningOverlord } from "../../../src/os/overlords/RemoteMiningOverlord";
+import { Colony } from "../../../src/os/colony/Colony";
+import { MockColony, MockRoom, MockCreep, MockRoomPosition } from "../../mock.setup";
 
 describe("RemoteMiningOverlord - Defense System", () => {
     let colony: Colony;

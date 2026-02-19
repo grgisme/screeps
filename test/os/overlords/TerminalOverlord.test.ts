@@ -1,8 +1,8 @@
 
-import { resetMocks } from "../../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { TerminalOverlord } from "../../../../src/os/overlords/economy/TerminalOverlord";
-import { Colony } from "../../../../src/os/colony/Colony";
+import { TerminalOverlord } from "../../../src/os/overlords/TerminalOverlord";
+import { Colony } from "../../../src/os/colony/Colony";
 
 describe("TerminalOverlord", () => {
     let colony: Colony;

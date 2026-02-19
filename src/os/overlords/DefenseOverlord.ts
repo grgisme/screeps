@@ -1,8 +1,8 @@
-import { Overlord } from "../../Overlord";
-import type { Colony } from "../../../colony/Colony";
-import { CombatZerg } from "../../../zerg/CombatZerg";
-import { TrafficManager } from "../../../infrastructure/TrafficManager";
-import { Logger } from "../../../../utils/Logger";
+import { Overlord } from "./Overlord";
+import type { Colony } from "../colony/Colony";
+import { CombatZerg } from "../zerg/CombatZerg";
+import { TrafficManager } from "../infrastructure/TrafficManager";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("DefenseOverlord");
 

@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { UpgradingOverlord } from "../../../../src/os/overlords/core/UpgradingOverlord";
-import { MockColony, MockRoom } from "../../../mock.setup";
+import { UpgradingOverlord } from "../../../src/os/overlords/UpgradingOverlord";
+import { MockColony, MockRoom } from "../../mock.setup";
 
 describe("UpgradingOverlord", () => {
     let colony: MockColony;

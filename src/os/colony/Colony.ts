@@ -13,16 +13,16 @@ import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
 import { TransporterOverlord } from "../overlords/TransporterOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
-import { WorkerOverlord } from "../overlords/core/WorkerOverlord";
-import { UpgradingOverlord } from "../overlords/core/UpgradingOverlord";
-import { TerminalOverlord } from "../overlords/economy/TerminalOverlord";
-import { DefenseOverlord } from "../overlords/core/defense/DefenseOverlord";
+import { WorkerOverlord } from "../overlords/WorkerOverlord";
+import { UpgradingOverlord } from "../overlords/UpgradingOverlord";
+import { TerminalOverlord } from "../overlords/TerminalOverlord";
+import { DefenseOverlord } from "../overlords/DefenseOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LinkNetwork } from "./LinkNetwork";
 import { LogisticsNetwork } from "./LogisticsNetwork";
 import { Hatchery } from "./Hatchery";
 import { Directive } from "../directives/Directive";
-import { HarvestDirective } from "../directives/resource/HarvestDirective";
+import { HarvestDirective } from "../directives/HarvestDirective";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };

@@ -1,7 +1,7 @@
-import "../../../mock.setup";
-import { resetMocks } from "../../../mock.setup";
+import "../../mock.setup";
+import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
-import { HarvestDirective } from "../../../../src/os/directives/resource/HarvestDirective";
+import { HarvestDirective } from "../../../src/os/directives/HarvestDirective";
 
 describe("HarvestDirective", () => {
     let mockColony: any;

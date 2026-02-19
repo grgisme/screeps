@@ -2,12 +2,12 @@
 // HarvestDirective — Orchestrates remote harvesting from a flag
 // ============================================================================
 
-import { Directive } from "../Directive";
-import type { Colony } from "../../colony/Colony";
-import { ScoutOverlord } from "../../overlords/colonization/ScoutOverlord";
-import { ReserverOverlord } from "../../overlords/colonization/ReserverOverlord";
-import { RemoteMiningOverlord } from "../../overlords/colonization/RemoteMiningOverlord";
-import { Logger } from "../../../utils/Logger";
+import { Directive } from "./Directive";
+import type { Colony } from "../colony/Colony";
+import { ScoutOverlord } from "../overlords/ScoutOverlord";
+import { ReserverOverlord } from "../overlords/ReserverOverlord";
+import { RemoteMiningOverlord } from "../overlords/RemoteMiningOverlord";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("HarvestDirective");
 

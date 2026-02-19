@@ -2,12 +2,12 @@
 // RemoteMiningOverlord — Mining operations for remote rooms
 // ============================================================================
 
-import { Overlord } from "../Overlord";
-import type { Colony } from "../../colony/Colony";
-import { MiningSite } from "../../colony/MiningSite";
-import { Transporter } from "../../zerg/Transporter";
-import { Miner } from "../../zerg/Miner";
-import { Logger } from "../../../utils/Logger";
+import { Overlord } from "./Overlord";
+import type { Colony } from "../colony/Colony";
+import { MiningSite } from "../colony/MiningSite";
+import { Transporter } from "../zerg/Transporter";
+import { Miner } from "../zerg/Miner";
+import { Logger } from "../../utils/Logger";
 
 const log = new Logger("RemoteMiningOverlord");
 
