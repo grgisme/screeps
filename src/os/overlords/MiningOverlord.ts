@@ -1,8 +1,19 @@
+// ============================================================================
+// MiningOverlord — Manages mining sites, miners, and haulers
+// ============================================================================
+//
+// ⚠️ IoC PATTERN: Overlords assign tasks. They do NOT call zerg.run().
+// Colony.run() iterates all zergs and calls zerg.run() once per tick.
+// ============================================================================
+
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { MiningSite } from "../colony/MiningSite";
 import { Miner } from "../zerg/Miner";
 import { Zerg } from "../zerg/Zerg";
+import { HarvestTask } from "../tasks/HarvestTask";
+import { WithdrawTask } from "../tasks/WithdrawTask";
+import { TransferTask } from "../tasks/TransferTask";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("Mining");
@@ -17,37 +28,34 @@ export class MiningOverlord extends Overlord {
     }
 
     init(): void {
-        // The getter pattern means we no longer need refresh() — Game.creeps
-        // is resolved each tick automatically. Just prune dead zergs.
+        // Prune dead zergs (getter pattern — no refresh needed)
         this.zergs = this.zergs.filter(z => z.isAlive());
 
-        // Adopt orphaned miners/haulers after global resets
+        // Adopt orphaned miners/haulers after global resets (throttled)
         this.adoptOrphans();
 
-        // 1. Instantiate Sites if not done
+        // 1. Instantiate Sites if not done (uses sourceId, not live Source)
         if (this.sites.length === 0) {
-            const sources = this.colony.room.find(FIND_SOURCES);
-            for (const source of sources) {
-                this.sites.push(new MiningSite(this.colony, source));
+            const room = this.colony.room;
+            if (room) {
+                const sources = room.find(FIND_SOURCES) as Source[];
+                for (const source of sources) {
+                    this.sites.push(new MiningSite(this.colony, source.id));
+                }
             }
         }
 
-        // 2. Refresh Sites
+        // 2. Throttled structure discovery on sites
         for (const site of this.sites) {
-            site.refresh();
+            site.refreshStructureIds();
         }
 
-        // 3. Creep Assignment
+        // 3. Creep Assignment — cast existing zergs, don't re-wrap
         this.miners = this.zergs
-            .filter(z => (z.memory as any).role === "miner")
-            .map(z => {
-                const mem = (z.memory as any);
-                if (!mem.state || !mem.state.siteId) return null;
-                return new Miner(z.creepName);
-            })
-            .filter(m => m !== null) as Miner[];
+            .filter(z => (z.memory as any)?.role === "miner") as Miner[];
 
-        this.haulers = this.zergs.filter(z => (z.memory as any).role === "hauler");
+        this.haulers = this.zergs
+            .filter(z => (z.memory as any)?.role === "hauler");
 
         // 4. Spawn Logic per Site
         for (const site of this.sites) {
@@ -57,10 +65,14 @@ export class MiningOverlord extends Overlord {
 
     /**
      * Adopt orphaned miners and haulers that survive global resets.
-     * Without this, zergs is empty after a reset and miners never get run().
+     * Throttled to every 100 ticks to avoid CPU waste.
      */
     private adoptOrphans(): void {
+        if (Game.time % 100 !== 0) return;
+
         const room = this.colony.room;
+        if (!room) return;
+
         const orphans = room.find(FIND_MY_CREEPS, {
             filter: (creep: Creep) =>
                 (creep.memory.role === "miner" || creep.memory.role === "hauler") &&
@@ -80,79 +92,97 @@ export class MiningOverlord extends Overlord {
      * Workers should compensate when this is true.
      */
     get isSuspended(): boolean {
+        const room = this.colony.room;
         return this.sites.every(s => !s.container && !s.link)
-            && !this.colony.room.storage;
+            && !(room?.storage);
     }
 
     private handleSpawning(site: MiningSite): void {
+        const room = this.colony.room;
+        if (!room) return;
+
         // Gate: require container, link, or storage before spawning specialized miners
-        if (!site.container && !site.link && !this.colony.room.storage) {
+        if (!site.container && !site.link && !room.storage) {
             return;
         }
 
+        const source = site.source;
+        if (!source) return;
+
         const siteMiners = this.miners.filter(m => {
             const mem = m.memory as any;
-            return mem?.state?.siteId === site.source.id;
+            return mem?.state?.siteId === site.sourceId;
         });
         if (siteMiners.length < 1) {
             this.colony.hatchery.enqueue({
-                priority: 100, // Very High, essential for energy
-                bodyTemplate: [WORK, WORK, MOVE], // Scales with energy: 250/repeat
+                priority: 100,
+                bodyTemplate: [WORK, WORK, MOVE],
                 overlord: this,
-                name: `miner_${site.source.id}_${Game.time}`,
-                memory: { role: "miner", state: { siteId: site.source.id } }
+                name: `miner_${site.sourceId}_${Game.time}`,
+                memory: { role: "miner", state: { siteId: site.sourceId } }
             });
         }
 
         // B. Haulers
-        // Calculate needed power
         const powerNeeded = site.calculateHaulingPowerNeeded();
         const currentPower = this.haulers
-            .filter(h => (h.memory as any).state.siteId === site.source.id)
-            .reduce((sum, h) => sum + h.creep!.store.getCapacity(), 0);
+            .filter(h => (h.memory as any)?.state?.siteId === site.sourceId)
+            .reduce((sum, h) => sum + (h.store?.getCapacity() ?? 0), 0);
 
-        log.throttle(100, () => `Site [${site.source.id.slice(-4)}]: Dist=${site.distance}, HaulNeeded=${powerNeeded}, HaulCurrent=${currentPower}`, site.source.id.charCodeAt(0));
+        if (Game.time % 100 === 0) {
+            log.info(`Site [${site.sourceId.slice(-4)}]: Dist=${site.distance}, HaulNeeded=${powerNeeded}, HaulCurrent=${currentPower}`);
+        }
 
         if (currentPower < powerNeeded) {
             this.colony.hatchery.enqueue({
-                priority: 50, // Medium-High
+                priority: 50,
                 bodyTemplate: [CARRY, MOVE],
                 overlord: this,
-                name: `hauler_${site.source.id}_${Game.time}`,
-                memory: { role: "hauler", state: { siteId: site.source.id } }
+                name: `hauler_${site.sourceId}_${Game.time}`,
+                memory: { role: "hauler", state: { siteId: site.sourceId } }
             });
         }
     }
 
+    // -----------------------------------------------------------------------
+    // IoC Task Assignment — Overlord assigns tasks; Colony calls zerg.run()
+    // -----------------------------------------------------------------------
+
     run(): void {
+        // Assign tasks to idle miners
         for (const miner of this.miners) {
-            miner.run();
+            if (!miner.isAlive()) continue;
+            if (!miner.task) {
+                const mem = miner.memory as any;
+                const siteId = mem?.state?.siteId;
+                const site = this.sites.find(s => s.sourceId === siteId);
+                if (site?.source) {
+                    miner.setTask(new HarvestTask(site.source.id));
+                }
+            }
         }
 
+        // Assign tasks to idle haulers
         for (const hauler of this.haulers) {
-            // Simple delivery logic for now to validate spawning
             if (!hauler.isAlive()) continue;
-            if (hauler.creep!.store.getFreeCapacity() > 0) {
-                // Go to site container
-                const site = this.sites.find(s => s.source.id === (hauler.memory as any).state.siteId);
-                if (site && site.containerPos) {
-                    if (!hauler.pos!.inRangeTo(site.containerPos, 1)) {
-                        hauler.travelTo(site.containerPos);
-                    } else {
-                        if (site.container) hauler.creep!.withdraw(site.container, RESOURCE_ENERGY);
-                        else {
-                            // Pickup dropped?
-                            const dropped = site.containerPos.lookFor(LOOK_RESOURCES)[0];
-                            if (dropped) hauler.creep!.pickup(dropped);
-                        }
-                    }
+            if (hauler.task) continue;
+
+            const mem = hauler.memory as any;
+            const siteId = mem?.state?.siteId;
+            const site = this.sites.find(s => s.sourceId === siteId);
+
+            if (hauler.store?.getUsedCapacity() === 0) {
+                // Empty — go withdraw from site container
+                if (site?.containerId) {
+                    hauler.setTask(new WithdrawTask(site.containerId));
                 }
             } else {
-                // Deliver to storage/spawn
-                const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
-                if (dropoff) {
-                    if (hauler.creep!.transfer(dropoff, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        hauler.travelTo(dropoff);
+                // Full or partially full — deliver to storage or spawn
+                const room = this.colony.room;
+                if (room) {
+                    const dropoff = room.storage || room.find(FIND_MY_SPAWNS)?.[0];
+                    if (dropoff) {
+                        hauler.setTask(new TransferTask(dropoff.id as Id<Structure | Creep>));
                     }
                 }
             }

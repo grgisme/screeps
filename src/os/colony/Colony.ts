@@ -1,4 +1,14 @@
-// import type { Overlord } from "../overlords/Overlord";
+// ============================================================================
+// Colony — Central coordinator for a single owned room
+// ============================================================================
+//
+// ⚠️ GETTER PATTERN (V8 MEMORY LEAK PREVENTION)
+// ══════════════════════════════════════════════
+// Colony persists in the Global Heap. NEVER cache live `Room` or `Creep[]`.
+// Use getters that resolve from `Game.rooms` / `Room.find()` each tick.
+// ============================================================================
+
+import type { Overlord } from "../overlords/Overlord";
 import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
@@ -23,11 +33,9 @@ export interface ColonyState {
 
 export class Colony {
     name: string;
-    room: Room;
     memory: ColonyMemory;
     state: ColonyState;
-    overlords: any[] = [];
-    creeps: Creep[] = [];
+    overlords: Overlord[] = [];
     directives: Directive[] = [];
     zergs: Map<string, Zerg> = new Map();
     logistics: LogisticsNetwork;
@@ -36,7 +44,6 @@ export class Colony {
 
     constructor(roomName: string) {
         this.name = roomName;
-        this.room = Game.rooms[roomName];
 
         // Init memory
         if (!(Memory as any).colonies) (Memory as any).colonies = {};
@@ -45,19 +52,33 @@ export class Colony {
 
         this.state = { rclChanged: true };
 
+        this.logistics = new LogisticsNetwork(this);
+        this.linkNetwork = new LinkNetwork(this);
+        this.hatchery = new Hatchery(this);
+
         if (this.room) {
-            this.scan();
-            this.logistics = new LogisticsNetwork(this);
-            this.linkNetwork = new LinkNetwork(this);
-            this.hatchery = new Hatchery(this);
             this.initOverlords();
             this.initDirectives();
-        } else {
-            this.logistics = new LogisticsNetwork(this);
-            this.linkNetwork = new LinkNetwork(this);
-            this.hatchery = new Hatchery(this);
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Getters — resolve live Game objects each tick (no V8 leaks)
+    // -----------------------------------------------------------------------
+
+    /** Resolve the live Room from Game.rooms. Returns undefined if not visible. */
+    get room(): Room | undefined {
+        return Game.rooms[this.name];
+    }
+
+    /** Find all owned creeps in this colony's room. */
+    get creeps(): Creep[] {
+        return this.room?.find(FIND_MY_CREEPS) ?? [];
+    }
+
+    // -----------------------------------------------------------------------
+    // Overlord Management
+    // -----------------------------------------------------------------------
 
     private initOverlords(): void {
         this.registerOverlord(new ConstructionOverlord(this));
@@ -69,33 +90,13 @@ export class Colony {
         this.registerOverlord(new DefenseOverlord(this));
     }
 
-    scan(): void {
-        this.creeps = this.room ? this.room.find(FIND_MY_CREEPS) : [];
-        if (this.linkNetwork) this.linkNetwork.refresh();
-    }
-
-    refresh(): void {
-        this.room = Game.rooms[this.name];
-        this.logistics.refresh();
-        this.hatchery.refresh();
-        this.scan();
-
-        if (this.room && this.room.controller) {
-            // Check RCL logic here
-        }
-
-        if (!this.room) return;
-
-        for (const [name, zerg] of this.zergs.entries()) {
-            if (!zerg.isAlive()) {
-                this.zergs.delete(name);
-            }
-        }
-    }
-
-    registerOverlord(overlord: any): void {
+    registerOverlord(overlord: Overlord): void {
         this.overlords.push(overlord);
     }
+
+    // -----------------------------------------------------------------------
+    // Zerg Management
+    // -----------------------------------------------------------------------
 
     registerZerg(creep: Creep): Zerg {
         let zerg = this.zergs.get(creep.name);
@@ -110,6 +111,29 @@ export class Colony {
         return this.zergs.get(name);
     }
 
+    // -----------------------------------------------------------------------
+    // Refresh — called each tick before run()
+    // -----------------------------------------------------------------------
+
+    refresh(): void {
+        this.logistics.refresh();
+        this.hatchery.refresh();
+        if (this.linkNetwork) this.linkNetwork.refresh();
+
+        if (!this.room) return;
+
+        // Prune dead zergs
+        for (const [name, zerg] of this.zergs.entries()) {
+            if (!zerg.isAlive()) {
+                this.zergs.delete(name);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Directives
+    // -----------------------------------------------------------------------
+
     private initDirectives(): void {
         if (!Game.flags) return;
         for (const name in Game.flags) {
@@ -123,6 +147,10 @@ export class Colony {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Main Loop
+    // -----------------------------------------------------------------------
 
     run(): void {
         if (!this.room) return;

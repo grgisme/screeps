@@ -1,0 +1,388 @@
+
+> screeps@2.34 test
+> mocha -r ts-node/register test/**/*.test.ts
+
+
+
+  Data Layer Optimization
+    GlobalCache (Hydration)
+      Γ£ö should rehydrate from heap if available
+Γä╣∩╕Å [INFO] [GlobalCache] Committed 1 dirty objects to Memory
+      Γ£ö should commit dirty state to Memory
+      Γ£ö should not commit clean state
+    SegmentManager
+      Γ£ö should allow requesting segments up to limit
+ΓÜá∩╕Å [WARN] [SegmentManager] Cannot request segment 10: Max active limit (10) reached.
+ΓÜá∩╕Å [WARN] [SegmentManager] Cannot request segment 11: Max active limit (10) reached.
+ΓÜá∩╕Å [WARN] [SegmentManager] Cannot request segment 12: Max active limit (10) reached.
+ΓÜá∩╕Å [WARN] [SegmentManager] Cannot request segment 13: Max active limit (10) reached.
+ΓÜá∩╕Å [WARN] [SegmentManager] Cannot request segment 14: Max active limit (10) reached.
+      Γ£ö should reject requests beyond limit
+      Γ£ö should validate segment IDs (0-99)
+      Γ£ö should save data immediately to RawMemory active cache
+    GlobalManager
+      Γ£ö should init globals on reset
+
+  Kernel
+    Process Management
+      Γ£ö should add processes and assign PIDs
+      Γ£ö should remove processes by PID
+      Γ£ö should find processes by name
+      Γ£ö should return distinct priority levels
+    O(1) Process ID Index
+      Γ£ö should lookup process by custom processId
+      Γ£ö should check existence with hasProcessId
+      Γ£ö should clean up indexes on removeProcess
+    Scheduler
+      Γ£ö should execute processes in priority order (lower first)
+Γ¥î [Kernel] Process test (PID 1) crashed:
+Error: Intentional test crash
+    at TestProcess.run (C:\code\screeps\test\kernel\Kernel.test.ts:37:19)
+    at Kernel.run (C:\code\screeps\src\kernel\Kernel.ts:441:48)
+    at Context.<anonymous> (C:\code\screeps\test\kernel\Kernel.test.ts:188:20)
+    at callFn (C:\code\screeps\node_modules\mocha\lib\runnable.js:366:21)
+    at Test.Runnable.run (C:\code\screeps\node_modules\mocha\lib\runnable.js:354:5)
+    at Runner.runTest (C:\code\screeps\node_modules\mocha\lib\runner.js:719:10)
+    at C:\code\screeps\node_modules\mocha\lib\runner.js:842:12
+    at next (C:\code\screeps\node_modules\mocha\lib\runner.js:634:14)
+    at C:\code\screeps\node_modules\mocha\lib\runner.js:644:7
+    at next (C:\code\screeps\node_modules\mocha\lib\runner.js:527:14)
+    at Immediate._onImmediate (C:\code\screeps\node_modules\mocha\lib\runner.js:612:5)
+    at processImmediate (node:internal/timers:478:21)
+      Γ£ö should isolate process errors (one crash doesn't stop others)
+≡ƒ¢æ [ERROR] [Kernel] HARD CPU ceiling hit (19.0/19.0), aborting tick
+      Γ£ö should stop when soft CPU ceiling is reached (burst mode)
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ SAFE (bucket: 300)
+ΓÜá∩╕Å [WARN] [Kernel] CPU ceiling reached (19.0/19.0), deferring remaining
+      Γ£ö should use conservative soft limit when bucket is draining
+≡ƒ¢æ [ERROR] [Kernel] HARD CPU ceiling hit (480.0/475.0), aborting tick
+      Γ£ö should stop when hard tickLimit ceiling is hit
+      Γ£ö should start with empty scheduler report
+    Load Shedding ΓÇö 3-Tier CPU Governor
+      Γ£ö should be in NORMAL mode when bucket >= 500
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ SAFE (bucket: 300)
+      Γ£ö should be in SAFE mode when bucket < 500
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ EMERGENCY (bucket: 50)
+≡ƒ¢æ [ERROR] [Kernel] ≡ƒÜ¿ KERNEL PANIC ΓÇö Bucket critically low (50). Only priority-0 processes will execute. Non-essential creeps should idle.
+      Γ£ö should be in EMERGENCY mode when bucket < 100
+      Γ£ö should run all processes in NORMAL mode
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ SAFE (bucket: 300)
+      Γ£ö should skip priority > 2 in SAFE mode
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ EMERGENCY (bucket: 50)
+≡ƒ¢æ [ERROR] [Kernel] ≡ƒÜ¿ KERNEL PANIC ΓÇö Bucket critically low (50). Only priority-0 processes will execute. Non-essential creeps should idle.
+      Γ£ö should only run priority 0 in EMERGENCY mode
+    O(1) Wake Map
+      Γ£ö should skip sleeping processes without checking priority
+      Γ£ö should auto-wake process via wake map when time is reached
+      Γ£ö should handle stale PIDs in wake map gracefully
+    Generator Coroutines
+      Γ£ö should execute generator across multiple ticks
+Γ¥î [Kernel] Process crashcoro (PID 1) crashed:
+Error: crash mid-coroutine
+    at CrashCoroutine.run (C:\code\screeps\test\kernel\Kernel.test.ts:462:27)
+    at run.next (<anonymous>)
+    at Kernel.run (C:\code\screeps\src\kernel\Kernel.ts:435:55)
+    at Context.<anonymous> (C:\code\screeps\test\kernel\Kernel.test.ts:475:20)
+    at callFn (C:\code\screeps\node_modules\mocha\lib\runnable.js:366:21)
+    at Test.Runnable.run (C:\code\screeps\node_modules\mocha\lib\runnable.js:354:5)
+    at Runner.runTest (C:\code\screeps\node_modules\mocha\lib\runner.js:719:10)
+    at C:\code\screeps\node_modules\mocha\lib\runner.js:842:12
+    at next (C:\code\screeps\node_modules\mocha\lib\runner.js:634:14)
+    at C:\code\screeps\node_modules\mocha\lib\runner.js:644:7
+    at next (C:\code\screeps\node_modules\mocha\lib\runner.js:527:14)
+    at Immediate._onImmediate (C:\code\screeps\node_modules\mocha\lib\runner.js:612:5)
+    at processImmediate (node:internal/timers:478:21)
+      Γ£ö should clean up thread on process crash
+    Kernel Panic
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ EMERGENCY (bucket: 50)
+≡ƒ¢æ [ERROR] [Kernel] ≡ƒÜ¿ KERNEL PANIC ΓÇö Bucket critically low (50). Only priority-0 processes will execute. Non-essential creeps should idle.
+      Γ£ö should trigger panic mode when bucket < 100
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: NORMAL ΓåÆ EMERGENCY (bucket: 50)
+≡ƒ¢æ [ERROR] [Kernel] ≡ƒÜ¿ KERNEL PANIC ΓÇö Bucket critically low (50). Only priority-0 processes will execute. Non-essential creeps should idle.
+ΓÜá∩╕Å [WARN] [Kernel] Scheduler mode: EMERGENCY ΓåÆ NORMAL (bucket: 600)
+Γä╣∩╕Å [INFO] [Kernel] Kernel panic cleared ΓÇö bucket recovering
+      Γ£ö should clear panic mode when bucket recovers
+    Serialization
+      Γ£ö should persist sleepUntil and processId
+      Γ£ö should restore sleepUntil and processId
+      Γ£ö should rebuild all indexes on deserialize
+
+  Process
+    Γ£ö should initialize with ALIVE status
+    Γ£ö should set pid and priority from constructor
+    Γ£ö should default parentPID to null
+    Γ£ö should suspend and resume correctly
+    Γ£ö should not resume from DEAD status
+    Γ£ö should terminate correctly
+    Γ£ö should produce a descriptor for serialization
+    Γ£ö should execute the run method
+
+  Hatchery
+    Γ£ö should instantiate
+    Γ£ö should enqueue and sort by priority
+ΓÜá∩╕Å [WARN] [Hatchery] W1N1: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.
+    Γ£ö should spawn bootstrapper in emergency mode
+Γä╣∩╕Å [INFO] [Hatchery] Spawning 'TestCreep' (Cost: 1000) for Overlord 'ol1'.
+    Γ£ö should process queue if no emergency
+    Γ£ö should wait if not enough energy
+
+  LinkNetwork
+    Γ£ö should identify Hub Link
+    Γ£ö should identify Source Link
+    Γ£ö should transfer from Source to Hub when full
+
+  MiningSite
+    1) should instantiate and refresh
+    Γ£ö should calculate hauling power needed based on distance
+    Γ£ö should handle unreserved room power calculation
+
+  ReserverOverlord
+    Γ£ö should calculate threshold as Distance + SpawnTime + 500
+Γä╣∩╕Å [INFO] [ReserverOverlord] Reservation low in W2N1: 400 < 562. Requesting reserver.
+    Γ£ö should request reserver when ticksToEnd is below threshold
+    Γ£ö should NOT request reserver when ticksToEnd is above threshold
+Γä╣∩╕Å [INFO] [ReserverOverlord] Reservation low in W2N1: 0 < 562. Requesting reserver.
+    Γ£ö should request reserver when no reservation exists
+    Γ£ö should not request reserver when one is already alive
+    Γ£ö should scale threshold with distance
+
+  Directive
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should wrap a flag and expose roomName
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should extract target room from flag name
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should detect invisible target rooms
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should detect visible target rooms
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should register overlords with colony
+Γä╣∩╕Å [INFO] [Directive] Directive created: TestDirective for W1N1
+    Γ£ö should support init and run lifecycle
+
+  HarvestDirective
+    Γ£ö should spawn ScoutOverlord when target room is invisible
+    Γ£ö should not spawn RemoteMiningOverlord when room is invisible
+    Γ£ö should spawn RemoteMiningOverlord and ReserverOverlord when room is visible
+    Γ£ö should log the required console message on initialization
+
+  BunkerLayout
+    Γ£ö should return correct absolute positions
+    Γ£ö should define core structures
+    Γ£ö should have valid coordinates within range
+
+  LogisticsNetwork
+    Γ£ö should instantiate in Colony
+    Γ£ö should register requesters with options
+    Γ£ö should register providers
+    Γ£ö should match requests to providers
+    Γ£ö should update reservations on match
+    Γ£ö should respect effective amount to prevent double booking
+    Γ£ö should predict energy gain for source containers
+    Γ£ö should prioritize requests based on heuristic score
+
+  Overlord Control Pattern
+    Colony
+      Γ£ö should instantiate and scan for overlords
+      Γ£ö should register zergs
+    MiningOverlord
+      Γ£ö should request spawn if no miner exists
+    Zerg & Task
+      Γ£ö should execute task
+
+  RemoteMiningOverlord - Defense System
+    Γ£ö should detect invaders and trigger alarm
+    Γ£ö should ignore harmless hostiles (scouts)
+    Γ£ö should lift alarm after danger expires
+    Γ£ö should suspend spawning when dangerous
+
+  RemoteMiningOverlord
+    Γ£ö should instantiate and manage infrastructure
+    Γ£ö should not build container if exists
+    2) should build roads if reserved
+
+  UpgradingOverlord
+    Γ£ö should NOT spawn if no storage and low energy
+    Γ£ö should spawn maintenance upgrader if Storage exists
+    Γ£ö should trigger Critical Mode if downgrade imminent
+    Γ£ö should scale up to 3 upgraders if Rich
+
+  WorkerOverlord
+    Γ£ö should adopt orphan workers
+    Γ£ö should scale workers based on construction sites
+    Γ£ö should cap workers at maxWorkers (slot-based)
+    Γ£ö should spawn workers at high priority when mining is suspended (Genesis)
+    Γ£ö should prioritize Containers over Extensions
+
+  TerminalOverlord
+    Γ£ö should balance energy to poor rooms
+    Γ£ö should sell energy when critical full
+
+  MiningOverlord
+    Γ£ö should instantiate and initialize sites
+    Γ£ö should NOT request miner without a container (Genesis gate)
+    Γ£ö should request miner when container exists
+    Γ£ö should request hauler if capacity is low
+    Γ£ö should not request hauler if capacity is sufficient
+
+  TransporterOverlord
+    Γ£ö should instantiate
+    Γ£ö should calculate deficit properly
+    Γ£ö should request spawns when deficit is high
+
+  ProfilerProcess
+    Γ£ö should initialize with correct properties
+    Γ£ö should serialize to empty object (heap-only state)
+    Γ£ö should produce a valid descriptor
+    Γ£ö should not crash when kernel is not in heap
+    CPU Tracking
+      Γ£ö should accumulate CPU data from kernel profile
+      Γ£ö should output report after 20 ticks
+      Γ£ö should reset accumulator after report
+      Γ£ö should sort entries by CPU usage descending
+
+  UpgradeProcess
+    Γ£ö should initialize with correct properties
+    Γ£ö should serialize process-specific state
+    Γ£ö should deserialize process-specific state
+    Γ£ö should produce a valid descriptor
+    run()
+      Γ£ö should run without error when room is not visible
+      Γ£ö should spawn an upgrader when there is a deficit
+      Γ£ö should not spawn when at target count
+
+  RoomPlannerProcess
+    Γ£ö should find an anchor and save it to memory
+    Γ£ö should not re-plan if anchor exists
+
+  Movement Optimization
+    Zerg.travelTo (Path Caching)
+      Γ£ö should cache path after first call
+      Γ£ö should reuse cached path
+      Γ£ö should repath if stuck
+    TrafficManager
+      Γ£ö should execute move intent
+      Γ£ö should shove idle blocker
+      Γ£ö should not shove if blocker is fatigued
+
+  CombatZerg
+    Γ£ö should pre-heal self when damaged
+    Γ£ö should attack and kite (ranged behavior)
+
+  Transporter
+    Γ£ö should repair road underfoot if damaged
+    Γ£ö should not repair if no energy
+    Γ£ö should not repair if no WORK parts
+
+  Algorithms
+    distanceTransform
+      Γ£ö should calculate distances correctly for a simple room
+      Γ£ö should handle larger open areas
+
+  CreepBody
+    Γ£ö should return empty array for empty template
+    Γ£ö should grow body within energy limit
+    Γ£ö should cap at 50 parts
+    Γ£ö should sort TOUGH parts to the front
+
+  GlobalCache
+    isGlobalReset
+      Γ£ö should return true on the first call after reset
+      Γ£ö should return false on subsequent calls
+      Γ£ö should initialize the heap cache maps
+      Γ£ö should record lastGlobalReset in Memory
+    get / set
+      Γ£ö should store and retrieve values
+      Γ£ö should return undefined for missing keys
+      Γ£ö should overwrite existing values
+      Γ£ö should handle different types
+    delete
+      Γ£ö should delete an existing key
+      Γ£ö should return false for non-existent key
+    clear
+      Γ£ö should clear all cached values
+    getPathCache
+      Γ£ö should return the path cache map
+      Γ£ö should return the same map instance across calls
+
+  Logger
+    Log Levels
+      Γ£ö should have correct numeric values
+    Level Filtering
+      Γ£ö should default to INFO level
+      Γ£ö should filter out DEBUG messages at INFO level
+      Γ£ö should filter out TRACE messages at INFO level
+      Γ£ö should show INFO messages at INFO level
+      Γ£ö should show WARNING messages at INFO level
+      Γ£ö should show ERROR messages at INFO level
+      Γ£ö should show DEBUG messages when level is DEBUG
+      Γ£ö should show TRACE messages when level is TRACE
+      Γ£ö should filter INFO at ERROR level
+    Lazy Evaluation
+      Γ£ö should accept a function and only call it when logging
+      Γ£ö should NOT call the function when level is filtered
+    Console Output
+      Γ£ö should include the tag in output
+      Γ£ö should include the level label
+      Γ£ö should include emoji and level label
+    Delta Alert
+      Γ£ö should log the first call
+      Γ£ö should suppress repeated identical values
+      Γ£ö should log when value changes
+      Γ£ö should track keys independently
+    Modulo Throttle
+      Γ£ö should log when (Game.time + offset) % interval === 0
+      Γ£ö should suppress when not on interval
+      Γ£ö should support lazy messages
+      Γ£ö should not evaluate lazy message when throttled
+    Memory Persistence
+      Γ£ö should persist level changes to Memory
+      Γ£ö should read level from Memory
+    setLevelByName
+      Γ£ö should set level from string name
+      Γ£ö should handle case-insensitive input
+      Γ£ö should accept 'warn' as alias for WARNING
+      Γ£ö should accept 'trace' level
+      Γ£ö should log an error for unknown level names
+    HTML Formatting
+      style()
+        Γ£ö should wrap text in a font tag with color
+        Γ£ö should not use single quotes for attributes
+      style() alias
+        Γ£ö should be the only font-wrapping method (font() was removed)
+      roomLink()
+        Γ£ö should generate a clickable room link
+        Γ£ö should include shard name in the link
+      sanitize()
+        Γ£ö should escape < and > to prevent HTML injection
+        Γ£ö should escape & to prevent entity injection
+        Γ£ö should escape double quotes
+        Γ£ö should handle strings with no special characters
+        Γ£ö should handle hostile creep names
+    Plain Text Output Format
+      Γ£ö should include tag and message in output
+      Γ£ö should include level label in output
+      Γ£ö should include emoji for WARNING level
+
+
+  201 passing (47ms)
+  2 failing
+
+  1) MiningSite
+       should instantiate and refresh:
+     TypeError: Cannot read properties of null (reading 'id')
+      at Context.<anonymous> (test\os\colony\MiningSite.test.ts:62:29)
+      at processImmediate (node:internal/timers:478:21)
+
+  2) RemoteMiningOverlord
+       should build roads if reserved:
+
+      AssertionError: expected +0 to be above +0
+      + expected - actual
+
+
+      at Context.<anonymous> (test\os\overlords\colonization\RemoteMiningOverlord.test.ts:131:43)
+      at processImmediate (node:internal/timers:478:21)
+
+
+

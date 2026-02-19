@@ -1,65 +1,139 @@
+// ============================================================================
+// MiningSite — Represents a single Source and its mining infrastructure
+// ============================================================================
+//
+// ⚠️ GETTER PATTERN (V8 MEMORY LEAK PREVENTION)
+// ══════════════════════════════════════════════
+// MiningSite persists in the Global Heap (owned by MiningOverlord).
+// NEVER cache live Source, Container, or Link objects. Store IDs only.
+// ============================================================================
+
 import type { Colony } from "./Colony";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("MiningSite");
 
-
 export class MiningSite {
     colony: Colony;
-    source: Source;
-    container: StructureContainer | undefined;
-    link: StructureLink | undefined;
+
+    // ── Stored IDs only — never live Game objects ──────────────────────
+    readonly sourceId: Id<Source>;
+    containerId?: Id<StructureContainer>;
+    linkId?: Id<StructureLink>;
+
+    /** Calculated position for the container (safe to store — it's coords + room string). */
     containerPos: RoomPosition | undefined;
     linkPos: RoomPosition | undefined;
 
-    // Cached path length to storage/spawn
+    /** Cached path length to storage/spawn. */
     distance: number = 0;
 
-    constructor(colony: Colony, source: Source) {
+    constructor(colony: Colony, sourceId: Id<Source>) {
         this.colony = colony;
-        this.source = source;
-        this.refresh();
+        this.sourceId = sourceId;
+
+        // Calculate container position immediately (one-time expensive op)
+        this.calculateContainerPos();
+        this.calculateDistance();
     }
 
-    refresh(): void {
-        const freshSource = Game.getObjectById(this.source.id) as Source;
-        if (freshSource) this.source = freshSource;
-        // else keep existing source object (for tests or missing visibility)
-        // Re-acquire structures
-        if (this.containerPos) {
-            this.container = this.containerPos.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_CONTAINER) as StructureContainer;
-            this.link = this.linkPos ? this.linkPos.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_LINK) as StructureLink : undefined;
-        } else {
-            this.calculateContainerPos();
-        }
+    // -----------------------------------------------------------------------
+    // Getters — resolve live Game objects each tick (no heap leak)
+    // -----------------------------------------------------------------------
 
-        // 3. Ensure Container Site exists (Static Mining Alignment)
-        if (this.containerPos && !this.container) {
-            const site = this.containerPos.lookFor(LOOK_CONSTRUCTION_SITES).find(s => s.structureType === STRUCTURE_CONTAINER);
-            if (!site) {
-                this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
-                log.info(`Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+    /** Resolve the live Source from Game. Returns null if not visible. */
+    get source(): Source | null {
+        return Game.getObjectById(this.sourceId);
+    }
+
+    /** Resolve the live Container from its cached ID. */
+    get container(): StructureContainer | null {
+        return this.containerId ? Game.getObjectById(this.containerId) : null;
+    }
+
+    /** Resolve the live Link from its cached ID. */
+    get link(): StructureLink | null {
+        return this.linkId ? Game.getObjectById(this.linkId) : null;
+    }
+
+    // -----------------------------------------------------------------------
+    // Throttled Structure Discovery — runs every 50 ticks
+    // -----------------------------------------------------------------------
+
+    /**
+     * Discover built containers/links and place construction sites.
+     * Throttled to once every 50 ticks to avoid CPU bombs from lookFor.
+     */
+    refreshStructureIds(): void {
+        if (Game.time % 50 !== 0) return;
+
+        // 1. Find container at the calculated position
+        if (this.containerPos && !this.containerId) {
+            const found = this.containerPos
+                .lookFor(LOOK_STRUCTURES)
+                .find(s => s.structureType === STRUCTURE_CONTAINER) as StructureContainer | undefined;
+            if (found) {
+                this.containerId = found.id;
+                log.info(`Discovered container ${found.id.slice(-4)} at site ${this.sourceId.slice(-4)}`);
+            } else {
+                // Ensure construction site exists
+                const site = this.containerPos
+                    .lookFor(LOOK_CONSTRUCTION_SITES)
+                    .find(s => s.structureType === STRUCTURE_CONTAINER);
+                if (!site) {
+                    this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
+                    log.info(`Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+                }
             }
         }
 
+        // 2. Find link at the calculated position
+        if (this.linkPos && !this.linkId) {
+            const found = this.linkPos
+                .lookFor(LOOK_STRUCTURES)
+                .find(s => s.structureType === STRUCTURE_LINK) as StructureLink | undefined;
+            if (found) {
+                this.linkId = found.id;
+                log.info(`Discovered link ${found.id.slice(-4)} at site ${this.sourceId.slice(-4)}`);
+            }
+        }
+
+        // 3. Re-validate existing IDs (structure may have been destroyed)
+        if (this.containerId && !this.container) {
+            this.containerId = undefined;
+        }
+        if (this.linkId && !this.link) {
+            this.linkId = undefined;
+        }
+
+        // 4. Recalculate distance if not yet computed
         if (this.distance === 0) {
             this.calculateDistance();
         }
     }
 
+    // -----------------------------------------------------------------------
+    // One-time calculations
+    // -----------------------------------------------------------------------
+
     private calculateContainerPos(): void {
-        const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
+        const room = this.colony.room;
+        if (!room) return;
+
+        const source = this.source;
+        if (!source) return;
+
+        const dropoff = room.storage || room.find(FIND_MY_SPAWNS)[0];
         if (!dropoff) return;
 
-        const path = PathFinder.search(this.source.pos, { pos: dropoff.pos, range: 1 }, {
+        const path = PathFinder.search(source.pos, { pos: dropoff.pos, range: 1 }, {
             plainCost: 2,
             swampCost: 10,
             roomCallback: (roomName) => {
-                const room = Game.rooms[roomName];
-                if (!room) return false;
+                const r = Game.rooms[roomName];
+                if (!r) return false;
                 const costMatrix = new PathFinder.CostMatrix();
-                // Avoid walls, but don't treat creeps as blockers for static analysis
-                room.find(FIND_STRUCTURES).forEach(s => {
+                r.find(FIND_STRUCTURES).forEach(s => {
                     if (s.structureType === STRUCTURE_WALL) {
                         costMatrix.set(s.pos.x, s.pos.y, 255);
                     }
@@ -69,34 +143,30 @@ export class MiningSite {
         });
 
         if (path.path.length > 0) {
-            // The first step away from the source is usually a good container spot if it's not a wall
-            // Actually, we want a spot adjacent to the source that is closest to the storage.
-            // PathFinder path[0] is the first step *towards* the target.
             this.containerPos = path.path[0];
         }
     }
 
     private calculateDistance(): void {
-        const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
+        const room = this.colony.room;
+        if (!room) return;
+
+        const dropoff = room.storage || room.find(FIND_MY_SPAWNS)?.[0];
         if (!dropoff || !this.containerPos) return;
 
-        // Use cached path calculation if possible, but for now simple range or path length
-        // We precise path length for hauling calculations
         const path = PathFinder.search(this.containerPos, { pos: dropoff.pos, range: 1 });
         this.distance = path.path.length;
     }
 
     /**
-     * Calculate required hauling power in carry parts * ticks
+     * Calculate required hauling power in carry parts * ticks.
      * Formula: (EnergyPerTick * 2 * Distance)
      */
     calculateHaulingPowerNeeded(): number {
-        if (!this.containerPos) return 0; // Not established yet
+        if (!this.containerPos) return 0;
 
-        // EnergyPerTick: 10 for reserved (Source Keeper or Owned), 5 for Unreserved.
-        // For now, assume owned room (10) or check reservation.
-        // TODO: specific reservation check for remote rooms.
-        const energyPerTick = (this.colony.room.controller && (this.colony.room.controller.my || this.colony.room.controller.reservation)) ? 10 : 5;
+        const room = this.colony.room;
+        const energyPerTick = (room?.controller && (room.controller.my || room.controller.reservation)) ? 10 : 5;
 
         return energyPerTick * 2 * this.distance;
     }

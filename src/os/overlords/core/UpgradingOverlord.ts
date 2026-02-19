@@ -30,9 +30,9 @@ export class UpgradingOverlord extends Overlord {
     }
 
     private adoptOrphans(): void {
-        const orphans = this.colony.room.find(FIND_MY_CREEPS, {
+        const orphans = this.colony.room?.find(FIND_MY_CREEPS, {
             filter: (creep: Creep) => creep.memory.role === "upgrader" && !this.colony.getZerg(creep.name)
-        });
+        }) ?? [];
 
         for (const orphan of orphans) {
             const zerg = this.colony.registerZerg(orphan);
@@ -46,6 +46,7 @@ export class UpgradingOverlord extends Overlord {
 
     private handleSpawning(): void {
         const room = this.colony.room;
+        if (!room) return;
         const storage = room.storage;
         const controller = room.controller;
 
@@ -61,7 +62,7 @@ export class UpgradingOverlord extends Overlord {
         // Otherwise, workers handle upgrading as a fallback task.
         const downgradeImminent = controller.ticksToDowngrade < 4000;
         const hasStorage = storage && storage.store.energy > 0;
-        const hasContainers = room.find(FIND_STRUCTURES, {
+        const hasContainers = room!.find(FIND_STRUCTURES, {
             filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
         }).length > 0;
         const isRCL8 = controller.level === 8;
@@ -82,7 +83,7 @@ export class UpgradingOverlord extends Overlord {
         let shouldSpawn = false;
         if (hasStorage && storage!.store.energy > 10000) {
             shouldSpawn = true;
-        } else if (hasContainers && room.energyAvailable > room.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) {
+        } else if (hasContainers && room!.energyAvailable > room!.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) {
             // Surplus mode — but ONLY with logistics infrastructure
             shouldSpawn = true;
         }

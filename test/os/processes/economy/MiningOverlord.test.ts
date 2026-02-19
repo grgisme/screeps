@@ -25,6 +25,7 @@ describe("MiningOverlord", () => {
 
         (globalThis as any).Game.getObjectById = (id: string) => {
             if (id === "src1") return source;
+            if (id === "container1") return { id: "container1", structureType: STRUCTURE_CONTAINER, store: { getUsedCapacity: () => 1000 } };
             return null;
         };
 
@@ -36,7 +37,8 @@ describe("MiningOverlord", () => {
                 enqueue: (req: any) => { hatcheryQueue.push(req); }
             },
             overlords: [],
-            registerOverlord: () => { }
+            registerOverlord: () => { },
+            getZerg: () => undefined
         };
     });
 
@@ -46,7 +48,7 @@ describe("MiningOverlord", () => {
         overlord.init();
 
         expect(overlord.sites).to.have.length(1);
-        expect(overlord.sites[0].source.id).to.equal("src1");
+        expect(overlord.sites[0].sourceId).to.equal("src1");
     });
 
     it("should NOT request miner without a container (Genesis gate)", () => {
@@ -67,7 +69,7 @@ describe("MiningOverlord", () => {
 
         // Simulate a built container on the site
         const site = overlord.sites[0];
-        site.container = { id: "container1" } as any;
+        site.containerId = "container1" as Id<StructureContainer>;
 
         hatcheryQueue = [];
         (overlord as any).handleSpawning(site);
@@ -85,7 +87,7 @@ describe("MiningOverlord", () => {
         // Mock site to require power
         overlord.init();
         const site = overlord.sites[0];
-        site.container = { id: "container1" } as any; // Container gate requires this
+        site.containerId = "container1" as Id<StructureContainer>; // Container gate requires this
         site.containerPos = new RoomPosition(11, 11, "W1N1");
         site.distance = 10;
         // Mock calculateHaulingPowerNeeded
@@ -122,6 +124,7 @@ describe("MiningOverlord", () => {
             name: "hauler1",
             creep: haulerCreep,
             memory: haulerCreep.memory,
+            store: haulerCreep.store,
             isAlive: () => true
         } as any];
 

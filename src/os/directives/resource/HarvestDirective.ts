@@ -47,7 +47,7 @@ export class HarvestDirective extends Directive {
             this._initialized = true;
 
             // Calculate distance from home colony to remote room
-            const homeSpawn = this.colony.room.find(FIND_MY_SPAWNS)[0];
+            const homeSpawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
             const remoteRoom = Game.rooms[target];
             if (homeSpawn && remoteRoom) {
                 const path = PathFinder.search(homeSpawn.pos, { pos: new RoomPosition(25, 25, target), range: 20 });

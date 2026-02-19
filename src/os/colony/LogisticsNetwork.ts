@@ -118,7 +118,7 @@ export class LogisticsNetwork {
 
         // Buffer Logic
         // Buffer Logic (State Aware)
-        if (this.colony.room.storage) {
+        if (this.colony.room?.storage) {
             const storage = this.colony.room.storage;
             const energy = storage.store.getUsedCapacity(RESOURCE_ENERGY);
 
@@ -148,7 +148,7 @@ export class LogisticsNetwork {
         }
 
         // --- Terminal Integration ---
-        if (this.colony.room.terminal) {
+        if (this.colony.room?.terminal) {
             const term = this.colony.room.terminal;
             // Simplistic logic for now: Keep terminal at ~5000 energy for transactions
             // Real logic is handled by TerminalOverlord - but Logistics handles the moving

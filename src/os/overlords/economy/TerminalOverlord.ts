@@ -24,8 +24,8 @@ export class TerminalOverlord extends Overlord {
     }
 
     private handleBalancing(): void {
-        const terminal = this.colony.room.terminal;
-        const storage = this.colony.room.storage;
+        const terminal = this.colony.room?.terminal;
+        const storage = this.colony.room?.storage;
         if (!terminal || !storage) return;
 
         if (terminal.cooldown > 0) return;
@@ -60,8 +60,9 @@ export class TerminalOverlord extends Overlord {
 
     private handleMarketCalls(): void {
         // If we are CRITICAL full (>900k), dump energy on the market
-        const storage = this.colony.room.storage!;
-        const terminal = this.colony.room.terminal!;
+        const storage = this.colony.room?.storage;
+        const terminal = this.colony.room?.terminal;
+        if (!storage || !terminal) return;
 
         if (storage.store.getUsedCapacity(RESOURCE_ENERGY) > 900000) {
             // Check terminal energy

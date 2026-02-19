@@ -141,14 +141,19 @@ export class Zerg {
      * Attempt to reconstruct the current task from CreepMemory.
      * Called when `this.task` is null but `memory.task` exists (i.e.,
      * after a global reset wiped the heap).
-     *
-     * This is a basic TaskFactory placeholder. As more task types are
-     * added, this should be extracted to a dedicated TaskFactory class.
      */
     private deserializeTask(taskMem: TaskMemory): ITask | null {
         switch (taskMem.name) {
             case "Harvest":
                 return new HarvestTask(taskMem.targetId as Id<Source>);
+            case "Withdraw": {
+                const { WithdrawTask } = require("../tasks/WithdrawTask");
+                return new WithdrawTask(taskMem.targetId as Id<Structure | Tombstone | Ruin>);
+            }
+            case "Transfer": {
+                const { TransferTask } = require("../tasks/TransferTask");
+                return new TransferTask(taskMem.targetId as Id<Structure | Creep>);
+            }
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;

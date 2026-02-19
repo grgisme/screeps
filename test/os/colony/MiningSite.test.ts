@@ -55,15 +55,20 @@ describe("MiningSite", () => {
                 get() { return 0; }
             }
         };
+        // Mock Game.getObjectById for getter-based MiningSite
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "src1") return source;
+            return null;
+        };
     });
 
     it("should instantiate and refresh", () => {
-        const site = new MiningSite(mockColony, source);
-        expect(site.source.id).to.equal(source.id);
+        const site = new MiningSite(mockColony, source.id as Id<Source>);
+        expect(site.source!.id).to.equal(source.id);
     });
 
     it("should calculate hauling power needed based on distance", () => {
-        const site = new MiningSite(mockColony, source);
+        const site = new MiningSite(mockColony, source.id as Id<Source>);
         // Mock container pos
         site.containerPos = new RoomPosition(11, 11, "W1N1");
 
@@ -81,7 +86,7 @@ describe("MiningSite", () => {
     });
 
     it("should handle unreserved room power calculation", () => {
-        const site = new MiningSite(mockColony, source);
+        const site = new MiningSite(mockColony, source.id as Id<Source>);
         site.containerPos = new RoomPosition(11, 11, "W1N1");
 
         // Mock controller (none) -> 5 energy/tick

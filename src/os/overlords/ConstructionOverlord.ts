@@ -34,7 +34,7 @@ export class ConstructionOverlord extends Overlord {
         }
 
         const anchorPos = new RoomPosition(anchor.x, anchor.y, this.colony.name);
-        const rcl = this.colony.room.controller?.level || 0;
+        const rcl = this.colony.room?.controller?.level || 0;
 
         // 1. Check Bunker Structures
         this.checkBunker(anchorPos, rcl);
@@ -102,8 +102,8 @@ export class ConstructionOverlord extends Overlord {
 
     private checkRoads(anchor: RoomPosition): void {
         const destinations = [
-            this.colony.room.controller?.pos,
-            ...this.colony.room.find(FIND_SOURCES).map((s: Source) => s.pos)
+            this.colony.room?.controller?.pos,
+            ...(this.colony.room?.find(FIND_SOURCES) ?? []).map((s: Source) => s.pos)
         ];
 
         for (const dest of destinations) {

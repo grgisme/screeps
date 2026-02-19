@@ -30,8 +30,10 @@ export class Hatchery {
     }
 
     refresh(): void {
-        this.spawns = this.colony.room.find(FIND_MY_SPAWNS);
-        this.extensions = this.colony.room.find(FIND_MY_STRUCTURES, {
+        const room = this.colony.room;
+        if (!room) return;
+        this.spawns = room.find(FIND_MY_SPAWNS);
+        this.extensions = room.find(FIND_MY_STRUCTURES, {
             filter: (s: Structure) => s.structureType === STRUCTURE_EXTENSION
         }) as StructureExtension[];
         // Clear queue each tick — overlords re-enqueue during init()
@@ -61,7 +63,9 @@ export class Hatchery {
 
     run(): void {
         // 1. Emergency Mode Check
-        if (this.colony.room.find(FIND_MY_CREEPS).length === 0 && this.spawns.length > 0) {
+        const room = this.colony.room;
+        if (!room) return;
+        if (room.find(FIND_MY_CREEPS).length === 0 && this.spawns.length > 0) {
             const spawn = this.spawns[0];
             // Skip if spawn is already busy or Bootstrapper exists
             if (!spawn.spawning && !Game.creeps["Bootstrapper"]) {
@@ -93,10 +97,10 @@ export class Hatchery {
                 // This implies the Hatchery (or Overlord calling utility) does it.
                 // Let's use current energyCapacityAvailable for the limit.
 
-                const energyCapacity = this.colony.room.energyCapacityAvailable;
+                const energyCapacity = this.colony.room?.energyCapacityAvailable ?? 300;
                 const body = CreepBody.grow(request.bodyTemplate, energyCapacity);
 
-                const energyAvailable = this.colony.room.energyAvailable;
+                const energyAvailable = this.colony.room?.energyAvailable ?? 0;
                 const bodyCost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 
                 // If we can't afford it yet, but it fits in capacity, we wait (block lower priorities).
@@ -149,8 +153,8 @@ export class Hatchery {
 
     private registerRefillRequests(): void {
         // Calculate total deficit
-        const capacity = this.colony.room.energyCapacityAvailable;
-        const available = this.colony.room.energyAvailable;
+        const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
+        const available = this.colony.room?.energyAvailable ?? 0;
         const deficit = capacity - available;
 
         if (deficit > 0) {

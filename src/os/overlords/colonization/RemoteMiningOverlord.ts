@@ -78,7 +78,7 @@ export class RemoteMiningOverlord extends Overlord {
         if (this.sites.length === 0) {
             const sources = room.find(FIND_SOURCES);
             for (const source of sources) {
-                const site = new MiningSite(this.colony, source);
+                const site = new MiningSite(this.colony, source.id);
                 this.calculateRemoteDistance(site);
                 this.sites.push(site);
             }
@@ -86,22 +86,15 @@ export class RemoteMiningOverlord extends Overlord {
 
         // 2. Refresh Sites
         for (const site of this.sites) {
-            site.refresh();
+            site.refreshStructureIds();
         }
 
         // 3. Creep Assignment
         this.miners = this.zergs
-            .filter(z => (z.memory as any).role === "miner")
-            .map(z => {
-                const mem = (z.memory as any);
-                if (!mem.state || !mem.state.siteId) return null;
-                return new Miner(z.creepName);
-            })
-            .filter(m => m !== null) as Miner[];
+            .filter(z => (z.memory as any).role === "miner") as Miner[];
 
         this.haulers = this.zergs
-            .filter(z => (z.memory as any).role === "hauler")
-            .map(z => new Transporter(z.creepName, this));
+            .filter(z => (z.memory as any).role === "hauler") as Transporter[];
 
         // 4. Spawn Logic per Site
         for (const site of this.sites) {
@@ -115,12 +108,14 @@ export class RemoteMiningOverlord extends Overlord {
      * to the remote mining site. This is crucial for hauling calculations.
      */
     private calculateRemoteDistance(site: MiningSite): void {
-        const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
+        const dropoff = this.colony.room?.storage || this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
         if (!dropoff) return;
 
-        const path = PathFinder.search(site.source.pos, { pos: dropoff.pos, range: 1 });
+        const source = site.source;
+        if (!source) return;
+        const path = PathFinder.search(source.pos, { pos: dropoff.pos, range: 1 });
         site.distance = path.path.length;
-        log.info(`Remote site ${site.source.id} distance: ${site.distance}`);
+        log.info(`Remote site ${site.sourceId} distance: ${site.distance}`);
     }
 
     private handleSpawning(site: MiningSite): void {
@@ -129,10 +124,10 @@ export class RemoteMiningOverlord extends Overlord {
         // B. Haulers — part-count balanced
         const powerNeeded = site.calculateHaulingPowerNeeded();
         const currentPower = this.haulers
-            .filter(h => (h.memory as any).state?.siteId === site.source.id)
-            .reduce((sum, h) => sum + h.creep!.store.getCapacity(), 0);
+            .filter(h => (h.memory as any).state?.siteId === site.sourceId)
+            .reduce((sum, h) => sum + (h.store?.getCapacity() ?? 0), 0);
 
-        log.info(`Remote MiningSite [${site.source.id}]: Distance [${site.distance}], Required Haul [${powerNeeded}], Current [${currentPower}]`);
+        log.info(`Remote MiningSite [${site.sourceId}]: Distance [${site.distance}], Required Haul [${powerNeeded}], Current [${currentPower}]`);
 
         if (currentPower < powerNeeded) {
             this.colony.hatchery.enqueue({
@@ -143,8 +138,8 @@ export class RemoteMiningOverlord extends Overlord {
                 // Let's add 1 WORK at start.
                 bodyTemplate: [WORK, CARRY, CARRY, MOVE, MOVE],
                 overlord: this,
-                name: `rhauler_${site.source.id}_${Game.time}`,
-                memory: { role: "hauler", state: { siteId: site.source.id } }
+                name: `rhauler_${site.sourceId}_${Game.time}`,
+                memory: { role: "hauler", state: { siteId: site.sourceId } }
             });
         }
     }
@@ -178,9 +173,11 @@ export class RemoteMiningOverlord extends Overlord {
             // Let's use generic check: valid reservation.
 
             // Path from source to home storage
-            const dropoff = this.colony.room.storage || this.colony.room.find(FIND_MY_SPAWNS)[0];
+            const dropoff = this.colony.room?.storage || this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
             if (dropoff) {
-                const path = PathFinder.search(site.source.pos, { pos: dropoff.pos, range: 1 }, {
+                const source = site.source;
+                if (!source) return;
+                const path = PathFinder.search(source.pos, { pos: dropoff.pos, range: 1 }, {
                     plainCost: 2,
                     swampCost: 4, // Roads are good on swamp
                     roomCallback: (_roomName) => {

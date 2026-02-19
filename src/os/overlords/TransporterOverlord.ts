@@ -1,5 +1,9 @@
+// ============================================================================
+// TransporterOverlord — Manages hauler creeps via the LogisticsNetwork
+// ============================================================================
+
 import { Overlord } from "./Overlord";
-import { Colony } from "../colony/Colony";
+import type { Colony } from "../colony/Colony";
 import { Transporter } from "../zerg/Transporter";
 import { Zerg } from "../zerg/Zerg";
 
@@ -12,42 +16,44 @@ export class TransporterOverlord extends Overlord {
     }
 
     init(): void {
-        // Register Transporters
-        // Zerg are added via addZerg abstractly, but we need to cast or manage them?
-        // Overlord.zergs is generic Zerg[].
-        // We can wrap them here or assume they are wrapped.
+        // Cast existing zergs — no re-wrapping (prevents wrapper thrashing)
+        this.transporters = this.zergs
+            .filter(z => z.isAlive() && (z.memory as any)?.role === "transporter") as Transporter[];
 
         // Spawn Logic
-        // Calculate Haul Potential vs Deficit
         this.wishlistSpawns();
     }
 
     run(): void {
+        // IoC: Colony.run() calls zerg.run() on all zergs.
+        // Overlord only assigns tasks here (no direct run calls).
         for (const transporter of this.transporters) {
-            transporter.run();
+            if (!transporter.task) {
+                // Task assignment will be handled by LogisticsNetwork integration
+                // Placeholder: transporters get tasks from the logistics layer
+            }
         }
     }
 
     addZerg(zerg: Zerg): void {
-        // Convert generic Zerg to Transporter
-        const transporter = new Transporter(zerg.creepName, this);
-        this.transporters.push(transporter);
-        super.addZerg(transporter);
+        // Just add to the base zergs array — no re-wrapping
+        super.addZerg(zerg);
     }
 
     private wishlistSpawns(): void {
         const deficit = this.calculateTransportDeficit();
-        const transportPower = this.transporters.reduce((sum, zerg) => sum + zerg.creep!.store.getCapacity(), 0);
+        const transportPower = this.transporters.reduce(
+            (sum, z) => sum + (z.store?.getCapacity() ?? 0), 0
+        );
 
-        // Simple threshold: buffer of 2000 or ratio
         if (transportPower < deficit) {
             const template = [CARRY, MOVE];
 
             this.colony.hatchery.enqueue({
-                priority: 1, // Critical
+                priority: 1,
                 bodyTemplate: template,
                 overlord: this,
-                name: `Transporter_${this.colony.name}_${Game.time}` // Optional name
+                name: `Transporter_${this.colony.name}_${Game.time}`
             });
 
             console.log(`TransporterOverlord: Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
@@ -55,8 +61,6 @@ export class TransporterOverlord extends Overlord {
     }
 
     private calculateTransportDeficit(): number {
-        // Sum of all requests amount?
-        // Access colony logistics
         let total = 0;
         for (const req of this.colony.logistics.requesters) {
             total += req.amount;

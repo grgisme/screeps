@@ -82,7 +82,7 @@ export class RoomPlannerProcess extends Process {
     private placeStructures(): void {
         const anchor = this.colony.memory!.anchor!; // Safebang
         // const anchorPos = new RoomPosition(anchor.x, anchor.y, this.colony.name);
-        const rcl = this.colony.room.controller?.level || 0;
+        const rcl = this.colony.room?.controller?.level || 0;
 
         const allowed = (global as any).CONTROLLER_STRUCTURES || CONTROLLER_STRUCTURES;
         const structureTypes = Object.keys(allowed) as StructureConstant[];

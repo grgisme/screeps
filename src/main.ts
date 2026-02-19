@@ -7,7 +7,7 @@ import "./utils/RoomPosition";
 import { GlobalCache } from "./kernel/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
-import { MiningProcess } from "./os/processes/MiningProcess";
+// MiningProcess deleted — ColonyProcess runs MiningOverlord directly
 import { UpgradeProcess } from "./os/processes/UpgradeProcess";
 import { ProfilerProcess } from "./os/processes/ProfilerProcess";
 import { ColonyProcess } from "./os/processes/ColonyProcess";
@@ -76,19 +76,7 @@ const log = new Logger("OS");
 // Kernel.deserialize() can reconstruct processes after a global reset.
 // -------------------------------------------------------------------------
 
-Kernel.registerProcess(
-    "mining",
-    (pid, priority, parentPID, data) => {
-        return new MiningProcess(
-            pid,
-            priority,
-            parentPID,
-            data.sourceId as Id<Source>,
-            data.roomName as string,
-            (data.targetMiners as number) ?? 1
-        );
-    }
-);
+// MiningProcess factory removed — mining is now managed by MiningOverlord via Colony
 
 Kernel.registerProcess(
     "upgrade",

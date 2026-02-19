@@ -27,14 +27,18 @@ describe("RemoteMiningOverlord", () => {
         (globalThis as any).Memory.rooms["W2N1"] = {};
         (globalThis as any).Game.time = 100; // Trigger infrastructure check
 
-        // Mock Colony
+        // Mock Colony (Colony.room is a getter reading Game.rooms[this.name])
+        const colonyRoom = {
+            name: "W1N1",
+            storage: { pos: new RoomPosition(10, 10, "W1N1") },
+            find: () => []
+        };
+        (globalThis as any).Game.rooms["W1N1"] = colonyRoom;
         colony = {
-            room: {
-                name: "W1N1",
-                storage: { pos: new RoomPosition(10, 10, "W1N1") },
-                find: () => []
-            },
-            hatchery: { enqueue: () => { } }
+            name: "W1N1",
+            get room() { return (globalThis as any).Game.rooms["W1N1"]; },
+            hatchery: { enqueue: () => { } },
+            getZerg: () => undefined
         } as any;
 
         overlord = new RemoteMiningOverlord(colony, "W2N1");
@@ -47,10 +51,11 @@ describe("RemoteMiningOverlord", () => {
 
         const site = {
             source,
+            sourceId: "source1",
             containerPos,
             container: null,
             calculateHaulingPowerNeeded: () => 100,
-            refresh: () => { }
+            refreshStructureIds: () => { }
         } as any;
         overlord.sites = [site];
 
@@ -75,10 +80,11 @@ describe("RemoteMiningOverlord", () => {
         const containerPos = new RoomPosition(24, 25, "W2N1");
         const site = {
             source,
+            sourceId: "source1",
             containerPos,
             container: {}, // Exists
             calculateHaulingPowerNeeded: () => 100,
-            refresh: () => { }
+            refreshStructureIds: () => { }
         } as any;
         overlord.sites = [site];
 
@@ -100,7 +106,7 @@ describe("RemoteMiningOverlord", () => {
         // Mock MiningSite
         const source = { pos: new RoomPosition(25, 25, "W2N1"), id: "source1" } as Source;
         const containerPos = new RoomPosition(24, 25, "W2N1");
-        const site = { source, containerPos, calculateHaulingPowerNeeded: () => 100, refresh: () => { } } as any;
+        const site = { source, sourceId: "source1", containerPos, calculateHaulingPowerNeeded: () => 100, refreshStructureIds: () => { } } as any;
         overlord.sites = [site];
         (containerPos as any).lookFor = () => [{ structureType: STRUCTURE_CONTAINER }]; // Skip container build
 

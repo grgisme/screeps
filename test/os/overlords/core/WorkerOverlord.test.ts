@@ -43,7 +43,8 @@ describe("WorkerOverlord", () => {
 
         // Setup Mock Colony
         colony = new MockColony("W1N1") as any;
-        colony.room = room as any;
+        // Colony.room is a getter reading Game.rooms[this.name], so we just set Game.rooms
+        Game.rooms["W1N1"] = room as any;
         colony.hatchery = { enqueue: () => { } } as any;
         colony.registerZerg = (creep: Creep) => ({ creep, task: null } as any);
 
@@ -63,7 +64,7 @@ describe("WorkerOverlord", () => {
         Game.creeps["worker_1"] = orphan as any;
 
         // Mock room.find to return the orphan
-        colony.room.find = (type: number) => {
+        colony.room!.find = (type: number) => {
             if (type === FIND_MY_CREEPS) return [orphan];
             if (type === FIND_SOURCES) return mockSources;
             return [];
@@ -81,7 +82,7 @@ describe("WorkerOverlord", () => {
         const site1 = { progress: 0, progressTotal: 3000 };
         const site2 = { progress: 0, progressTotal: 3000 };
 
-        colony.room.find = (type: number) => {
+        colony.room!.find = (type: number) => {
             if (type === FIND_MY_CONSTRUCTION_SITES) return [site1, site2];
             if (type === FIND_SOURCES) return mockSources;
             return [];
@@ -105,7 +106,7 @@ describe("WorkerOverlord", () => {
         // Mock massive construction
         const site = { progress: 0, progressTotal: 50000 };
 
-        colony.room.find = (type: number) => {
+        colony.room!.find = (type: number) => {
             if (type === FIND_MY_CONSTRUCTION_SITES) return [site];
             if (type === FIND_SOURCES) return mockSources;
             return [];
@@ -124,7 +125,7 @@ describe("WorkerOverlord", () => {
         // MiningOverlord has no containers → isSuspended = true
         mockMiningOverlord.sites = [{ container: undefined, link: undefined }];
 
-        colony.room.find = (type: number) => {
+        colony.room!.find = (type: number) => {
             if (type === FIND_SOURCES) return mockSources;
             return [];
         };
