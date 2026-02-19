@@ -8,7 +8,7 @@ import { GlobalCache } from "./kernel/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";
 // MiningProcess deleted — ColonyProcess runs MiningOverlord directly
-import { UpgradeProcess } from "./os/processes/UpgradeProcess";
+// UpgradeProcess deleted — UpgradingOverlord runs within Colony
 import { ProfilerProcess } from "./os/processes/ProfilerProcess";
 import { ColonyProcess } from "./os/processes/ColonyProcess";
 import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
@@ -78,18 +78,8 @@ const log = new Logger("OS");
 
 // MiningProcess factory removed — mining is now managed by MiningOverlord via Colony
 
-Kernel.registerProcess(
-    "upgrade",
-    (pid, priority, parentPID, data) => {
-        return new UpgradeProcess(
-            pid,
-            priority,
-            parentPID,
-            data.roomName as string,
-            (data.targetUpgraders as number) ?? 1
-        );
-    }
-);
+// UpgradeProcess factory removed — upgrading is now managed by UpgradingOverlord via Colony
+
 
 Kernel.registerProcess(
     "profiler",

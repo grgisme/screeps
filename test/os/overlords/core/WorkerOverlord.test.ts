@@ -19,11 +19,11 @@ describe("WorkerOverlord", () => {
     const mockTerrain = { get: (_x: number, _y: number) => 0 }; // 0 = plain
 
     beforeEach(() => {
-        // Reset Global Mocks
+        // Reset Global Mocks — use time NOT divisible by 100 to skip adoptOrphans throttle
         (global as any).Game = {
             rooms: {},
             creeps: {},
-            time: 100,
+            time: 101,
             map: {
                 getRoomTerrain: (_name: string) => mockTerrain
             }
@@ -43,10 +43,12 @@ describe("WorkerOverlord", () => {
 
         // Setup Mock Colony
         colony = new MockColony("W1N1") as any;
-        // Colony.room is a getter reading Game.rooms[this.name], so we just set Game.rooms
         Game.rooms["W1N1"] = room as any;
         colony.hatchery = { enqueue: () => { } } as any;
-        colony.registerZerg = (creep: Creep) => ({ creep, task: null } as any);
+        colony.registerZerg = ((creep: any) => ({ creepName: creep.name, name: creep.name, creep, task: null, isAlive: () => true, memory: creep.memory, store: creep.store, pos: creep.pos })) as any;
+        // Provide creeps array for adoptOrphans
+        (colony as any).creeps = [];
+        (colony as any).getZerg = () => null;
 
         // Setup Mock MiningOverlord so WorkerOverlord can find it
         mockMiningOverlord = Object.create(MiningOverlord.prototype);
@@ -58,17 +60,16 @@ describe("WorkerOverlord", () => {
     });
 
     it("should adopt orphan workers", () => {
+        // Force adoptOrphans to run by setting Game.time to a multiple of 100
+        (global as any).Game.time = 200;
+
         // Mock an orphan creep
         const orphan = new MockCreep("worker_1", "W1N1");
         orphan.memory = { role: "worker" };
         Game.creeps["worker_1"] = orphan as any;
 
-        // Mock room.find to return the orphan
-        colony.room!.find = (type: number) => {
-            if (type === FIND_MY_CREEPS) return [orphan];
-            if (type === FIND_SOURCES) return mockSources;
-            return [];
-        };
+        // Mock colony.creeps to return the orphan
+        (colony as any).creeps = [orphan];
 
         // Run init (adoption logic)
         overlord.init();
@@ -168,4 +169,3 @@ describe("WorkerOverlord", () => {
         expect((best as any).structureType).to.equal(STRUCTURE_CONTAINER);
     });
 });
-

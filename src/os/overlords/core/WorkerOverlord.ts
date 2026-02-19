@@ -1,6 +1,21 @@
+// ============================================================================
+// WorkerOverlord — IoC task assignment for worker creeps
+// ============================================================================
+//
+// ⚠️ IoC PATTERN: Overlords assign tasks. They do NOT call zerg.run().
+// Colony.run() iterates all zergs and calls zerg.run() once per tick.
+// ============================================================================
+
 import { Overlord } from "../Overlord";
+import type { Colony } from "../../colony/Colony";
 import { Worker } from "../../zerg/Worker";
 import { MiningOverlord } from "../MiningOverlord";
+import { WithdrawTask } from "../../tasks/WithdrawTask";
+import { PickupTask } from "../../tasks/PickupTask";
+import { HarvestTask } from "../../tasks/HarvestTask";
+import { UpgradeTask } from "../../tasks/UpgradeTask";
+import { BuildTask } from "../../tasks/BuildTask";
+import { RepairTask } from "../../tasks/RepairTask";
 import { Logger } from "../../../utils/Logger";
 
 const log = new Logger("Worker");
@@ -8,22 +23,15 @@ const log = new Logger("Worker");
 export class WorkerOverlord extends Overlord {
     workers: Worker[];
 
-    constructor(colony: any) {
+    constructor(colony: Colony) {
         super(colony, "worker");
-        this.workers = (this as any).zergs.map((z: any) => {
-            const w = new Worker(z.creepName);
-            w.overlord = this;
-            return w;
-        });
+        this.workers = [];
     }
 
     init(): void {
-        // Refresh all worker creep references for this tick
-        // Workers are separate objects from colony.zergs and don't get
-        // refreshed by Colony.refresh() — without this, this.pos is stale
-        // and PathFinder computes paths from the wrong origin!
-        // Getter pattern: no refresh needed. Just prune dead workers.
-        this.workers = this.workers.filter(w => w.isAlive());
+        // Cast existing zergs — no re-wrapping (prevents wrapper thrashing)
+        this.workers = this.zergs
+            .filter(z => z.isAlive() && (z.memory as any)?.role === "worker") as Worker[];
 
         this.adoptOrphans();
         this.handleSpawning();
@@ -31,32 +39,82 @@ export class WorkerOverlord extends Overlord {
 
     run(): void {
         for (const worker of this.workers) {
-            worker.run();
+            if (!worker.isAlive() || worker.task) continue;
+
+            if (worker.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+                // Empty — find energy source
+
+                // 1. LogisticsNetwork matching (polymorphic)
+                const targetId = this.colony.logistics.matchWithdraw(worker);
+                if (targetId) {
+                    const target = Game.getObjectById(targetId);
+                    if (target && 'amount' in target) {
+                        worker.setTask(new PickupTask(targetId as Id<Resource>));
+                    } else {
+                        worker.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                    }
+                    continue;
+                }
+
+                // 2. Peasant Mode fallback — harvest directly from source
+                const source = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    worker.setTask(new HarvestTask(source.id));
+                }
+            } else {
+                // Has energy — work priority cascade
+
+                // 1. Emergency repairs (structures below 50% HP, excluding walls/ramparts)
+                const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
+                    filter: (s: Structure) =>
+                        s.hits < s.hitsMax * 0.5 &&
+                        s.structureType !== STRUCTURE_WALL &&
+                        s.structureType !== STRUCTURE_RAMPART
+                });
+                if (damaged) {
+                    worker.setTask(new RepairTask(damaged.id));
+                    continue;
+                }
+
+                // 2. Build construction sites
+                const site = this.getBestConstructionSite();
+                if (site) {
+                    worker.setTask(new BuildTask(site.id));
+                    continue;
+                }
+
+                // 3. Upgrade controller (default)
+                const controller = this.colony.room?.controller;
+                if (controller) {
+                    worker.setTask(new UpgradeTask(controller.id));
+                }
+            }
         }
     }
 
     private adoptOrphans(): void {
-        const orphans = (this as any).colony.room.find(FIND_MY_CREEPS, {
-            filter: (creep: Creep) => creep.memory.role === "worker" && !(this as any).colony.getZerg(creep.name)
-        });
+        if (Game.time % 100 !== 0) return;
+
+        const orphans = this.colony.creeps.filter(
+            (creep: Creep) => creep.memory.role === "worker" && !this.colony.getZerg(creep.name)
+        );
 
         for (const orphan of orphans) {
-            const zerg = (this as any).colony.registerZerg(orphan);
+            const zerg = this.colony.registerZerg(orphan);
             zerg.task = null;
-            (this as any).zergs.push(zerg);
-            const worker = new Worker(orphan.name);
-            worker.overlord = this;
-            this.workers.push(worker);
-            log.info(`${(this as any).colony.name}: Adopted orphan worker ${orphan.name}`);
+            this.zergs.push(zerg);
+            this.workers.push(zerg as Worker);
+            log.info(`${this.colony.name}: Adopted orphan worker ${orphan.name}`);
         }
     }
 
     private handleSpawning(): void {
-        const room = (this as any).colony.room;
+        const room = this.colony.room;
+        if (!room) return;
 
         // Check if mining is suspended (no containers/storage yet)
-        const miningOverlord = (this as any).colony.overlords
-            .find((o: any) => o instanceof MiningOverlord) as MiningOverlord | undefined;
+        const miningOverlord = this.colony.overlords
+            .find((o: Overlord) => o instanceof MiningOverlord) as MiningOverlord | undefined;
         const miningSuspended = miningOverlord ? miningOverlord.isSuspended : true;
 
         // Slot-based cap: count walkable tiles around all sources
@@ -75,7 +133,7 @@ export class WorkerOverlord extends Overlord {
             }
             if (worst) {
                 log.info(`Despawning excess worker ${worst.name} (TTL: ${worstTTL}, cap: ${maxWorkers})`);
-                worst.creep!.suicide();
+                worst.creep?.suicide();
                 this.workers = this.workers.filter(w => w.name !== worst!.name);
             }
         }
@@ -97,7 +155,7 @@ export class WorkerOverlord extends Overlord {
         if (target > maxWorkers) target = maxWorkers;
 
         if (this.workers.length < target) {
-            (this as any).colony.hatchery.enqueue({
+            this.colony.hatchery.enqueue({
                 priority: miningSuspended ? 80 : 3,
                 bodyTemplate: [WORK, CARRY, MOVE],
                 overlord: this,
@@ -108,7 +166,6 @@ export class WorkerOverlord extends Overlord {
 
     /**
      * Count total walkable (non-wall) tiles adjacent to all sources in the room.
-     * This determines how many creeps can physically mine simultaneously.
      */
     private countMiningSpots(room: Room): number {
         const terrain = Game.map.getRoomTerrain(room.name);
@@ -131,6 +188,7 @@ export class WorkerOverlord extends Overlord {
 
         return spots;
     }
+
     getBestConstructionSite(): ConstructionSite | null {
         // Priority Table
         const priority: { [key in StructureConstant]?: number } = {
@@ -143,7 +201,7 @@ export class WorkerOverlord extends Overlord {
             [STRUCTURE_TERMINAL]: 5
         };
 
-        const sites = (this as any).colony.room.find(FIND_MY_CONSTRUCTION_SITES) as ConstructionSite[];
+        const sites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES) as ConstructionSite[] ?? [];
         if (sites.length === 0) return null;
 
         return sites.sort((a, b) => {
@@ -157,7 +215,7 @@ export class WorkerOverlord extends Overlord {
             const progressB = b.progress / b.progressTotal;
             if (Math.abs(progressA - progressB) > 0.1) return progressB - progressA;
 
-            return 0; // Distance can be handled by caller if needed, but for global priority we usually stick to type
+            return 0;
         })[0];
     }
 }

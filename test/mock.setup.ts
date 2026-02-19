@@ -380,13 +380,29 @@ export class MockColony {
     name: string;
     room: MockRoom;
     hatchery: { enqueue: (req: any) => void };
-    logistics: { requestTask: () => void };
+    logistics: {
+        offerIds: any[];
+        requesters: any[];
+        incomingReservations: Map<string, number>;
+        outgoingReservations: Map<string, number>;
+        matchWithdraw: (zerg: any) => null;
+        matchTransfer: (zerg: any) => null;
+        requestInput: (targetId: any, opts?: any) => void;
+    };
 
     constructor(name: string) {
         this.name = name;
         this.room = new MockRoom(name);
         this.hatchery = { enqueue: () => { } };
-        this.logistics = { requestTask: () => { } };
+        this.logistics = {
+            offerIds: [],
+            requesters: [],
+            incomingReservations: new Map(),
+            outgoingReservations: new Map(),
+            matchWithdraw: () => null,
+            matchTransfer: () => null,
+            requestInput: () => { }
+        };
     }
 }
 

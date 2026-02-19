@@ -12,7 +12,7 @@ describe("UpgradingOverlord", () => {
         (global as any).Game = {
             rooms: {},
             creeps: {},
-            time: 100
+            time: 101
         };
         (global as any).Memory = {
             creeps: {},
@@ -31,7 +31,7 @@ describe("UpgradingOverlord", () => {
         (colony as any).registerZerg = (creep: Creep) => ({ creep, task: null } as any);
         (colony as any).getZerg = () => null;
 
-        overlord = new UpgradingOverlord(colony);
+        overlord = new UpgradingOverlord(colony as any);
         // Cast overlord property to any to push mock upgraders if needed
         (overlord as any).zergs = [];
     });

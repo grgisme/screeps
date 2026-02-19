@@ -21,6 +21,9 @@ import { HarvestTask } from "../tasks/HarvestTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
+import { UpgradeTask } from "../tasks/UpgradeTask";
+import { BuildTask } from "../tasks/BuildTask";
+import { RepairTask } from "../tasks/RepairTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
 
@@ -155,6 +158,12 @@ export class Zerg {
                 return new TransferTask(taskMem.targetId as Id<Structure | Creep>);
             case "Pickup":
                 return new PickupTask(taskMem.targetId as Id<Resource>);
+            case "Upgrade":
+                return new UpgradeTask(taskMem.targetId as Id<StructureController>);
+            case "Build":
+                return new BuildTask(taskMem.targetId as Id<ConstructionSite>);
+            case "Repair":
+                return new RepairTask(taskMem.targetId as Id<Structure>);
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;

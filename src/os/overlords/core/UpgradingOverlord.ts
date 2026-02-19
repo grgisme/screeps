@@ -1,23 +1,34 @@
+// ============================================================================
+// UpgradingOverlord — IoC task assignment for upgrader creeps
+// ============================================================================
+//
+// ⚠️ IoC PATTERN: Overlords assign tasks. They do NOT call zerg.run().
+// Colony.run() iterates all zergs and calls zerg.run() once per tick.
+// ============================================================================
+
 import { Overlord } from "../Overlord";
-// import { Colony } from "../../colony/Colony";
+import type { Colony } from "../../colony/Colony";
 import { Upgrader } from "../../zerg/Upgrader";
+import { WithdrawTask } from "../../tasks/WithdrawTask";
+import { PickupTask } from "../../tasks/PickupTask";
+import { HarvestTask } from "../../tasks/HarvestTask";
+import { UpgradeTask } from "../../tasks/UpgradeTask";
 import { Logger } from "../../../utils/Logger";
-// import { Zerg } from "../../zerg/Zerg";
 
 const log = new Logger("Upgrading");
 
 export class UpgradingOverlord extends Overlord {
     upgraders: Upgrader[];
 
-    constructor(colony: any) {
+    constructor(colony: Colony) {
         super(colony, "upgrading");
-        this.upgraders = this.zergs.map(z => new Upgrader(z.creepName));
+        this.upgraders = [];
     }
 
     init(): void {
-        // Refresh creep references for this tick (same pattern as WorkerOverlord)
-        // Getter pattern: no refresh needed. Just prune dead.
-        this.upgraders = this.upgraders.filter(u => u.isAlive());
+        // Cast existing zergs — no re-wrapping (prevents wrapper thrashing)
+        this.upgraders = this.zergs
+            .filter(z => z.isAlive() && (z.memory as any)?.role === "upgrader") as Upgrader[];
 
         this.adoptOrphans();
         this.handleSpawning();
@@ -25,21 +36,57 @@ export class UpgradingOverlord extends Overlord {
 
     run(): void {
         for (const upgrader of this.upgraders) {
-            upgrader.run();
+            if (!upgrader.isAlive() || upgrader.task) continue;
+
+            if (upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+                // Empty — find energy source
+
+                // 1. Controller Link (fastest path)
+                const controllerLink = this.colony.linkNetwork?.controllerLink;
+                if (controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+                    upgrader.setTask(new WithdrawTask(controllerLink.id as Id<Structure | Tombstone | Ruin>));
+                    continue;
+                }
+
+                // 2. LogisticsNetwork matching (polymorphic)
+                const targetId = this.colony.logistics.matchWithdraw(upgrader);
+                if (targetId) {
+                    const target = Game.getObjectById(targetId);
+                    if (target && 'amount' in target) {
+                        upgrader.setTask(new PickupTask(targetId as Id<Resource>));
+                    } else {
+                        upgrader.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                    }
+                    continue;
+                }
+
+                // 3. Peasant Mode fallback — harvest directly from source
+                const source = upgrader.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
+                if (source) {
+                    upgrader.setTask(new HarvestTask(source.id));
+                }
+            } else {
+                // Has energy — upgrade controller
+                const controller = this.colony.room?.controller;
+                if (controller) {
+                    upgrader.setTask(new UpgradeTask(controller.id));
+                }
+            }
         }
     }
 
     private adoptOrphans(): void {
-        const orphans = this.colony.room?.find(FIND_MY_CREEPS, {
-            filter: (creep: Creep) => creep.memory.role === "upgrader" && !this.colony.getZerg(creep.name)
-        }) ?? [];
+        if (Game.time % 100 !== 0) return;
+
+        const orphans = this.colony.creeps.filter(
+            (creep: Creep) => creep.memory.role === "upgrader" && !this.colony.getZerg(creep.name)
+        );
 
         for (const orphan of orphans) {
             const zerg = this.colony.registerZerg(orphan);
             zerg.task = null;
             this.zergs.push(zerg);
-            const upgrader = new Upgrader(orphan.name);
-            this.upgraders.push(upgrader);
+            this.upgraders.push(zerg as Upgrader);
             log.info(`${this.colony.name}: Adopted orphan upgrader ${orphan.name}`);
         }
     }
@@ -53,18 +100,9 @@ export class UpgradingOverlord extends Overlord {
         if (!controller) return;
 
         // ── Genesis Gate ───────────────────────────────────────────
-        // Specialized upgraders are a LIABILITY at RCL 1 without
-        // logistics infrastructure. Only spawn if:
-        //   • Downgrade imminent (always override)
-        //   • RCL 8 (always need upgraders to prevent downgrade)
-        //   • Storage exists with energy
-        //   • Containers exist (logistics can feed them)
-        // Otherwise, workers handle upgrading as a fallback task.
         const downgradeImminent = controller.ticksToDowngrade < 4000;
         const hasStorage = storage && storage.store.energy > 0;
-        const hasContainers = room!.find(FIND_STRUCTURES, {
-            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
-        }).length > 0;
+        const hasContainers = this.colony.logistics.offerIds.length > 0;
         const isRCL8 = controller.level === 8;
 
         if (!downgradeImminent && !hasStorage && !hasContainers && !isRCL8) {
@@ -72,7 +110,7 @@ export class UpgradingOverlord extends Overlord {
             if (this.upgraders.length > 0) {
                 for (const u of this.upgraders) {
                     log.info(`Suiciding gated upgrader ${u.name} (no infrastructure)`);
-                    u.creep!.suicide();
+                    u.creep?.suicide();
                 }
                 this.upgraders = [];
             }
@@ -84,11 +122,9 @@ export class UpgradingOverlord extends Overlord {
         if (hasStorage && storage!.store.energy > 10000) {
             shouldSpawn = true;
         } else if (hasContainers && room!.energyAvailable > room!.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) {
-            // Surplus mode — but ONLY with logistics infrastructure
             shouldSpawn = true;
         }
 
-        // If Critical (Downgrade imminent), FORCE spawn
         if (controller.ticksToDowngrade < 4000) {
             shouldSpawn = true;
         }
