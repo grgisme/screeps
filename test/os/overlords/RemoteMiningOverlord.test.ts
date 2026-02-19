@@ -45,35 +45,26 @@ describe("RemoteMiningOverlord", () => {
         overlord = new RemoteMiningOverlord(colony, "W2N1");
     });
 
-    it("should instantiate and manage infrastructure", () => {
-        // Mock MiningSite
+    it("should instantiate and refresh site infrastructure", () => {
+        // Mock MiningSite with spy on refreshStructureIds
         const source = { pos: new RoomPosition(25, 25, "W2N1"), id: "source1" } as Source;
-        const containerPos = new RoomPosition(24, 25, "W2N1");
 
+        let refreshCalled = false;
         const site = {
             source,
             sourceId: "source1",
-            containerPos,
+            containerPos: new RoomPosition(24, 25, "W2N1"),
             containerId: null,
             container: null,
             calculateHaulingPowerNeeded: () => 100,
-            refreshStructureIds: () => { }
+            refreshStructureIds: () => { refreshCalled = true; }
         } as any;
         overlord.sites = [site];
 
-        // Mock construction
-        let siteCreated = false;
-        containerPos.createConstructionSite = ((type: StructureConstant) => {
-            if (type === STRUCTURE_CONTAINER) siteCreated = true;
-            return OK;
-        }) as any;
-
-        containerPos.lookFor = ((_type: string) => []) as any; // No existing structures
-
-        // Initialize (handles spawning but manageInfrastructure called in init too)
+        // Initialize — should call refreshStructureIds on each site
         overlord.init();
 
-        expect(siteCreated).to.be.true;
+        expect(refreshCalled).to.be.true;
     });
 
     it("should not build container if exists", () => {
@@ -103,36 +94,5 @@ describe("RemoteMiningOverlord", () => {
         overlord.init();
 
         expect(siteCreated).to.be.false;
-    });
-
-    it("should build roads if reserved", () => {
-        // Mock MiningSite
-        const source = { pos: new RoomPosition(25, 25, "W2N1"), id: "source1" } as Source;
-        const containerPos = new RoomPosition(24, 25, "W2N1");
-        const site = { source, sourceId: "source1", containerPos, containerId: "container1", calculateHaulingPowerNeeded: () => 100, refreshStructureIds: () => { } } as any;
-        overlord.sites = [site];
-        (containerPos as any).lookFor = () => [{ structureType: STRUCTURE_CONTAINER }]; // Skip container build
-
-        // Mock PathFinder
-        const path = [new RoomPosition(20, 20, "W2N1"), new RoomPosition(21, 20, "W2N1")];
-        (PathFinder.search as any) = () => ({ path, incomplete: false });
-
-        // Mock Map Terrain
-        (Game.map as any).getRoomTerrain = () => ({ get: () => 0 }); // Plain
-
-        // Mock construction on path
-        const createdSites: RoomPosition[] = [];
-        (RoomPosition.prototype as any).createConstructionSite = function (type: StructureConstant) {
-            if (type === STRUCTURE_ROAD) createdSites.push(this);
-            return OK;
-        };
-
-        // Ensure lookFor returns empty for path pos
-        (RoomPosition.prototype as any).lookFor = () => [];
-
-        overlord.init();
-
-        expect(createdSites.length).to.be.greaterThan(0);
-        expect(createdSites[0].x).to.equal(20);
     });
 });

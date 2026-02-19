@@ -1,37 +1,26 @@
 // ============================================================================
-// MiningOverlord — Manages mining sites, miners, and haulers
-// ============================================================================
-//
-// ⚠️ IoC PATTERN: Overlords assign tasks. They do NOT call zerg.run().
-// Colony.run() iterates all zergs and calls zerg.run() once per tick.
+// MiningOverlord — Manages local mining sites and static miners
 // ============================================================================
 
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { MiningSite } from "../colony/MiningSite";
 import { Miner } from "../zerg/Miner";
-import { Zerg } from "../zerg/Zerg";
 import { HarvestTask } from "../tasks/HarvestTask";
-import { WithdrawTask } from "../tasks/WithdrawTask";
-import { TransferTask } from "../tasks/TransferTask";
-import { PickupTask } from "../tasks/PickupTask";
-import { Logger } from "../../utils/Logger";
+import { RepairTask } from "../tasks/RepairTask";
 
-const log = new Logger("Mining");
+
 
 export class MiningOverlord extends Overlord {
     sites: MiningSite[] = [];
     miners: Miner[] = [];
-    haulers: Zerg[] = [];
+    // ── FIX 1: Local haulers removed. Handled by TransporterOverlord via LogisticsNetwork.
 
     constructor(colony: Colony) {
         super(colony, "mining");
     }
 
     init(): void {
-        // Subreaper getter in Overlord.ts auto-resolves live creeps each tick
-
-        // 1. Instantiate Sites if not done (uses sourceId, not live Source)
         if (this.sites.length === 0) {
             const room = this.colony.room;
             if (room) {
@@ -42,130 +31,65 @@ export class MiningOverlord extends Overlord {
             }
         }
 
-        // 2. Throttled structure discovery on sites
         for (const site of this.sites) {
             site.refreshStructureIds();
+            // ── FIX 1: Expose site to Logistics Broker ──
+            if (site.source?.pos?.roomName === this.colony.name) {
+                site.registerOutputRequests();
+            }
         }
 
-        // 3. Creep Assignment — cast existing zergs, don't re-wrap
-        this.miners = this.zergs
-            .filter(z => (z.memory as any)?.role === "miner") as Miner[];
+        this.miners = this.zergs.filter(z => (z.memory as any)?.role === "miner") as Miner[];
 
-        this.haulers = this.zergs
-            .filter(z => (z.memory as any)?.role === "hauler");
-
-        // 4. Spawn Logic per Site
         for (const site of this.sites) {
             this.handleSpawning(site);
         }
     }
 
-
-    /**
-     * True when mining infrastructure isn't ready (no containers/links/storage).
-     * Workers should compensate when this is true.
-     */
     get isSuspended(): boolean {
         const room = this.colony.room;
-        return this.sites.every(s => !s.container && !s.link)
-            && !(room?.storage);
+        return this.sites.every(s => !s.container && !s.link) && !(room?.storage);
     }
 
     private handleSpawning(site: MiningSite): void {
         const room = this.colony.room;
         if (!room) return;
+        if (!site.container && !site.link && !room.storage) return;
 
-        // Gate: require container, link, or storage before spawning specialized miners
-        if (!site.container && !site.link && !room.storage) {
-            return;
-        }
-
-        const source = site.source;
-        if (!source) return;
-
-        const siteMiners = this.miners.filter(m => {
-            const mem = m.memory as any;
-            return mem?.state?.siteId === site.sourceId;
-        });
+        const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
         if (siteMiners.length < 1) {
+            // ── FIX 2: 5-WORK Math + 1 CARRY for Static Repair ──
+            const capacity = room.energyCapacityAvailable;
+            const body = capacity >= 700
+                ? [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] // Optimal Static Miner (700e)
+                : [WORK, WORK, CARRY, MOVE, MOVE]; // Early RCL Fallback
+
             this.colony.hatchery.enqueue({
                 priority: 100,
-                bodyTemplate: [WORK, WORK, MOVE],
+                bodyTemplate: body,
                 overlord: this,
-                name: `miner_${site.sourceId}_${Game.time}`,
+                name: `miner_${site.sourceId.slice(-4)}_${Game.time}`,
                 memory: { role: "miner", state: { siteId: site.sourceId } }
-            });
-        }
-
-        // B. Haulers
-        const powerNeeded = site.calculateHaulingPowerNeeded();
-        const currentPower = this.haulers
-            .filter(h => (h.memory as any)?.state?.siteId === site.sourceId)
-            .reduce((sum, h) => sum + (h.store?.getCapacity() ?? 0), 0);
-
-        if (Game.time % 100 === 0) {
-            log.info(`Site [${site.sourceId.slice(-4)}]: Dist=${site.distance}, HaulNeeded=${powerNeeded}, HaulCurrent=${currentPower}`);
-        }
-
-        if (currentPower < powerNeeded) {
-            this.colony.hatchery.enqueue({
-                priority: 50,
-                bodyTemplate: [CARRY, MOVE],
-                overlord: this,
-                name: `hauler_${site.sourceId}_${Game.time}`,
-                memory: { role: "hauler", state: { siteId: site.sourceId } }
             });
         }
     }
 
-    // -----------------------------------------------------------------------
-    // IoC Task Assignment — Overlord assigns tasks; Colony calls zerg.run()
-    // -----------------------------------------------------------------------
-
     run(): void {
-        // Assign tasks to idle miners
         for (const miner of this.miners) {
             if (!miner.isAlive()) continue;
-            if (!miner.task) {
-                const mem = miner.memory as any;
-                const siteId = mem?.state?.siteId;
-                const site = this.sites.find(s => s.sourceId === siteId);
-                if (site?.source) {
-                    miner.setTask(new HarvestTask(site.source.id));
-                }
-            }
-        }
 
-        // Assign tasks to idle haulers
-        for (const hauler of this.haulers) {
-            if (!hauler.isAlive()) continue;
-            if (hauler.task) continue;
-
-            const mem = hauler.memory as any;
-            const siteId = mem?.state?.siteId;
+            const siteId = (miner.memory as any)?.state?.siteId;
             const site = this.sites.find(s => s.sourceId === siteId);
+            if (!site) continue;
 
-            if (hauler.store?.getUsedCapacity() === 0) {
-                // Empty — go withdraw from site container
-                if (site?.containerId) {
-                    hauler.setTask(new WithdrawTask(site.containerId));
-                } else if (site?.source) {
-                    // Fix #3: Early game — no container. Pick up dropped energy near source.
-                    const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1)
-                        .find(r => r.resourceType === RESOURCE_ENERGY);
-                    if (dropped) {
-                        hauler.setTask(new PickupTask(dropped.id as Id<Resource>));
-                    }
-                }
-            } else {
-                // Full or partially full — deliver to storage or spawn
-                const room = this.colony.room;
-                if (room) {
-                    const dropoff = room.storage || room.find(FIND_MY_SPAWNS)?.[0];
-                    if (dropoff) {
-                        hauler.setTask(new TransferTask(dropoff.id as Id<Structure | Creep>));
-                    }
-                }
+            // ── FIX 3: Static In-Place Container Repair ──
+            const needsRepair = site.container && site.container.hits < site.container.hitsMax - 1000;
+            const hasEnergy = (miner.store?.energy ?? 0) > 0;
+
+            if (needsRepair && hasEnergy) {
+                miner.setTask(new RepairTask(site.container!.id));
+            } else if (!miner.task || miner.task.name === "Repair") {
+                if (site.source) miner.setTask(new HarvestTask(site.source.id));
             }
         }
     }

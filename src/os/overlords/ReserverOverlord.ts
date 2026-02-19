@@ -33,9 +33,14 @@ export class ReserverOverlord extends Overlord {
 
         if (ticksToEnd < this.getThreshold()) {
             log.info(`Reservation low in ${this.targetRoom}: ${ticksToEnd} < ${this.getThreshold()}. Requesting reserver.`);
+
+            // ── FIX: Scale body to prevent RCL 3 Deadlock ──
+            const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
+            const template = capacity >= 1300 ? [CLAIM, CLAIM, MOVE, MOVE] : [CLAIM, MOVE];
+
             this.colony.hatchery.enqueue({
                 priority: 30,
-                bodyTemplate: [CLAIM, CLAIM, MOVE, MOVE],
+                bodyTemplate: template,
                 overlord: this,
                 name: `reserver_${this.targetRoom}_${Game.time}`,
                 memory: { role: "reserver", targetRoom: this.targetRoom }

@@ -35,6 +35,8 @@
 (globalThis as any).FIND_SOURCES_ACTIVE = 104;
 (globalThis as any).FIND_FLAGS = 110;
 (globalThis as any).FIND_HOSTILE_CREEPS = 106;
+(globalThis as any).FIND_DROPPED_RESOURCES = 109;
+(globalThis as any).FIND_TOMBSTONES = 119;
 
 // Mocks for PathFinder
 (globalThis as any).PathFinder = {
@@ -388,6 +390,7 @@ export class MockColony {
         matchWithdraw: (zerg: any) => null;
         matchTransfer: (zerg: any) => null;
         requestInput: (targetId: any, opts?: any) => void;
+        requestOutput: (targetId: any, opts?: any) => void;
     };
 
     constructor(name: string) {
@@ -401,7 +404,8 @@ export class MockColony {
             outgoingReservations: new Map(),
             matchWithdraw: () => null,
             matchTransfer: () => null,
-            requestInput: () => { }
+            requestInput: () => { },
+            requestOutput: () => { }
         };
     }
 }

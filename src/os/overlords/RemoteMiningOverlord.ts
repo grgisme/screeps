@@ -3,6 +3,7 @@ import type { Colony } from "../colony/Colony";
 import { MiningSite } from "../colony/MiningSite";
 import { Zerg } from "../zerg/Zerg";
 import { HarvestTask } from "../tasks/HarvestTask";
+import { RepairTask } from "../tasks/RepairTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
@@ -57,7 +58,6 @@ export class RemoteMiningOverlord extends Overlord {
         for (const site of this.sites) {
             site.refreshStructureIds();
             this.handleSpawning(site);
-            this.manageInfrastructure(site, room);
         }
     }
 
@@ -69,83 +69,93 @@ export class RemoteMiningOverlord extends Overlord {
     }
 
     private handleSpawning(site: MiningSite): void {
+        const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
+
+        // 1. Exact 5-WORK Math + 1 CARRY for Static Repair
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
         if (siteMiners.length < 1) {
+            let minerBody: BodyPartConstant[] = [WORK, WORK, MOVE, MOVE];
+            if (capacity >= 800) {
+                minerBody = [WORK, WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE]; // 6 WORK for unreserved catchup
+            } else if (capacity >= 700) {
+                minerBody = [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE]; // Exact 5-WORK
+            }
+
             this.colony.hatchery.enqueue({
                 priority: 80,
-                bodyTemplate: [WORK, WORK, MOVE, MOVE],
+                bodyTemplate: minerBody,
                 overlord: this,
-                name: `rminer_${site.sourceId}_${Game.time}`,
+                name: `rminer_${site.sourceId.slice(-4)}_${Game.time}`,
                 memory: { role: "miner", state: { siteId: site.sourceId } }
             });
         }
 
+        // 2. Part-Count Balanced Haulers
         const powerNeeded = site.calculateHaulingPowerNeeded();
         const currentPower = this.haulers
             .filter(h => (h.memory as any)?.state?.siteId === site.sourceId)
             .reduce((sum, h) => sum + (h.store?.getCapacity() ?? 0), 0);
 
         if (currentPower < powerNeeded) {
+            let haulerBody: BodyPartConstant[] = [WORK, CARRY, CARRY, MOVE, MOVE];
+
+            if (capacity >= 450) {
+                // Reserve 150 energy for WORK (100) + MOVE (50) for road repair
+                const haulCapacity = capacity - 150;
+                const carryPairs = Math.floor(haulCapacity / 150); // CARRY, CARRY, MOVE = 150
+                haulerBody = [WORK, MOVE];
+                for (let i = 0; i < carryPairs; i++) {
+                    haulerBody.push(CARRY, CARRY, MOVE);
+                    if (haulerBody.length >= 47) break; // 50 part limit
+                }
+            }
+
             this.colony.hatchery.enqueue({
                 priority: 40,
-                bodyTemplate: [WORK, CARRY, CARRY, MOVE, MOVE],
+                bodyTemplate: haulerBody,
                 overlord: this,
-                name: `rhauler_${site.sourceId}_${Game.time}`,
+                name: `rhauler_${site.sourceId.slice(-4)}_${Game.time}`,
                 memory: { role: "hauler", state: { siteId: site.sourceId } }
             });
         }
     }
 
-    private manageInfrastructure(site: MiningSite, room: Room): void {
-        if (Game.time % 100 !== 0) return;
-
-        if (site.containerPos && !site.containerId) {
-            const hasSite = site.containerPos.lookFor(LOOK_CONSTRUCTION_SITES).some(s => s.structureType === STRUCTURE_CONTAINER);
-            if (!hasSite) site.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
-        }
-
-        const username = this.colony.room?.controller?.owner?.username;
-        if (room.controller && (room.controller.my || (room.controller.reservation && room.controller.reservation.username === username))) {
-            const dropoff = this.colony.room?.storage || this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-            if (!dropoff || !site.source) return;
-
-            const existing = new Set([
-                ...room.find(FIND_STRUCTURES).filter(s => s.structureType === STRUCTURE_ROAD).map(s => `${s.pos.x},${s.pos.y}`),
-                ...room.find(FIND_MY_CONSTRUCTION_SITES).filter(s => s.structureType === STRUCTURE_ROAD).map(s => `${s.pos.x},${s.pos.y}`)
-            ]);
-
-            const path = PathFinder.search(site.source.pos, { pos: dropoff.pos, range: 1 }, {
-                plainCost: 2, swampCost: 4, roomCallback: () => new PathFinder.CostMatrix()
-            });
-
-            if (!path.incomplete) {
-                for (const pos of path.path) {
-                    if (pos.roomName === this.targetRoom) {
-                        const terrain = Game.map.getRoomTerrain(pos.roomName);
-                        if (terrain.get(pos.x, pos.y) !== TERRAIN_MASK_WALL && !existing.has(`${pos.x},${pos.y}`)) {
-                            if (pos.createConstructionSite(STRUCTURE_ROAD) === OK) return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     run(): void {
+        const isDangerous = Memory.rooms[this.targetRoom]?.isDangerous;
+        const fallbackPos = this.colony.room?.storage?.pos || this.colony.room?.find(FIND_MY_SPAWNS)?.[0]?.pos;
+
         for (const miner of this.miners) {
             if (!miner.isAlive() || miner.task) continue;
+
+            if (isDangerous && fallbackPos) {
+                miner.travelTo(fallbackPos, 3);
+                continue;
+            }
+
             const siteId = (miner.memory as any)?.state?.siteId;
             const site = this.sites.find(s => s.sourceId === siteId);
 
             if (miner.room?.name !== this.targetRoom) {
                 miner.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
-            } else if (site?.source) {
+                continue;
+            }
+
+            // ── FIX: Static In-Place Container Repair ──
+            const container = site?.container;
+            if (container && container.hits < container.hitsMax - 1000 && (miner.store?.energy ?? 0) > 0) {
+                miner.setTask(new RepairTask(container.id));
+            } else if (!miner.task && site?.source) {
                 miner.setTask(new HarvestTask(site.source.id));
             }
         }
 
         for (const hauler of this.haulers) {
             if (!hauler.isAlive()) continue;
+
+            if (isDangerous && fallbackPos) {
+                hauler.travelTo(fallbackPos, 3);
+                continue;
+            }
 
             if (hauler.store?.energy && hauler.store.energy > 0 && hauler.creep?.getActiveBodyparts(WORK)) {
                 const road = hauler.pos?.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax);
@@ -154,22 +164,33 @@ export class RemoteMiningOverlord extends Overlord {
 
             if (hauler.task) continue;
 
-            const siteId = (hauler.memory as any)?.state?.siteId;
+            const mem = hauler.memory as any;
+            if (hauler.store?.getUsedCapacity() === 0) mem.collecting = true;
+            if (hauler.store?.getFreeCapacity() === 0) mem.collecting = false;
+
+            const siteId = mem.state?.siteId;
             const site = this.sites.find(s => s.sourceId === siteId);
 
-            if (hauler.store?.getUsedCapacity() === 0) {
+            if (mem.collecting) {
                 if (hauler.room?.name !== this.targetRoom) {
                     hauler.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
-                    continue;
-                }
-                if (site?.containerId) {
+                } else if (site?.containerId) {
                     hauler.setTask(new WithdrawTask(site.containerId));
                 } else if (site?.source) {
-                    const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1).find(r => r.resourceType === RESOURCE_ENERGY);
+                    const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1).find(r => r.resourceType === RESOURCE_ENERGY && r.amount > 50);
                     if (dropped) hauler.setTask(new PickupTask(dropped.id as Id<Resource>));
                     else hauler.travelTo(site.source.pos, 3);
                 }
             } else {
+                // ── FIX: Integrate Returning Haulers with the Global Broker! ──
+                if (hauler.room?.name === this.colony.name) {
+                    const targetId = this.colony.logistics.matchTransfer(hauler as any);
+                    if (targetId) {
+                        hauler.setTask(new TransferTask(targetId as Id<Structure | Creep>));
+                        continue;
+                    }
+                }
+
                 const dropoff = this.colony.room?.storage || this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
                 if (dropoff) hauler.setTask(new TransferTask(dropoff.id as Id<Structure | Creep>));
             }

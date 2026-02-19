@@ -80,62 +80,43 @@ describe("MiningOverlord", () => {
         expect(overlord.isSuspended).to.be.false;
     });
 
-    it("should request hauler if capacity is low", () => {
+    it("should spawn 5-WORK miner when capacity >= 700", () => {
         const overlord = new MiningOverlord(mockColony);
         (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
-        // Mock site to require power
+        // Set energyCapacityAvailable to 700
+        (room as any).energyCapacityAvailable = 700;
+
         overlord.init();
         const site = overlord.sites[0];
-        site.containerId = "container1" as Id<StructureContainer>; // Container gate requires this
-        site.containerPos = new RoomPosition(11, 11, "W1N1");
-        site.distance = 10;
-        // Mock calculateHaulingPowerNeeded
-        site.calculateHaulingPowerNeeded = () => 200;
+        site.containerId = "container1" as Id<StructureContainer>;
 
-        // Clear initial miner request
         hatcheryQueue = [];
-
-        // Re-run init/spawn logic (conceptually)
-        // MiningOverlord calls handleSpawning in init
-        // We need to re-trigger it or simulate it. 
-        // Actually init() only runs once usually. 
-        // Let's create a new overlord for this test case or manually call handleSpawning
-
         (overlord as any).handleSpawning(site);
 
-        // Should request hauler
-        const haulerRequest = hatcheryQueue.find(r => r.memory.role === "hauler");
-        expect(haulerRequest).to.not.be.undefined;
-        expect(haulerRequest.priority).to.equal(50);
+        const minerRequest = hatcheryQueue.find(r => r.memory.role === "miner");
+        expect(minerRequest).to.not.be.undefined;
+        // Should have 5 WORK parts + 1 CARRY + 3 MOVE
+        const workParts = minerRequest.bodyTemplate.filter((p: string) => p === "work").length;
+        expect(workParts).to.equal(5);
+        const carryParts = minerRequest.bodyTemplate.filter((p: string) => p === "carry").length;
+        expect(carryParts).to.equal(1);
     });
 
-    it("should not request hauler if capacity is sufficient", () => {
+    it("should NOT spawn local haulers (handled by TransporterOverlord)", () => {
         const overlord = new MiningOverlord(mockColony);
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
-        // Mock existing hauler
-        const haulerCreep = {
-            store: { getCapacity: () => 200 },
-            memory: { role: "hauler", state: { siteId: source.id } }
-        } as any;
-
-        (overlord as any)._zergs = [{
-            creepName: "hauler1",
-            name: "hauler1",
-            creep: haulerCreep,
-            memory: haulerCreep.memory,
-            store: haulerCreep.store,
-            isAlive: () => true
-        } as any];
-        (overlord as any)._zergsTick = Game.time;
         overlord.init();
         const site = overlord.sites[0];
+        site.containerId = "container1" as Id<StructureContainer>;
         site.containerPos = new RoomPosition(11, 11, "W1N1");
-        site.calculateHaulingPowerNeeded = () => 200;
+        site.distance = 10;
 
         hatcheryQueue = [];
         (overlord as any).handleSpawning(site);
 
+        // No hauler requests — handled globally by TransporterOverlord
         const haulerRequest = hatcheryQueue.find(r => r.memory.role === "hauler");
         expect(haulerRequest).to.be.undefined;
     });
