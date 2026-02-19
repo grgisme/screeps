@@ -3,7 +3,6 @@
 // ============================================================================
 
 import { ErrorMapper } from "./kernel/ErrorMapper";
-import "./utils/RoomPosition";
 import { GlobalCache } from "./kernel/GlobalCache";
 import { Logger } from "./utils/Logger";
 import { Kernel } from "./kernel/Kernel";

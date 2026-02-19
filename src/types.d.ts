@@ -55,9 +55,7 @@ interface CreepMemory {
     [key: string]: any;
 }
 
-interface RoomPosition {
-    getPositionAtDirection(direction: DirectionConstant): RoomPosition | null;
-}
+
 
 interface RoomMemory {
     isDangerous?: boolean;

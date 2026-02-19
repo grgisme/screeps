@@ -3,7 +3,7 @@ import { resetMocks } from "../../mock.setup";
 import { expect } from "chai";
 import { Transporter } from "../../../src/os/zerg/Transporter";
 import { Overlord } from "../../../src/os/overlords/Overlord";
-import "../../../src/utils/RoomPosition";
+
 
 describe("Transporter", () => {
     let transporter: Transporter;

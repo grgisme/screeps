@@ -28,6 +28,7 @@ import { ReserveTask } from "../tasks/ReserveTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
 import { GlobalCache } from "../../kernel/GlobalCache";
+import { getPositionAtDirection } from "../../utils/RoomPosition";
 
 const log = new Logger("Zerg");
 
@@ -385,7 +386,7 @@ export class Zerg {
         // ── FIX 2: Shove Detection & Step Validation ──
         if (this._path && this._lastPos) {
             const expectedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
-            const expectedPos = this._lastPos.getPositionAtDirection(expectedDir);
+            const expectedPos = getPositionAtDirection(this._lastPos, expectedDir);
 
             if (currentPos.isEqualTo(this._lastPos)) {
                 this._stuckCount++;

@@ -4,7 +4,7 @@
 
 import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
-import "../../utils/RoomPosition"; // Ensure O(1) prototype extension is loaded
+import { getPositionAtDirection } from "../../utils/RoomPosition"; // Explicit Import
 
 const log = new Logger("TrafficManager");
 
@@ -33,7 +33,7 @@ export class TrafficManager {
                 const zerg = intent.zerg;
                 if (!zerg.pos) continue;
 
-                const targetPos = zerg.pos.getPositionAtDirection(intent.direction);
+                const targetPos = getPositionAtDirection(zerg.pos, intent.direction);
 
                 if (!targetPos) {
                     // Border transition
@@ -94,7 +94,7 @@ export class TrafficManager {
         }
 
         for (const dir of directions) {
-            const pos = creep.pos.getPositionAtDirection(dir);
+            const pos = getPositionAtDirection(creep.pos, dir);
             if (!pos) continue;
 
             // ── FIX 5: Prevent Exit Bouncing ──
