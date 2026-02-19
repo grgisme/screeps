@@ -66,8 +66,7 @@ export class BunkerLayout {
         [STRUCTURE_ROAD]: [
             // Cross
             { x: 0, y: -5 }, { x: 0, y: 5 }, { x: -5, y: 0 }, { x: 5, y: 0 },
-            // Diagonals
-            { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 }, // Inner Ring Access
+            // ── FIX: Removed the {x: -1, y: -1} inner ring that overlapped with Towers ──
             { x: -2, y: -2 }, { x: 2, y: -2 }, { x: -2, y: 2 }, { x: 2, y: 2 },
             { x: -3, y: -3 }, { x: 3, y: -3 }, { x: -3, y: 3 }, { x: 3, y: 3 },
             { x: -4, y: -4 }, { x: 4, y: -4 }, { x: -4, y: 4 }, { x: 4, y: 4 },

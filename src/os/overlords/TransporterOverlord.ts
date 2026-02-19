@@ -4,8 +4,7 @@
 
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
-import { Transporter } from "../zerg/Transporter";
-import { Zerg } from "../zerg/Zerg";
+import { Zerg } from "../zerg/Zerg"; // ── FIX: Import base Zerg
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
@@ -15,7 +14,7 @@ const log = new Logger("TransporterOverlord");
 
 export class TransporterOverlord extends Overlord {
 
-    transporters: Transporter[] = [];
+    transporters: Zerg[] = []; // ── FIX: Use base Zerg
 
     constructor(colony: Colony) {
         super(colony, "transporter");
@@ -24,7 +23,7 @@ export class TransporterOverlord extends Overlord {
     init(): void {
         // Cast existing zergs — no re-wrapping (prevents wrapper thrashing)
         this.transporters = this.zergs
-            .filter(z => z.isAlive() && (z.memory as any)?.role === "transporter") as Transporter[];
+            .filter(z => z.isAlive() && (z.memory as any)?.role === "transporter");
 
         // Spawn Logic
         this.wishlistSpawns();

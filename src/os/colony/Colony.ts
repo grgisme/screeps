@@ -76,10 +76,11 @@ export class Colony {
         return Game.rooms[this.name];
     }
 
-    /** Find all owned creeps in this colony's room (Memoized per-tick to save CPU) */
+    /** Find all owned creeps in this colony (Memoized per-tick to save CPU) */
     get creeps(): Creep[] {
         if (this._creepsTick !== Game.time) {
-            this._creeps = this.room?.find(FIND_MY_CREEPS) ?? [];
+            // ── FIX: Global scan filtered by memory prevents remote creeps from vanishing ──
+            this._creeps = Object.values(Game.creeps).filter(c => c.memory?.colony === this.name);
             this._creepsTick = Game.time;
         }
         return this._creeps!;
