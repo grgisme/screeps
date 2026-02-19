@@ -15,23 +15,33 @@ const log = new Logger("Directive");
  * for active Directives and delegates all logic.
  */
 export abstract class Directive {
-    flag: Flag;
+    flagName: string; // Heap-safe: Store string ID, not the live Flag object
     colony: Colony;
-    pos: RoomPosition;
     roomName: string;
     overlords: Overlord[] = [];
 
     constructor(flag: Flag, colony: Colony) {
-        this.flag = flag;
+        this.flagName = flag.name;
         this.colony = colony;
-        this.pos = flag.pos;
         this.roomName = flag.pos.roomName;
-        log.info(`Directive created: ${this.constructor.name} for ${this.roomName}`);
+        log.info(`Directive created: ${this.constructor.name} for ${this.targetRoom}`);
+    }
+
+    // -----------------------------------------------------------------------
+    // Getters — resolve live Game objects each tick (no V8 leaks)
+    // -----------------------------------------------------------------------
+
+    get flag(): Flag | undefined {
+        return Game.flags[this.flagName];
+    }
+
+    get pos(): RoomPosition | undefined {
+        return this.flag?.pos;
     }
 
     /** Target room name extracted from flag name (e.g. "inc:W2N1" → "W2N1") */
     get targetRoom(): string {
-        const parts = this.flag.name.split(":");
+        const parts = this.flagName.split(":");
         return parts.length > 1 ? parts[1] : this.roomName;
     }
 

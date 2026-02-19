@@ -157,7 +157,7 @@ export class Colony {
         if (!Game.flags) return;
         for (const name in Game.flags) {
             if (name.startsWith("inc:")) {
-                const existing = this.directives.find(d => d.flag.name === name);
+                const existing = this.directives.find(d => d.flagName === name);
                 if (!existing) {
                     const flag = Game.flags[name];
                     const directive = new HarvestDirective(flag, this);

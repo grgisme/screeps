@@ -95,7 +95,7 @@ describe("RemoteMiningOverlord - Defense System", () => {
         };
 
         // Also mock existing miners as empty logic to trigger spawn
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
         overlord.init();
 

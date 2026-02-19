@@ -40,7 +40,7 @@ describe("ReserverOverlord", () => {
     it("should request reserver when ticksToEnd is below threshold", () => {
         const distance = 50;
         const overlord = new ReserverOverlord(mockColony, "W2N1", distance);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
         // Make remote room visible with controller reservation below threshold
         const remoteRoom = new Room("W2N1");
@@ -60,7 +60,7 @@ describe("ReserverOverlord", () => {
     it("should NOT request reserver when ticksToEnd is above threshold", () => {
         const distance = 50;
         const overlord = new ReserverOverlord(mockColony, "W2N1", distance);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
         // Make remote room visible with controller reservation above threshold
         const remoteRoom = new Room("W2N1");
@@ -78,7 +78,7 @@ describe("ReserverOverlord", () => {
     it("should request reserver when no reservation exists", () => {
         const distance = 50;
         const overlord = new ReserverOverlord(mockColony, "W2N1", distance);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
         // Make remote room visible with NO reservation
         const remoteRoom = new Room("W2N1");
@@ -97,7 +97,8 @@ describe("ReserverOverlord", () => {
     it("should not request reserver when one is already alive", () => {
         const distance = 50;
         const overlord = new ReserverOverlord(mockColony, "W2N1", distance);
-        overlord.zergs = [{ memory: { role: "reserver" }, isAlive: () => true }] as any;
+        (overlord as any)._zergs = [{ memory: { role: "reserver" }, isAlive: () => true }] as any;
+        (overlord as any)._zergsTick = Game.time;
 
         const remoteRoom = new Room("W2N1");
         (remoteRoom as any).controller = {

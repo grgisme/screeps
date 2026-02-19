@@ -5,6 +5,9 @@
 import { Process } from "../../kernel/Process";
 import { Kernel, SchedulerReport } from "../../kernel/Kernel";
 import { GlobalCache } from "../../kernel/GlobalCache";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("Profiler");
 
 /**
  * Critical process (Priority 0) that tracks cumulative CPU usage per
@@ -105,9 +108,9 @@ export class ProfilerProcess extends Process {
             }
 
             const totalCpu = entries.reduce((sum, e) => sum + e[1], 0);
-            console.log(
-                `📊 [Profiler] CPU Report (${ticks} ticks, ${totalCpu.toFixed(2)}ms total):\n` +
-                `📊 [Profiler] Top CPU Consumers:\n` +
+            log.info(
+                `CPU Report (${ticks} ticks, ${totalCpu.toFixed(2)}ms total):\n` +
+                `Top CPU Consumers:\n` +
                 lines.join("\n")
             );
         }
@@ -131,8 +134,8 @@ export class ProfilerProcess extends Process {
 
 
         if (schedLines.length > 0) {
-            console.log(
-                `📊 [Profiler] Scheduler Report (${ticks} ticks):\n` +
+            log.info(
+                `Scheduler Report (${ticks} ticks):\n` +
                 schedLines.join("\n")
             );
         }

@@ -29,11 +29,7 @@ export class MiningOverlord extends Overlord {
     }
 
     init(): void {
-        // Prune dead zergs (getter pattern — no refresh needed)
-        this.zergs = this.zergs.filter(z => z.isAlive());
-
-        // Adopt orphaned miners/haulers after global resets (throttled)
-        this.adoptOrphans();
+        // Subreaper getter in Overlord.ts auto-resolves live creeps each tick
 
         // 1. Instantiate Sites if not done (uses sourceId, not live Source)
         if (this.sites.length === 0) {
@@ -64,29 +60,6 @@ export class MiningOverlord extends Overlord {
         }
     }
 
-    /**
-     * Adopt orphaned miners and haulers that survive global resets.
-     * Throttled to every 100 ticks to avoid CPU waste.
-     */
-    private adoptOrphans(): void {
-        if (Game.time % 100 !== 0) return;
-
-        const room = this.colony.room;
-        if (!room) return;
-
-        const orphans = room.find(FIND_MY_CREEPS, {
-            filter: (creep: Creep) =>
-                (creep.memory.role === "miner" || creep.memory.role === "hauler") &&
-                !this.colony.getZerg(creep.name)
-        });
-
-        for (const orphan of orphans) {
-            const zerg = this.colony.registerZerg(orphan);
-            zerg.task = null;
-            this.zergs.push(zerg);
-            log.info(`${this.colony.name}: Adopted orphan ${orphan.memory.role} ${orphan.name}`);
-        }
-    }
 
     /**
      * True when mining infrastructure isn't ready (no containers/links/storage).

@@ -36,6 +36,8 @@ describe("Directive", () => {
     });
 
     it("should wrap a flag and expose roomName", () => {
+        // Register flag in Game.flags so the getter can resolve it
+        (globalThis as any).Game.flags["inc:W2N1"] = mockFlag;
         const directive = new TestDirective(mockFlag, mockColony);
         expect(directive.flag).to.equal(mockFlag);
         expect(directive.roomName).to.equal("W1N1"); // flag pos room

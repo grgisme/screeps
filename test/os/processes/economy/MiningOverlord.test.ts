@@ -44,7 +44,7 @@ describe("MiningOverlord", () => {
 
     it("should instantiate and initialize sites", () => {
         const overlord = new MiningOverlord(mockColony);
-        overlord.zergs = []; // Mock zergs property from base class
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time; // Mock zergs property from base class
         overlord.init();
 
         expect(overlord.sites).to.have.length(1);
@@ -53,7 +53,7 @@ describe("MiningOverlord", () => {
 
     it("should NOT request miner without a container (Genesis gate)", () => {
         const overlord = new MiningOverlord(mockColony);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
         overlord.init();
 
         // No containers exist — mining should be suspended
@@ -64,7 +64,7 @@ describe("MiningOverlord", () => {
 
     it("should request miner when container exists", () => {
         const overlord = new MiningOverlord(mockColony);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
         overlord.init();
 
         // Simulate a built container on the site
@@ -82,7 +82,7 @@ describe("MiningOverlord", () => {
 
     it("should request hauler if capacity is low", () => {
         const overlord = new MiningOverlord(mockColony);
-        overlord.zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
 
         // Mock site to require power
         overlord.init();
@@ -119,7 +119,7 @@ describe("MiningOverlord", () => {
             memory: { role: "hauler", state: { siteId: source.id } }
         } as any;
 
-        overlord.zergs = [{
+        (overlord as any)._zergs = [{
             creepName: "hauler1",
             name: "hauler1",
             creep: haulerCreep,
@@ -127,7 +127,7 @@ describe("MiningOverlord", () => {
             store: haulerCreep.store,
             isAlive: () => true
         } as any];
-
+        (overlord as any)._zergsTick = Game.time;
         overlord.init();
         const site = overlord.sites[0];
         site.containerPos = new RoomPosition(11, 11, "W1N1");

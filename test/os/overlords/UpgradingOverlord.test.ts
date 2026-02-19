@@ -33,7 +33,7 @@ describe("UpgradingOverlord", () => {
 
         overlord = new UpgradingOverlord(colony as any);
         // Cast overlord property to any to push mock upgraders if needed
-        (overlord as any).zergs = [];
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
     });
 
     it("should NOT spawn if no storage and low energy", () => {
