@@ -1,19 +1,13 @@
-// ============================================================================
-// ScoutOverlord — Sends a minimal creep to explore an invisible room
-// ============================================================================
-
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
+import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("ScoutOverlord");
 
-/**
- * Spawns a single [MOVE] creep to explore a target room.
- * Once the room is visible, no replacement is spawned.
- */
 export class ScoutOverlord extends Overlord {
     targetRoom: string;
+    scouts: Zerg[] = [];
 
     constructor(colony: Colony, targetRoom: string) {
         super(colony, `scout_${targetRoom}`);
@@ -21,22 +15,14 @@ export class ScoutOverlord extends Overlord {
     }
 
     init(): void {
-        // If room is already visible, no need for a scout
-        if (Game.rooms[this.targetRoom]) {
-            return;
-        }
+        this.scouts = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "scout");
+        if (Game.rooms[this.targetRoom] || this.scouts.length > 0) return;
 
-        // Check if we already have a scout assigned
-        const scouts = this.zergs.filter(z => (z.memory as any).role === "scout");
-        if (scouts.length > 0) {
-            return; // Scout is already alive and traveling
-        }
+        log.info(`Room ${this.targetRoom} invisible, requesting scout.`);
 
-        // Request a minimal scout
-        log.info(`Requesting scout for ${this.targetRoom}`);
         this.colony.hatchery.enqueue({
-            priority: 10, // Low priority — scouting is cheap
-            bodyTemplate: [MOVE], // Single MOVE part — cheapest possible
+            priority: 10,
+            bodyTemplate: [MOVE],
             overlord: this,
             name: `scout_${this.targetRoom}_${Game.time}`,
             memory: { role: "scout", targetRoom: this.targetRoom }
@@ -44,17 +30,11 @@ export class ScoutOverlord extends Overlord {
     }
 
     run(): void {
-        const scouts = this.zergs.filter(z => (z.memory as any).role === "scout");
-        for (const scout of scouts) {
-            if (!scout.isAlive()) continue;
-            // If already in target room, job is done — just idle
-            if (scout.creep!.room.name === this.targetRoom) {
-                return;
+        for (const scout of this.scouts) {
+            if (!scout.isAlive() || scout.task) continue;
+            if (scout.room?.name !== this.targetRoom) {
+                scout.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
             }
-
-            // Travel to the target room center
-            const targetPos = new RoomPosition(25, 25, this.targetRoom);
-            scout.travelTo(targetPos, 20); // range 20 = just enter the room
         }
     }
 }

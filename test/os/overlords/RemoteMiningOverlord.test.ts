@@ -30,7 +30,8 @@ describe("RemoteMiningOverlord", () => {
         // Mock Colony (Colony.room is a getter reading Game.rooms[this.name])
         const colonyRoom = {
             name: "W1N1",
-            storage: { pos: new RoomPosition(10, 10, "W1N1") },
+            storage: { pos: new RoomPosition(10, 10, "W1N1"), id: "storage1" },
+            controller: { owner: { username: "Me" } },
             find: () => []
         };
         (globalThis as any).Game.rooms["W1N1"] = colonyRoom;
@@ -53,6 +54,7 @@ describe("RemoteMiningOverlord", () => {
             source,
             sourceId: "source1",
             containerPos,
+            containerId: null,
             container: null,
             calculateHaulingPowerNeeded: () => 100,
             refreshStructureIds: () => { }
@@ -82,6 +84,7 @@ describe("RemoteMiningOverlord", () => {
             source,
             sourceId: "source1",
             containerPos,
+            containerId: "container1",
             container: {}, // Exists
             calculateHaulingPowerNeeded: () => 100,
             refreshStructureIds: () => { }
@@ -106,7 +109,7 @@ describe("RemoteMiningOverlord", () => {
         // Mock MiningSite
         const source = { pos: new RoomPosition(25, 25, "W2N1"), id: "source1" } as Source;
         const containerPos = new RoomPosition(24, 25, "W2N1");
-        const site = { source, sourceId: "source1", containerPos, calculateHaulingPowerNeeded: () => 100, refreshStructureIds: () => { } } as any;
+        const site = { source, sourceId: "source1", containerPos, containerId: "container1", calculateHaulingPowerNeeded: () => 100, refreshStructureIds: () => { } } as any;
         overlord.sites = [site];
         (containerPos as any).lookFor = () => [{ structureType: STRUCTURE_CONTAINER }]; // Skip container build
 

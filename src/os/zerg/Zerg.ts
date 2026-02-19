@@ -24,6 +24,7 @@ import { PickupTask } from "../tasks/PickupTask";
 import { UpgradeTask } from "../tasks/UpgradeTask";
 import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
+import { ReserveTask } from "../tasks/ReserveTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
 
@@ -175,6 +176,8 @@ export class Zerg {
                 return new BuildTask(taskMem.targetId as Id<ConstructionSite>);
             case "Repair":
                 return new RepairTask(taskMem.targetId as Id<Structure>);
+            case "Reserve":
+                return new ReserveTask(taskMem.targetId as Id<StructureController>);
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;
@@ -263,6 +266,16 @@ export class Zerg {
         const creep = this.creep;
         if (!creep) return ERR_NOT_OWNER;
         const result = creep.heal(target);
+        if (result === OK) this.hasWorkIntent = true;
+        return result;
+    }
+
+    /** Reserve a neutral room controller. */
+    reserveController(target: StructureController): ScreepsReturnCode {
+        if (this.hasWorkIntent) return ERR_BUSY;
+        const creep = this.creep;
+        if (!creep) return ERR_NOT_OWNER;
+        const result = creep.reserveController(target);
         if (result === OK) this.hasWorkIntent = true;
         return result;
     }

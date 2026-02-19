@@ -78,9 +78,9 @@ describe("RemoteMiningOverlord - Defense System", () => {
     });
 
     it("should suspend spawning when dangerous", () => {
-        // Setup: Dangerous
-        Memory.rooms["W2N1"].isDangerous = true;
-        Memory.rooms["W2N1"].dangerUntil = 200;
+        // Setup: Active hostile with combat parts in room
+        const hostile = new MockCreep("Invader", "W2N1");
+        hostile.body = [{ type: ATTACK, hits: 100 }];
 
         // Spy on hatchery
         let queued = false;
@@ -89,39 +89,18 @@ describe("RemoteMiningOverlord - Defense System", () => {
         // Mock sources to trigger spawn logic if it were safe
         const source = { id: "source1", pos: new MockRoomPosition(10, 10, "W2N1") };
         room.find = (type: number) => {
+            if (type === FIND_HOSTILE_CREEPS) return [hostile];
             if (type === FIND_SOURCES) return [source];
             return [];
         };
-        // Mock calculateRemoteDistance to avoid PathFinder issues or let it fail gently?
-        // RemoteMiningOverlord.init calls calculateRemoteDistance.
-        // It uses PathFinder.search. Mock PathFinder?
-        // Mock setup has PathFinder.
 
         // Also mock existing miners as empty logic to trigger spawn
         overlord.zergs = [];
 
-        // We need sites to be populated for spawn logic to run.
-        // init() populates sites THEN checks danger?
-        // My code:
-        // 0. Defense check
-        // 1. Instantiate sites
-        // ...
-        // If dangerous -> RETURN.
-
-        // So if dangerous, sites might not even be instantiated if first run?
-        // Wait.
-        // My code:
-        // if (Memory.rooms[room.name].isDangerous) { ... return; }
-        // // 1. Instantiate Sites
-        //
-        // So if first tick is dangerous, sites are never created.
-        // If sites were created before, they exist.
-        // In this test, overlord is fresh. Sites empty.
-        // If dangerous, sites remain empty. spawn logic (loop over sites) won't run.
-
         overlord.init();
 
-        expect(overlord.sites.length).to.equal(0); // Should be empty if returned early
+        // Hostile present → isDangerous set, spawning suspended (returned early before sites loop)
+        expect(Memory.rooms["W2N1"].isDangerous).to.be.true;
         expect(queued).to.be.false;
     });
 });

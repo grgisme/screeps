@@ -97,7 +97,7 @@ describe("ReserverOverlord", () => {
     it("should not request reserver when one is already alive", () => {
         const distance = 50;
         const overlord = new ReserverOverlord(mockColony, "W2N1", distance);
-        overlord.zergs = [{ memory: { role: "reserver" } }] as any;
+        overlord.zergs = [{ memory: { role: "reserver" }, isAlive: () => true }] as any;
 
         const remoteRoom = new Room("W2N1");
         (remoteRoom as any).controller = {

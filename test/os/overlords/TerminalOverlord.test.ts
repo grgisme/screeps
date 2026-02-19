@@ -73,6 +73,7 @@ describe("TerminalOverlord", () => {
     });
 
     it("should sell energy when critical full", () => {
+        (globalThis as any).Game.time = 100; // Must be multiple of 100 for market calls
         // Setup: Critical full
         storage.store.getUsedCapacity = ((_r?: any) => 950000) as any; // > 900k
 
