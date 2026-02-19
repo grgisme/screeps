@@ -6,6 +6,8 @@ import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { Transporter } from "../zerg/Transporter";
 import { Zerg } from "../zerg/Zerg";
+import { WithdrawTask } from "../tasks/WithdrawTask";
+import { TransferTask } from "../tasks/TransferTask";
 
 export class TransporterOverlord extends Overlord {
 
@@ -25,12 +27,21 @@ export class TransporterOverlord extends Overlord {
     }
 
     run(): void {
-        // IoC: Colony.run() calls zerg.run() on all zergs.
-        // Overlord only assigns tasks here (no direct run calls).
         for (const transporter of this.transporters) {
-            if (!transporter.task) {
-                // Task assignment will be handled by LogisticsNetwork integration
-                // Placeholder: transporters get tasks from the logistics layer
+            if (!transporter.isAlive() || transporter.task) continue;
+
+            if (transporter.store?.getUsedCapacity() === 0) {
+                // Empty hauler — find something to withdraw from
+                const targetId = this.colony.logistics.matchWithdraw(transporter);
+                if (targetId) {
+                    transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                }
+            } else {
+                // Loaded hauler — find somewhere to deliver to
+                const targetId = this.colony.logistics.matchTransfer(transporter);
+                if (targetId) {
+                    transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
+                }
             }
         }
     }

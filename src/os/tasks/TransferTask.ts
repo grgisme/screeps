@@ -18,7 +18,7 @@ export class TransferTask implements ITask {
     settings: TaskSettings = { targetRange: 1, workRange: 1 };
 
     /** Stored as an ID string — never a live Game object. */
-    private readonly targetId: Id<Structure | Creep>;
+    public readonly targetId: Id<Structure | Creep>;
 
     constructor(targetId: Id<Structure | Creep>) {
         this.targetId = targetId;

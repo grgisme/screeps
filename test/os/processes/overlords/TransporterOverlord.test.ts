@@ -7,7 +7,6 @@ import { TransporterOverlord } from "../../../../src/os/overlords/TransporterOve
 describe("TransporterOverlord", () => {
     let mockColony: any;
     let room: Room;
-    let structure: Structure;
 
     beforeEach(() => {
         room = new Room("W1N1");
@@ -16,25 +15,13 @@ describe("TransporterOverlord", () => {
         mockColony = {
             room: room,
             name: "W1N1",
-            logistics: new LogisticsNetwork(undefined as any), // We'll patch this
+            logistics: new LogisticsNetwork(undefined as any),
+            zergs: new Map(),
             hatchery: {
                 enqueue: (req: any) => { console.log(`[MockHatchery] Enqueued ${req.name}`); }
             }
         };
         mockColony.logistics.colony = mockColony;
-        mockColony.logistics.providers = [];
-        mockColony.logistics.requesters = [];
-        mockColony.logistics.unassignedRequests = []; // Initialize this
-
-        structure = {
-            id: "struct1",
-            pos: new RoomPosition(10, 10, "W1N1"),
-            store: {
-                energy: 0,
-                getCapacity: () => 1000,
-                getUsedCapacity: () => 0
-            }
-        } as unknown as Structure;
     });
 
     it("should instantiate", () => {
@@ -46,10 +33,9 @@ describe("TransporterOverlord", () => {
     it("should calculate deficit properly", () => {
         const overlord = new TransporterOverlord(mockColony);
 
-        // Add requester
-        mockColony.logistics.requestInput(structure, { amount: 500 });
+        // Add requester with ID-based API
+        mockColony.logistics.requestInput("struct1" as Id<Structure | Resource>, { amount: 500 });
 
-        // Check deficit
         const deficit = (overlord as any).calculateTransportDeficit();
         expect(deficit).to.equal(500);
     });
@@ -58,7 +44,7 @@ describe("TransporterOverlord", () => {
         const overlord = new TransporterOverlord(mockColony);
 
         // Deficit 1000
-        mockColony.logistics.requestInput(structure, { amount: 1000 });
+        mockColony.logistics.requestInput("struct1" as Id<Structure | Resource>, { amount: 1000 });
 
         // No transporters
         overlord.transporters = [];

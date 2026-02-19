@@ -72,8 +72,10 @@ describe("Overlord Control Pattern", () => {
         it("should request spawn if no miner exists", () => {
             // Mock spawn
             const spawn = {
+                id: "spawn1" as Id<StructureSpawn>,
                 spawning: null,
-                spawnCreep: () => OK
+                spawnCreep: () => OK,
+                store: { getFreeCapacity: () => 0 }
             } as unknown as StructureSpawn;
 
             // Spy on spawnCreep
@@ -83,14 +85,30 @@ describe("Overlord Control Pattern", () => {
                 return OK;
             };
 
+            // Mock storage so MiningOverlord.handleSpawning spawn gate passes
+            (room as any).storage = {
+                id: "storage1",
+                store: { getUsedCapacity: () => 50000, getFreeCapacity: () => 950000 }
+            };
+
             room.find = (type: FindConstant) => {
                 if (type === FIND_SOURCES) return [source];
                 if (type === FIND_MY_SPAWNS) return [spawn];
+                // Return a worker so emergency mode doesn't fire
+                if (type === FIND_MY_CREEPS) return [{ memory: { role: 'worker' } }];
                 return [];
             };
 
+            // Mock getObjectById — needed for Hatchery's ID-based spawn getter
+            (globalThis as any).Game.getObjectById = (id: string) => {
+                if (id === source.id) return source;
+                if (id === "spawn1") return spawn;
+                return null;
+            };
+
             const colony = new Colony("W1N1");
-            const overlord = colony.overlords[0] as MiningOverlord;
+            // overlords[1] is MiningOverlord (overlords[0] is ConstructionOverlord)
+            const overlord = colony.overlords[1] as MiningOverlord;
 
             overlord.init();
             colony.hatchery.run();

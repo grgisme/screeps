@@ -24,15 +24,22 @@ describe("Hatchery", () => {
         room.find = (type: FindConstant) => {
             if (type === FIND_MY_SPAWNS) return [spawn];
             if (type === FIND_MY_STRUCTURES) return [];
-            if (type === FIND_MY_CREEPS) return [{}]; // Default: creeps exist
+            if (type === FIND_MY_CREEPS) return [{ memory: { role: "worker" } }]; // Default: critical creeps exist
             return [];
         };
         room.energyAvailable = 1000;
         room.energyCapacityAvailable = 1000;
 
+        // Mock getObjectById for ID-based getters
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "spawn1") return spawn;
+            return null;
+        };
+
         mockColony = {
             name: "W1N1",
             room: room,
+            get creeps() { return room.find(FIND_MY_CREEPS); },
             logistics: {
                 requestInput: () => { }
             }
@@ -59,10 +66,10 @@ describe("Hatchery", () => {
     });
 
     it("should spawn bootstrapper in emergency mode", () => {
-        // Arrange: No creeps
+        // Arrange: No critical creeps (miners/workers)
         room.find = (type: FindConstant) => {
             if (type === FIND_MY_SPAWNS) return [spawn];
-            if (type === FIND_MY_CREEPS) return []; // EMPTY!
+            if (type === FIND_MY_CREEPS) return []; // EMPTY — no miners or workers
             return [];
         };
 
@@ -78,7 +85,8 @@ describe("Hatchery", () => {
 
         hatchery.run();
 
-        expect(spawnedName).to.equal("Bootstrapper");
+        // Name now includes colony name and Game.time
+        expect(spawnedName).to.match(/^bootstrapper_W1N1_\d+$/);
         expect(spawnedBody).to.deep.equal([WORK, CARRY, MOVE]);
     });
 
@@ -104,9 +112,6 @@ describe("Hatchery", () => {
         const hatchery = new Hatchery(mockColony);
         const overlord = { processId: "ol1" } as any;
 
-        // Template cost: 600 (Assuming grow logic scales it?) 
-        // CreepBody.grow([attack, move], 1000) -> 80+50=130. 7 parts -> 910. 
-        // If energyAvailable is low.
         room.energyAvailable = 100; // Low
 
         hatchery.enqueue({ priority: 1, bodyTemplate: [ATTACK, MOVE], overlord, name: "Expensive" });

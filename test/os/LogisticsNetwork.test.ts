@@ -7,34 +7,19 @@ import { LogisticsNetwork } from "../../src/os/colony/LogisticsNetwork";
 describe("LogisticsNetwork", () => {
     let mockColony: any;
     let room: Room;
-    let structure: Structure;
 
     beforeEach(() => {
         room = new Room("W1N1");
         (globalThis as any).Game.rooms["W1N1"] = room;
-        structure = {
-            id: "struct1" as Id<Structure>,
-            structureType: STRUCTURE_CONTAINER,
-            pos: {
-                findInRange: () => [],
-                x: 10,
-                y: 10,
-                roomName: "W1N1",
-                getRangeTo: (_other: any) => 5 // Default for simple tests
-            },
-            room: room,
-            store: {
-                getUsedCapacity: () => 500,
-                energy: 500
-            }
-        } as unknown as Structure;
 
         room.find = (_type: FindConstant) => [];
 
         mockColony = {
             room: room,
             name: "W1N1",
-            logistics: null // Will be set or use separate network
+            logistics: null, // Will be set later
+            zergs: new Map(),
+            linkNetwork: null
         };
     });
 
@@ -45,204 +30,173 @@ describe("LogisticsNetwork", () => {
 
     it("should register requesters with options", () => {
         const network = new LogisticsNetwork(mockColony);
-        network.requestInput(structure, { amount: 100, priority: 5 });
+        const targetId = "struct1" as Id<Structure | Resource>;
+        network.requestInput(targetId, { amount: 100, priority: 5 });
         expect(network.requesters).to.have.length(1);
-        expect(network.requesters[0].target).to.equal(structure);
+        expect(network.requesters[0].targetId).to.equal("struct1");
         expect(network.requesters[0].amount).to.equal(100);
         expect(network.requesters[0].priority).to.equal(5);
     });
 
-    it("should register providers", () => {
+    it("should register offers", () => {
         const network = new LogisticsNetwork(mockColony);
-        network.requestOutput(structure);
-        expect(network.providers).to.contain(structure);
+        const targetId = "struct1" as Id<Structure | Resource>;
+        network.requestOutput(targetId);
+        expect(network.offerIds).to.contain("struct1");
     });
 
-    it("should match requests to providers", () => {
+    it("should clear reservations on refresh", () => {
         const network = new LogisticsNetwork(mockColony);
+        network.incomingReservations.set("a", 100);
+        network.outgoingReservations.set("b", 200);
 
-        // Provider: Structure with 500 energy
-        const provider = structure;
-        network.requestOutput(provider);
+        network.refresh();
 
-        // Requester: Structure needing 100 energy
-        const requester = {
-            id: "req1",
-            pos: {
-                x: 10, y: 15, roomName: "W1N1",
-                getRangeTo: (_other: any) => 5,
-                findInRange: () => []
-            },
-            store: { energy: 0 }
-        } as unknown as Structure;
-        network.requestInput(requester, { amount: 100 });
-
-        network.match();
-        const matches = network.unassignedRequests;
-
-        expect(matches).to.have.length(1);
-        expect(matches[0].target).to.equal(requester);
-        expect(matches[0].provider).to.equal(provider);
-        expect(matches[0].amount).to.equal(100);
+        expect(network.incomingReservations.size).to.equal(0);
+        expect(network.outgoingReservations.size).to.equal(0);
+        expect(network.offerIds).to.have.length(0);
+        expect(network.requesters).to.have.length(0);
     });
 
-    it("should update reservations on match", () => {
+    it("should compute effective amount with reservations", () => {
         const network = new LogisticsNetwork(mockColony);
-        const provider = structure;
-        network.requestOutput(provider);
+        const targetId = "cont1" as Id<Structure | Resource>;
 
-        const requester = {
-            id: "req1",
-            pos: {
-                x: 10, y: 15, roomName: "W1N1",
-                getRangeTo: (_other: any) => 5,
-                findInRange: () => []
-            },
-            store: { energy: 0 }
-        } as unknown as Structure;
-        network.requestInput(requester, { amount: 100 });
+        // Mock: container with 500 energy
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "cont1") return {
+                id: "cont1",
+                store: { [RESOURCE_ENERGY]: 500 }
+            };
+            return null;
+        };
 
-        network.match();
+        // No reservations
+        expect(network.getEffectiveAmount(targetId)).to.equal(500);
 
-        expect(network.outgoingReservations.get(provider.id)).to.equal(100);
-        expect(network.incomingReservations.get(requester.id)).to.equal(100);
+        // With outgoing reservation (someone is withdrawing 200)
+        network.outgoingReservations.set("cont1", 200);
+        expect(network.getEffectiveAmount(targetId)).to.equal(300);
+
+        // With incoming reservation too (someone is transferring 100)
+        network.incomingReservations.set("cont1", 100);
+        expect(network.getEffectiveAmount(targetId)).to.equal(400);
     });
 
-    it("should respect effective amount to prevent double booking", () => {
+    it("should matchWithdraw to highest scoring offer", () => {
         const network = new LogisticsNetwork(mockColony);
 
-        // Provider has 500 energy
-        const provider = structure;
-        network.requestOutput(provider);
+        // Offer 1: 400 energy, distance 10
+        // Offer 2: 200 energy, distance 2
+        const offer1Id = "offer1" as Id<Structure | Resource>;
+        const offer2Id = "offer2" as Id<Structure | Resource>;
+        network.requestOutput(offer1Id);
+        network.requestOutput(offer2Id);
 
-        // Requester 1: Needs 400
-        const req1 = {
-            id: "req1",
-            pos: {
-                x: 10, y: 11, roomName: "W1N1",
-                getRangeTo: (_other: any) => 1,
-                findInRange: () => []
-            },
-            store: { energy: 0 }
-        } as unknown as Structure;
-        network.requestInput(req1, { amount: 400, priority: 10 });
-
-        // Requester 2: Needs 400 (should only get 100 matched or 0 if we are strict)
-        const req2 = {
-            id: "req2",
-            pos: {
-                x: 10, y: 12, roomName: "W1N1",
-                getRangeTo: (_other: any) => 2,
-                findInRange: () => []
-            },
-            store: { energy: 0 }
-        } as unknown as Structure;
-        network.requestInput(req2, { amount: 400, priority: 5 }); // Lower priority
-
-        network.match();
-        const matches = network.unassignedRequests;
-
-        // First match takes 400. Provider effectively has 100 left.
-        // Second match needs 400. 
-        // Logic: amount = Math.min(req.amount, providerAmount)
-        // match 1: 400
-        // match 2: 100 (remaining)
-
-        expect(matches).to.have.length(2);
-        expect(matches[0].target).to.equal(req1);
-        expect(matches[0].amount).to.equal(400);
-
-        expect(matches[1].target).to.equal(req2);
-        expect(matches[1].amount).to.equal(100);
-
-        expect(network.outgoingReservations.get(provider.id)).to.equal(500);
-    });
-
-    it("should predict energy gain for source containers", () => {
-        // Mock a source and container
-        const source = {
-            pos: new RoomPosition(10, 9, "W1N1"), // Next to container
-            energy: 1000,
-            energyCapacity: 3000
-        } as Source;
-
-        const container = {
-            id: "cont1",
-            structureType: STRUCTURE_CONTAINER,
-            pos: {
-                findInRange: () => [source],
-                x: 10,
-                y: 10,
-                roomName: "W1N1"
-            }, // Mock pos with findInRange
-            store: { energy: 0, getUsedCapacity: () => 0 }
-        } as unknown as Structure;
-
-        // Mock room.find to return our source when called by findInRange? 
-        // findInRange is method on RoomPosition. We mocked the structure's pos object above.
-
-        const network = new LogisticsNetwork(mockColony);
-
-        // Distance 10. Gain = (3000/300) * 10 = 100.
-        const effective = network.getEffectiveAmount(container, RESOURCE_ENERGY, 10);
-
-        expect(effective).to.equal(100);
-    });
-
-    it("should prioritize requests based on heuristic score", () => {
-        const network = new LogisticsNetwork(mockColony);
-        const provider = structure; // 500 energy
-        network.requestOutput(provider);
-
-        // High distance, High Priority, Full Load
-        const req1 = {
-            id: "req1",
-            pos: {
-                x: 10, y: 20, roomName: "W1N1",
-                getRangeTo: (_other: any) => 10,
-                findInRange: () => []
-            },
-            store: { energy: 0 },
-            amount: 50
-        } as unknown as Structure;
-        network.requestInput(req1, { amount: 50, priority: 10 });
-
-        // Short distance, Low Priority, Partial Load
-        const req2 = {
-            id: "req2",
-            pos: {
-                x: 10, y: 12, roomName: "W1N1",
-                getRangeTo: (_other: any) => 2,
-                findInRange: () => []
-            },
-            store: { energy: 40, getCapacity: () => 50 }, // Needs 10
-            amount: 10
-        } as unknown as Structure;
-        network.requestInput(req2, { amount: 10, priority: 1 });
-
-        network.match();
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "offer1") return {
+                id: "offer1",
+                pos: new RoomPosition(30, 30, "W1N1"),
+                store: { [RESOURCE_ENERGY]: 400 }
+            };
+            if (id === "offer2") return {
+                id: "offer2",
+                pos: new RoomPosition(12, 10, "W1N1"),
+                store: { [RESOURCE_ENERGY]: 200 }
+            };
+            return null;
+        };
 
         const zerg = {
-            pos: {
-                x: 10, y: 25, roomName: "W1N1",
-                getRangeTo: (_other: any) => {
-                    // Provider is at 10,10. Zerg at 10,25. Range is 15.
-                    return 15;
-                }
-            },
-            creep: {
-                store: {
-                    getCapacity: () => 50
-                }
+            pos: new RoomPosition(10, 10, "W1N1"),
+            store: {
+                getFreeCapacity: () => 100,
+                getUsedCapacity: () => 0
             }
         } as any;
 
-        // Req1: Priority 10. Density 50/50=1. Dist to Provider 15. Score = 10*(1+1)/15^2 = 20/225 = 0.08
-        // Req2: Priority 1. Density 10/50=0.2. Dist 15. Score = 1*(1.2)/225 = 0.005.
-        // Req1 wins massively.
+        // offer1: score = 400 / max(1, ~28) ≈ 14.3
+        // offer2: score = 200 / max(1, 2) = 100
+        // offer2 wins (closer and still decent amount)
+        const result = network.matchWithdraw(zerg);
+        expect(result).to.equal("offer2");
 
-        const task = network.requestTask(zerg);
-        expect(task).to.not.be.null;
-        expect(task!.target).to.equal(req1);
+        // Check reservation was set
+        expect(network.outgoingReservations.get("offer2")).to.equal(100);
+    });
+
+    it("should matchTransfer to highest scoring request", () => {
+        const network = new LogisticsNetwork(mockColony);
+
+        // Request 1: priority 10, distance ~20
+        // Request 2: priority 5, distance 2
+        const req1Id = "req1" as Id<Structure | Resource>;
+        const req2Id = "req2" as Id<Structure | Resource>;
+        network.requestInput(req1Id, { amount: 500, priority: 10 });
+        network.requestInput(req2Id, { amount: 300, priority: 5 });
+
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "req1") return {
+                id: "req1",
+                pos: new RoomPosition(30, 30, "W1N1")
+            };
+            if (id === "req2") return {
+                id: "req2",
+                pos: new RoomPosition(12, 10, "W1N1")
+            };
+            return null;
+        };
+
+        const zerg = {
+            pos: new RoomPosition(10, 10, "W1N1"),
+            store: {
+                getFreeCapacity: () => 0,
+                getUsedCapacity: () => 100
+            }
+        } as any;
+
+        // req1: score = 10 / max(1, ~28) ≈ 0.36
+        // req2: score = 5 / max(1, 2) = 2.5
+        // req2 wins (closer)
+        const result = network.matchTransfer(zerg);
+        expect(result).to.equal("req2");
+
+        // Check reservation was set
+        expect(network.incomingReservations.get("req2")).to.equal(100);
+    });
+
+    it("should prevent double-booking via reservations on matchWithdraw", () => {
+        const network = new LogisticsNetwork(mockColony);
+
+        const offerId = "offer1" as Id<Structure | Resource>;
+        network.requestOutput(offerId);
+
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "offer1") return {
+                id: "offer1",
+                pos: new RoomPosition(15, 15, "W1N1"),
+                store: { [RESOURCE_ENERGY]: 150 }
+            };
+            return null;
+        };
+
+        const zerg1 = {
+            pos: new RoomPosition(10, 10, "W1N1"),
+            store: { getFreeCapacity: () => 100, getUsedCapacity: () => 0 }
+        } as any;
+
+        const zerg2 = {
+            pos: new RoomPosition(10, 10, "W1N1"),
+            store: { getFreeCapacity: () => 100, getUsedCapacity: () => 0 }
+        } as any;
+
+        // First zerg matches — reserves 100, effective becomes 50
+        const r1 = network.matchWithdraw(zerg1);
+        expect(r1).to.equal("offer1");
+        expect(network.outgoingReservations.get("offer1")).to.equal(100);
+
+        // Second zerg — effective is now 150 - 100 = 50, which is <= 50 threshold
+        const r2 = network.matchWithdraw(zerg2);
+        expect(r2).to.be.null; // Not enough effective energy
     });
 });

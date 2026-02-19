@@ -1,12 +1,24 @@
+// ============================================================================
+// LinkNetwork — Manages inter-link energy transfers
+// ============================================================================
+//
+// ⚠️ GETTER PATTERN (V8 MEMORY LEAK PREVENTION)
+// ══════════════════════════════════════════════
+// LinkNetwork persists in the Global Heap (owned by Colony).
+// NEVER cache live StructureLink objects. Store IDs only.
+// ============================================================================
+
 import type { Colony } from "./Colony";
 import { Logger } from "../../utils/Logger";
 
 export class LinkNetwork {
     colony: Colony;
-    sourceLinks: StructureLink[] = [];
-    hubLink: StructureLink | null = null;
-    controllerLink: StructureLink | null = null;
-    receiverLinks: StructureLink[] = []; // Extensions, Towers, etc.
+
+    // ── Stored IDs only — never live Game objects ──────────────────────
+    sourceLinkIds: Id<StructureLink>[] = [];
+    hubLinkId?: Id<StructureLink>;
+    controllerLinkId?: Id<StructureLink>;
+    receiverLinkIds: Id<StructureLink>[] = [];
 
     private log: Logger;
 
@@ -15,11 +27,41 @@ export class LinkNetwork {
         this.log = new Logger("LinkNetwork");
     }
 
+    // -----------------------------------------------------------------------
+    // Getters — resolve live Game objects each tick (no heap leak)
+    // -----------------------------------------------------------------------
+
+    get sourceLinks(): StructureLink[] {
+        return this.sourceLinkIds
+            .map(id => Game.getObjectById(id))
+            .filter((l): l is StructureLink => l !== null);
+    }
+
+    get hubLink(): StructureLink | null {
+        return this.hubLinkId ? Game.getObjectById(this.hubLinkId) : null;
+    }
+
+    get controllerLink(): StructureLink | null {
+        return this.controllerLinkId ? Game.getObjectById(this.controllerLinkId) : null;
+    }
+
+    get receiverLinks(): StructureLink[] {
+        return this.receiverLinkIds
+            .map(id => Game.getObjectById(id))
+            .filter((l): l is StructureLink => l !== null);
+    }
+
+    // -----------------------------------------------------------------------
+    // Refresh — throttled layout discovery (every 50 ticks)
+    // -----------------------------------------------------------------------
+
     refresh(): void {
-        this.sourceLinks = [];
-        this.hubLink = null;
-        this.controllerLink = null;
-        this.receiverLinks = [];
+        if (Game.time % 50 !== 0) return;
+
+        this.sourceLinkIds = [];
+        this.hubLinkId = undefined;
+        this.controllerLinkId = undefined;
+        this.receiverLinkIds = [];
 
         if (!this.colony.room) return;
 
@@ -38,7 +80,7 @@ export class LinkNetwork {
 
             // 1. Hub Link (Range <= 2 to Storage)
             if (storage && link.pos.getRangeTo(storage) <= 2) {
-                this.hubLink = link;
+                this.hubLinkId = link.id;
                 assigned = true;
             }
 
@@ -46,7 +88,7 @@ export class LinkNetwork {
             if (!assigned) {
                 for (const source of sources) {
                     if (link.pos.getRangeTo(source) <= 2) {
-                        this.sourceLinks.push(link);
+                        this.sourceLinkIds.push(link.id);
                         assigned = true;
                         break;
                     }
@@ -55,59 +97,61 @@ export class LinkNetwork {
 
             // 3. Controller Link (Range <= 3 to Controller)
             if (!assigned && controller && link.pos.getRangeTo(controller) <= 3) {
-                this.controllerLink = link;
+                this.controllerLinkId = link.id;
                 assigned = true;
             }
 
-            // 4. Receiver Links (Everything else - usually near extensions/towers)
+            // 4. Receiver Links (Everything else)
             if (!assigned) {
-                this.receiverLinks.push(link);
+                this.receiverLinkIds.push(link.id);
             }
         }
     }
 
     init(): void {
-        if (Game.time % 100 === 0 && this.sourceLinks.length > 0) {
-            this.log.info(`[${this.colony.name}] Network: ${this.sourceLinks.length} Src, ${this.hubLink ? 1 : 0} Hub, ${this.controllerLink ? 1 : 0} Ctrl, ${this.receiverLinks.length} Recv`);
+        const sourceLinks = this.sourceLinks;
+        if (Game.time % 100 === 0 && sourceLinks.length > 0) {
+            this.log.info(`[${this.colony.name}] Network: ${sourceLinks.length} Src, ${this.hubLink ? 1 : 0} Hub, ${this.controllerLink ? 1 : 0} Ctrl, ${this.receiverLinks.length} Recv`);
         }
     }
 
     run(): void {
         if (!this.colony.room) return;
 
+        const hubLink = this.hubLink;
+        const controllerLink = this.controllerLink;
+
         // 1. Collection Phase: Source -> Hub
         for (const sourceLink of this.sourceLinks) {
             if (sourceLink.cooldown > 0) continue;
             if (sourceLink.store.getUsedCapacity(RESOURCE_ENERGY) >= 750) {
                 // If Hub exists and has space, send to Hub
-                if (this.hubLink && this.hubLink.store.getFreeCapacity(RESOURCE_ENERGY) >= 750) {
-                    sourceLink.transferEnergy(this.hubLink);
+                if (hubLink && hubLink.store.getFreeCapacity(RESOURCE_ENERGY) >= 750) {
+                    sourceLink.transferEnergy(hubLink);
                     continue;
                 }
 
                 // Fallback: Send to Controller if empty-ish
-                if (this.controllerLink && this.controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
-                    sourceLink.transferEnergy(this.controllerLink);
+                if (controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
+                    sourceLink.transferEnergy(controllerLink);
                     continue;
                 }
             }
         }
 
         // 2. Distribution Phase: Hub -> Receivers/Controller
-        if (this.hubLink && this.hubLink.cooldown === 0 && this.hubLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+        if (hubLink && hubLink.cooldown === 0 && hubLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
             // Priority 1: Receivers (Towers/Extensions)
-            // Ideally we'd distinguish Tower links from Extension links, but simple proximity/memory checks usually suffice
-            // For now, treat all 'receiverLinks' as high priority if empty
             for (const receiver of this.receiverLinks) {
                 if (receiver.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
-                    this.hubLink.transferEnergy(receiver);
+                    hubLink.transferEnergy(receiver);
                     return; // Only one transfer per tick
                 }
             }
 
             // Priority 2: Controller Link
-            if (this.controllerLink && this.controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) { // Keep it topped up but not necessarily FULL full
-                this.hubLink.transferEnergy(this.controllerLink);
+            if (controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
+                hubLink.transferEnergy(controllerLink);
                 return;
             }
         }

@@ -18,6 +18,8 @@
 
 import { ITask, TaskMemory } from "../tasks/ITask";
 import { HarvestTask } from "../tasks/HarvestTask";
+import { WithdrawTask } from "../tasks/WithdrawTask";
+import { TransferTask } from "../tasks/TransferTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
 
@@ -146,14 +148,10 @@ export class Zerg {
         switch (taskMem.name) {
             case "Harvest":
                 return new HarvestTask(taskMem.targetId as Id<Source>);
-            case "Withdraw": {
-                const { WithdrawTask } = require("../tasks/WithdrawTask");
+            case "Withdraw":
                 return new WithdrawTask(taskMem.targetId as Id<Structure | Tombstone | Ruin>);
-            }
-            case "Transfer": {
-                const { TransferTask } = require("../tasks/TransferTask");
+            case "Transfer":
                 return new TransferTask(taskMem.targetId as Id<Structure | Creep>);
-            }
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;

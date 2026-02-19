@@ -1,0 +1,37 @@
+﻿test/os/LogisticsNetwork.test.ts(48,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(50,38): error TS2551: Property 'target' does not exist on type 'LogisticsRequest'. Did you mean 'targetId'?
+test/os/LogisticsNetwork.test.ts(57,31): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(58,24): error TS2339: Property 'providers' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(66,31): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(78,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(80,17): error TS2339: Property 'match' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(81,33): error TS2339: Property 'unassignedRequests' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(92,31): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(103,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(105,17): error TS2339: Property 'match' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(116,31): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(128,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(140,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(142,17): error TS2339: Property 'match' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(143,33): error TS2339: Property 'unassignedRequests' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(187,65): error TS2554: Expected 1 arguments, but got 3.
+test/os/LogisticsNetwork.test.ts(195,31): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(208,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(221,30): error TS2345: Argument of type 'Structure<StructureConstant>' is not assignable to parameter of type 'Id<Structure<StructureConstant> | Resource<ResourceConstant>>'.
+  Type 'Structure<StructureConstant>' is not assignable to type 'string'.
+test/os/LogisticsNetwork.test.ts(223,17): error TS2339: Property 'match' does not exist on type 'LogisticsNetwork'.
+test/os/LogisticsNetwork.test.ts(244,30): error TS2339: Property 'requestTask' does not exist on type 'LogisticsNetwork'.
+test/os/zerg/Transporter.test.ts(52,21): error TS2339: Property 'request' does not exist on type 'Transporter'.
+test/os/zerg/Transporter.test.ts(73,21): error TS2339: Property 'request' does not exist on type 'Transporter'.
+test/os/zerg/Transporter.test.ts(87,21): error TS2339: Property 'request' does not exist on type 'Transporter'.

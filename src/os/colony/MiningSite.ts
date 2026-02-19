@@ -67,6 +67,11 @@ export class MiningSite {
     refreshStructureIds(): void {
         if (Game.time % 50 !== 0) return;
 
+        // If we failed to calculate a position previously (e.g. no spawn existed yet), retry!
+        if (!this.containerPos) {
+            this.calculateContainerPos();
+        }
+
         // 1. Find container at the calculated position
         if (this.containerPos && !this.containerId) {
             const found = this.containerPos

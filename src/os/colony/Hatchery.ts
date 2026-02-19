@@ -1,3 +1,14 @@
+// ============================================================================
+// Hatchery — Spawn management and priority queue
+// ============================================================================
+//
+// ⚠️ GETTER PATTERN (V8 MEMORY LEAK PREVENTION)
+// ══════════════════════════════════════════════
+// Hatchery persists in the Global Heap (owned by Colony).
+// NEVER cache live StructureSpawn or StructureExtension arrays.
+// Store IDs only, resolve via getters.
+// ============================================================================
+
 import type { Colony } from "./Colony";
 import { Overlord } from "../overlords/Overlord";
 import { CreepBody } from "../../utils/CreepBody";
@@ -15,27 +26,44 @@ export interface SpawnRequest {
 
 export class Hatchery {
     colony: Colony;
-    spawns: StructureSpawn[];
-    extensions: StructureExtension[];
+
+    // ── Stored IDs only — never live Game objects ──────────────────────
+    spawnIds: Id<StructureSpawn>[] = [];
+    extensionIds: Id<StructureExtension>[] = [];
+
     queue: SpawnRequest[];
-    pendingSpawns: string[]; // Names of creeps that are spawning/spawned but not yet in Game.creeps (maybe)
+    pendingSpawns: string[]; // Names of creeps that are spawning/spawned but not yet in Game.creeps
 
     constructor(colony: Colony) {
         this.colony = colony;
-        this.spawns = [];
-        this.extensions = [];
         this.queue = [];
         this.pendingSpawns = [];
         this.refresh();
     }
 
+    // -----------------------------------------------------------------------
+    // Getters — resolve live Game objects each tick (no heap leak)
+    // -----------------------------------------------------------------------
+
+    get spawns(): StructureSpawn[] {
+        return this.spawnIds
+            .map(id => Game.getObjectById(id))
+            .filter((s): s is StructureSpawn => s !== null);
+    }
+
+    get extensions(): StructureExtension[] {
+        return this.extensionIds
+            .map(id => Game.getObjectById(id))
+            .filter((e): e is StructureExtension => e !== null);
+    }
+
     refresh(): void {
         const room = this.colony.room;
         if (!room) return;
-        this.spawns = room.find(FIND_MY_SPAWNS);
-        this.extensions = room.find(FIND_MY_STRUCTURES, {
+        this.spawnIds = room.find(FIND_MY_SPAWNS).map(s => s.id);
+        this.extensionIds = (room.find(FIND_MY_STRUCTURES, {
             filter: (s: Structure) => s.structureType === STRUCTURE_EXTENSION
-        }) as StructureExtension[];
+        }) as StructureExtension[]).map(e => e.id);
         // Clear queue each tick — overlords re-enqueue during init()
         this.queue = [];
     }
@@ -62,15 +90,21 @@ export class Hatchery {
     }
 
     run(): void {
-        // 1. Emergency Mode Check
+        // 1. Emergency Mode Check — use colony.creeps (getter, no room.find bomb)
         const room = this.colony.room;
         if (!room) return;
-        if (room.find(FIND_MY_CREEPS).length === 0 && this.spawns.length > 0) {
-            const spawn = this.spawns[0];
-            // Skip if spawn is already busy or Bootstrapper exists
-            if (!spawn.spawning && !Game.creeps["Bootstrapper"]) {
-                log.warn(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning Bootstrapper.`);
-                const result = spawn.spawnCreep([WORK, CARRY, MOVE], "Bootstrapper", {
+
+        const spawns = this.spawns;
+        const criticalCreeps = this.colony.creeps.filter(
+            c => c.memory.role === 'miner' || c.memory.role === 'worker'
+        );
+
+        if (criticalCreeps.length === 0 && spawns.length > 0) {
+            const spawn = spawns[0];
+            const bootstrapperName = `bootstrapper_${this.colony.name}_${Game.time}`;
+            if (!spawn.spawning) {
+                log.warn(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning ${bootstrapperName}.`);
+                const result = spawn.spawnCreep([WORK, CARRY, MOVE], bootstrapperName, {
                     memory: { role: 'worker', room: this.colony.name } as any
                 });
                 if (result === OK) return;
@@ -78,24 +112,13 @@ export class Hatchery {
         }
 
         // 2. Process Queue
-        if (this.queue.length > 0 && this.spawns.length > 0) {
-            const availableSpawns = this.spawns.filter(s => !s.spawning);
+        if (this.queue.length > 0 && spawns.length > 0) {
+            const availableSpawns = spawns.filter(s => !s.spawning);
 
             for (const spawn of availableSpawns) {
                 if (this.queue.length === 0) break;
 
                 const request = this.queue[0]; // Peek at highest priority
-
-                // Calculate dynamic body
-                // We assume request.bodyTemplate is a pattern if we use grow, OR a fixed body.
-                // The prompt says: "Input: template (e.g., [WORK, WORK, MOVE]) and energyLimit."
-                // So we always force 'grow' logic? 
-                // "Dynamic Body Generator... Implement the Template Repetition Algorithm"
-                // Let's assume the Overlord passes a small pattern (e.g. [WORK, CARRY, MOVE]) and we scale it.
-                // Or maybe the Overlord did the scaling? 
-                // "Implement the Hatchery... Dynamic Body Generator... Input: template... and energyLimit."
-                // This implies the Hatchery (or Overlord calling utility) does it.
-                // Let's use current energyCapacityAvailable for the limit.
 
                 const energyCapacity = this.colony.room?.energyCapacityAvailable ?? 300;
                 const body = CreepBody.grow(request.bodyTemplate, energyCapacity);
@@ -104,17 +127,13 @@ export class Hatchery {
                 const bodyCost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 
                 // If we can't afford it yet, but it fits in capacity, we wait (block lower priorities).
-                // Or do we skip? "Priority Queue". Usually we block for high priority.
                 if (bodyCost > energyAvailable) {
-                    // Cannot spawn yet.
-                    // If we can NEVER afford it (cost > capacity), we must fix or discard.
                     if (bodyCost > energyCapacity) {
                         log.warn(() => `Dropping impossible spawn request ${request.name} (Cost ${bodyCost} > Cap ${energyCapacity})`);
                         this.queue.shift();
                         continue;
                     }
                     // Else wait for energy.
-                    // We consume the spawn's turn by doing nothing (waiting).
                     break;
                 }
 
@@ -131,11 +150,9 @@ export class Hatchery {
                     log.info(() => `Spawning '${request.name}' (Cost: ${bodyCost}) for Overlord '${request.overlord.processId}'.`);
                     this.queue.shift(); // Remove from queue
                 } else if (result === ERR_NAME_EXISTS) {
-                    // Name collision? Just drop it or rename?
                     log.warn(`Name exists '${request.name}', dropping request.`);
                     this.queue.shift();
                 } else if (result === ERR_BUSY) {
-                    // Spawn is already working — expected, just wait
                     break;
                 } else {
                     log.error(`Spawn error ${result} for ${request.name}`);
@@ -147,47 +164,21 @@ export class Hatchery {
         this.registerRefillRequests();
 
         // 4. Cleanup pending spawns
-        // If creep exists in Game.creeps, remove from pending
         this.pendingSpawns = this.pendingSpawns.filter(name => !Game.creeps[name]);
     }
 
     private registerRefillRequests(): void {
-        // Calculate total deficit
         const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
         const available = this.colony.room?.energyAvailable ?? 0;
         const deficit = capacity - available;
 
         if (deficit > 0) {
-            // "If deficit > 0, register a single LogisticsRequest (Priority: Critical) for the Hatchery."
-            // We need a target for the request. The prompt implies "The Hatchery" is the target?
-            // But LogisticsNetwork requests target specific structures.
-            // "Refill Logic: When a Transporter arrives, it should transfer to the Spawn/Extension with the lowest current energy."
-
-            // If we register a request pointing to... a spawn? Or the Hatchery object itself?
-            // LogisticsNetwork types usually expect Structure | Resource.
-            // If we pass 'this', we need to implement the Structure interface or handle it in Logistics.
-            // EASIER: Pick one spawn/extension as the 'representative' target, OR
-            // modify LogisticsNetwork to handle a virtual target?
-            // PROMPT SAYS: "register a single LogisticsRequest ... for the Hatchery."
-
-            // Let's pick the first spawn as the anchor/target for the logistics request.
-            // But checking 'lowest current energy' implies the transporter decides where to put it upon arrival.
-            // This suggests the LogisticsNetwork needs to support a "Cluster" target or we just point to the Spawn and assume the transporter is smart.
-
-            // To keep it simple and compliant:
-            // We will request input for the first Spawn (or first extension needing energy).
-            // But we treat it as a request for the whole pool.
-
-            // Find a structure that needs energy
+            // Find a structure that needs energy — use getters for live objects
             const target = this.spawns.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) ||
                 this.extensions.find(e => e.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
 
             if (target) {
-                // Determine absolute priority. Supply Critical = 1? Or higher?
-                // "Tiers: 1=Critical (Miners/Queens)..."
-                // Logistics priorities: usually 1-10.
-                // Let's say 10 is critical.
-                this.colony.logistics.requestInput(target, {
+                this.colony.logistics.requestInput(target.id as Id<Structure | Resource>, {
                     amount: deficit,
                     priority: 10, // Critical
                     resourceType: RESOURCE_ENERGY

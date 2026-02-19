@@ -13,6 +13,8 @@ describe("LinkNetwork", () => {
     beforeEach(() => {
         room = new Room("W1N1");
         (globalThis as any).Game.rooms["W1N1"] = room;
+        // Force time to be divisible by 50 so refresh() runs
+        (globalThis as any).Game.time = 100;
 
         storage = {
             id: "storage",
@@ -42,13 +44,12 @@ describe("LinkNetwork", () => {
         };
 
         colony = new Colony("W1N1");
-        // Manually attach network
         colony.linkNetwork = new LinkNetwork(colony);
     });
 
     it("should identify Hub Link", () => {
         const hubLink = {
-            id: "hubLink",
+            id: "hubLink" as Id<StructureLink>,
             structureType: STRUCTURE_LINK,
             pos: new RoomPosition(26, 26, "W1N1"), // Range 1 to storage
             store: { getUsedCapacity: () => 0 }
@@ -60,14 +61,20 @@ describe("LinkNetwork", () => {
             return [];
         };
 
+        // Mock getObjectById for getter resolution
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "hubLink") return hubLink;
+            return null;
+        };
+
         colony.linkNetwork.refresh();
+        expect(colony.linkNetwork.hubLinkId).to.equal("hubLink");
         expect(colony.linkNetwork.hubLink).to.not.be.null;
-        expect(colony.linkNetwork.hubLink!.id).to.equal("hubLink");
     });
 
     it("should identify Source Link", () => {
         const sourceLink = {
-            id: "srcLink",
+            id: "srcLink" as Id<StructureLink>,
             structureType: STRUCTURE_LINK,
             pos: new RoomPosition(41, 41, "W1N1"), // Range 1 to source
             store: { getUsedCapacity: () => 0 }
@@ -79,14 +86,22 @@ describe("LinkNetwork", () => {
             return [];
         };
 
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "srcLink") return sourceLink;
+            return null;
+        };
+
         colony.linkNetwork.refresh();
-        expect(colony.linkNetwork.sourceLinks).to.have.length(1);
-        expect(colony.linkNetwork.sourceLinks[0].id).to.equal("srcLink");
+        expect(colony.linkNetwork.sourceLinkIds).to.have.length(1);
+
+        const resolved = colony.linkNetwork.sourceLinks;
+        expect(resolved).to.have.length(1);
+        expect(resolved[0].id).to.equal("srcLink");
     });
 
     it("should transfer from Source to Hub when full", () => {
         const sourceLink = {
-            id: "srcLink",
+            id: "srcLink" as Id<StructureLink>,
             structureType: STRUCTURE_LINK,
             pos: new RoomPosition(41, 41, "W1N1"),
             store: { getUsedCapacity: () => 800 }, // Full
@@ -95,7 +110,7 @@ describe("LinkNetwork", () => {
         } as any;
 
         const hubLink = {
-            id: "hubLink",
+            id: "hubLink" as Id<StructureLink>,
             structureType: STRUCTURE_LINK,
             pos: new RoomPosition(26, 26, "W1N1"),
             store: { getUsedCapacity: () => 0, getFreeCapacity: () => 800 },
@@ -106,6 +121,12 @@ describe("LinkNetwork", () => {
             if (type === FIND_MY_STRUCTURES) return [sourceLink, hubLink];
             if (type === FIND_SOURCES) return [source];
             return [];
+        };
+
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "srcLink") return sourceLink;
+            if (id === "hubLink") return hubLink;
+            return null;
         };
 
         colony.linkNetwork.refresh();
