@@ -60,6 +60,21 @@ export class DefenseOverlord extends Overlord {
         return 600 - (range - 5) * 30;
     }
 
+    // ── Dynamic Body Scaling ─────────────────────────────────────────────
+
+    private getDefenderBody(capacity: number): BodyPartConstant[] {
+        if (capacity < 400) return [RANGED_ATTACK, MOVE]; // RCL 1 (200 energy)
+        if (capacity < 800) return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE]; // RCL 2 (400 energy)
+        if (capacity < 1300) return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE, HEAL, MOVE]; // RCL 3 (700 energy)
+
+        // RCL 4+ (1300+ energy) - The 1040 energy bruiser
+        return [
+            TOUGH, TOUGH, MOVE, MOVE,
+            RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE,
+            HEAL, MOVE
+        ];
+    }
+
     // ── Init ────────────────────────────────────────────────────────────
 
     init(): void {
@@ -93,13 +108,10 @@ export class DefenseOverlord extends Overlord {
 
             // Spawn defenders (cap at 2)
             if (this.defenders.length < 2) {
+                const capacity = room.energyCapacityAvailable;
                 this.colony.hatchery.enqueue({
                     priority: 100,
-                    bodyTemplate: [
-                        TOUGH, TOUGH, MOVE, MOVE,
-                        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE,
-                        HEAL, MOVE
-                    ],
+                    bodyTemplate: this.getDefenderBody(capacity),
                     overlord: this,
                     name: `defender_${Game.time}`,
                     memory: { role: "defender" }
@@ -213,7 +225,9 @@ export class DefenseOverlord extends Overlord {
                     defender.travelTo(target.pos);
                 }
             } else {
-                if (room.storage) defender.travelTo(room.storage.pos, 3);
+                // Idle: rally near storage or spawn
+                const rallyPoint = room.storage?.pos || room.find(FIND_MY_SPAWNS)[0]?.pos;
+                if (rallyPoint) defender.travelTo(rallyPoint, 3);
             }
 
             // 4b. Healing (Post-Combat to avoid locking the attack pipeline)

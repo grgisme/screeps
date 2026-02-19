@@ -16,6 +16,21 @@ export class DestroyerOverlord extends Overlord {
         this.targetRoom = targetRoom;
     }
 
+    // ── Dynamic Body Scaling ─────────────────────────────────────────────
+
+    private getDestroyerBody(capacity: number): BodyPartConstant[] {
+        if (capacity < 400) return [ATTACK, MOVE]; // 130 energy
+        if (capacity < 800) return [ATTACK, MOVE, ATTACK, MOVE]; // 260 energy
+        if (capacity < 1300) return [TOUGH, MOVE, ATTACK, ATTACK, MOVE, MOVE, HEAL, MOVE]; // 620 energy
+
+        // RCL 4+ - The 1000 energy bruiser
+        return [
+            TOUGH, TOUGH, TOUGH, MOVE, MOVE, MOVE,
+            ATTACK, ATTACK, ATTACK, ATTACK, MOVE, MOVE, MOVE, MOVE,
+            HEAL, MOVE
+        ];
+    }
+
     init(): void {
         // Heap-safe destroyer resolution — no wrapper thrashing
         this.destroyers = this.zergs.filter(
@@ -24,13 +39,12 @@ export class DestroyerOverlord extends Overlord {
 
         // Spawn 1 Destroyer
         if (this.destroyers.length < 1) {
+            const room = this.colony.room;
+            if (!room) return;
+
             this.colony.hatchery.enqueue({
                 priority: 80,
-                bodyTemplate: [
-                    TOUGH, TOUGH, TOUGH, MOVE, MOVE, MOVE,
-                    ATTACK, ATTACK, ATTACK, ATTACK, MOVE, MOVE, MOVE, MOVE,
-                    HEAL, MOVE
-                ],
+                bodyTemplate: this.getDestroyerBody(room.energyCapacityAvailable),
                 overlord: this,
                 name: `destroyer_${this.targetRoom}_${Game.time}`,
                 memory: { role: "destroyer" }
@@ -48,8 +62,9 @@ export class DestroyerOverlord extends Overlord {
             // ────────────────────────────────────────────────────────
             if (creep.hits < creep.hitsMax * 0.5) {
                 const home = Game.rooms[this.colony.name];
-                if (home && home.storage) {
-                    destroyer.travelTo(home.storage, 5);
+                if (home) {
+                    const rallyPoint = home.storage?.pos || home.find(FIND_MY_SPAWNS)[0]?.pos;
+                    if (rallyPoint) destroyer.travelTo(rallyPoint, 5);
                 }
                 // Self-heal while retreating (uses work pipeline)
                 if (creep.getActiveBodyparts(HEAL) > 0) {
