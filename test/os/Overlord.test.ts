@@ -55,7 +55,7 @@ describe("Overlord Control Pattern", () => {
     describe("Colony", () => {
         it("should instantiate and scan for overlords", () => {
             const colony = new Colony("W1N1");
-            expect(colony.overlords).to.have.length(6);
+            expect(colony.overlords).to.have.length(7);
             expect(colony.overlords[1]).to.be.instanceOf(MiningOverlord);
         });
 

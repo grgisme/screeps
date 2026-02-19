@@ -8,6 +8,7 @@ import { Transporter } from "../zerg/Transporter";
 import { Zerg } from "../zerg/Zerg";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
+import { PickupTask } from "../tasks/PickupTask";
 
 export class TransporterOverlord extends Overlord {
 
@@ -34,7 +35,13 @@ export class TransporterOverlord extends Overlord {
                 // Empty hauler — find something to withdraw from
                 const targetId = this.colony.logistics.matchWithdraw(transporter);
                 if (targetId) {
-                    transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                    const target = Game.getObjectById(targetId);
+                    if (target && 'amount' in target) {
+                        // Dropped resource — use pickup
+                        transporter.setTask(new PickupTask(targetId as Id<Resource>));
+                    } else {
+                        transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                    }
                 }
             } else {
                 // Loaded hauler — find somewhere to deliver to

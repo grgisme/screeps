@@ -11,6 +11,7 @@
 import type { Overlord } from "../overlords/Overlord";
 import { Zerg } from "../zerg/Zerg";
 import { MiningOverlord } from "../overlords/MiningOverlord";
+import { TransporterOverlord } from "../overlords/TransporterOverlord";
 import { ConstructionOverlord } from "../overlords/ConstructionOverlord";
 import { WorkerOverlord } from "../overlords/core/WorkerOverlord";
 import { UpgradingOverlord } from "../overlords/core/UpgradingOverlord";
@@ -83,6 +84,7 @@ export class Colony {
     private initOverlords(): void {
         this.registerOverlord(new ConstructionOverlord(this));
         this.registerOverlord(new MiningOverlord(this));
+        this.registerOverlord(new TransporterOverlord(this));
 
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
