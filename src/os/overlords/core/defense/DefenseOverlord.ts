@@ -125,10 +125,16 @@ export class DefenseOverlord extends Overlord {
 
         if (hostiles.length > 0) {
             // ────────────────────────────────────────────────────────────
-            // 1. Safe Mode Fail-Safe
+            // 1. Safe Mode Fail-Safe (Anti-Scout & Anti-NPC Filter)
             // ────────────────────────────────────────────────────────────
             const spawns = room.find(FIND_MY_SPAWNS);
-            const breached = hostiles.some(h => spawns.some(s => h.pos.getRangeTo(s) <= 3));
+            const dangerousHostiles = hostiles.filter(h =>
+                h.owner.username !== "Invader" &&
+                (h.getActiveBodyparts(ATTACK) > 0 ||
+                    h.getActiveBodyparts(RANGED_ATTACK) > 0 ||
+                    h.getActiveBodyparts(WORK) > 0)
+            );
+            const breached = dangerousHostiles.some(h => spawns.some(s => h.pos.getRangeTo(s) <= 3));
             if (breached && room.controller && room.controller.safeModeAvailable > 0 && !room.controller.safeMode && !room.controller.safeModeCooldown) {
                 room.controller.activateSafeMode();
                 log.alert(`safemode-${room.name}`, `CRITICAL BREACH! Safe mode activated in ${room.name}`);
@@ -172,50 +178,56 @@ export class DefenseOverlord extends Overlord {
             if (!defender.isAlive() || !defender.pos) continue;
             const creep = defender.creep!;
 
-            // 4a. Pre-heal (simultaneous with ranged attacks)
-            if (creep.hits < creep.hitsMax && creep.getActiveBodyparts(HEAL) > 0) {
-                defender.heal(creep);
-            } else {
-                const wounded = defender.pos.findInRange(FIND_MY_CREEPS, 3, {
-                    filter: (c: Creep) => c.hits < c.hitsMax
-                });
-                if (wounded.length > 0) {
-                    const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
-                    if (defender.pos.isNearTo(healTarget)) defender.heal(healTarget);
-                    else defender.rangedHeal(healTarget);
+            let meleeEngaged = false;
+            let rangedEngaged = false;
+
+            // 4a. Target Identification & Combat
+            const target = hostiles.length > 0 ? defender.pos.findClosestByRange(hostiles) : null;
+
+            if (target) {
+                const range = defender.pos.getRangeTo(target);
+
+                // Ranged Pipeline
+                if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
+                    if (range <= 1) defender.rangedMassAttack();
+                    else defender.rangedAttack(target);
+                    rangedEngaged = true;
                 }
+
+                // Work Pipeline (Notice: separate IF, not ELSE IF)
+                if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
+                    defender.attack(target);
+                    meleeEngaged = true;
+                }
+
+                // Movement
+                const isRanged = creep.getActiveBodyparts(RANGED_ATTACK) > creep.getActiveBodyparts(ATTACK);
+                if (isRanged && range < 3) {
+                    const path = PathFinder.search(
+                        defender.pos,
+                        { pos: target.pos, range: 4 },
+                        { flee: true, roomCallback: () => new PathFinder.CostMatrix() }
+                    );
+                    if (path.path.length > 0) TrafficManager.register(defender, defender.pos.getDirectionTo(path.path[0])!, 1);
+                } else if (range > (isRanged ? 3 : 1)) {
+                    defender.travelTo(target.pos);
+                }
+            } else {
+                if (room.storage) defender.travelTo(room.storage.pos, 3);
             }
 
-            // 4b. Combat
-            if (hostiles.length > 0) {
-                const target = defender.pos.findClosestByRange(hostiles);
-                if (target) {
-                    const range = defender.pos.getRangeTo(target);
-                    if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
-                        if (range <= 1) defender.rangedMassAttack();
-                        else defender.rangedAttack(target);
-                    } else if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
-                        defender.attack(target);
-                    }
-
-                    // 4c. Movement (Kite or Charge)
-                    const isRanged = creep.getActiveBodyparts(RANGED_ATTACK) > creep.getActiveBodyparts(ATTACK);
-                    if (isRanged && range < 3) {
-                        const path = PathFinder.search(
-                            defender.pos,
-                            { pos: target.pos, range: 4 },
-                            { flee: true, roomCallback: () => new PathFinder.CostMatrix() }
-                        );
-                        if (path.path.length > 0) {
-                            TrafficManager.register(defender, defender.pos.getDirectionTo(path.path[0])!, 1);
-                        }
-                    } else if (range > (isRanged ? 3 : 1)) {
-                        defender.travelTo(target.pos);
+            // 4b. Healing (Post-Combat to avoid locking the attack pipeline)
+            if (creep.getActiveBodyparts(HEAL) > 0) {
+                if (creep.hits < creep.hitsMax) {
+                    if (!meleeEngaged) defender.heal(creep);
+                } else {
+                    const wounded = defender.pos.findInRange(FIND_MY_CREEPS, 3, { filter: (c: Creep) => c.hits < c.hitsMax });
+                    if (wounded.length > 0) {
+                        const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
+                        if (defender.pos.isNearTo(healTarget) && !meleeEngaged) defender.heal(healTarget);
+                        else if (!rangedEngaged) defender.rangedHeal(healTarget);
                     }
                 }
-            } else {
-                // Idle: rally near storage
-                if (room.storage) defender.travelTo(room.storage.pos, 3);
             }
         }
     }

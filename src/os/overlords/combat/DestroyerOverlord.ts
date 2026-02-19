@@ -81,33 +81,27 @@ export class DestroyerOverlord extends Overlord {
             });
             const targets: (Creep | Structure)[] = [...hostiles, ...structures];
 
-            // 3a. Pre-heal (simultaneous with ranged attacks)
-            if (creep.hits < creep.hitsMax && creep.getActiveBodyparts(HEAL) > 0) {
-                destroyer.heal(creep);
-            } else {
-                const wounded = destroyer.pos.findInRange(FIND_MY_CREEPS, 3, {
-                    filter: (c: Creep) => c.hits < c.hitsMax
-                });
-                if (wounded.length > 0) {
-                    const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
-                    if (destroyer.pos.isNearTo(healTarget)) destroyer.heal(healTarget);
-                    else destroyer.rangedHeal(healTarget);
-                }
-            }
+            let meleeEngaged = false;
+            let rangedEngaged = false;
 
-            // 3b. Combat
+            // 3a. Combat
             if (targets.length > 0) {
                 const target = destroyer.pos.findClosestByRange(targets);
                 if (target) {
                     const range = destroyer.pos.getRangeTo(target);
+
                     if (creep.getActiveBodyparts(RANGED_ATTACK) > 0 && range <= 3) {
                         if (range <= 1) destroyer.rangedMassAttack();
                         else destroyer.rangedAttack(target);
-                    } else if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
-                        destroyer.attack(target);
+                        rangedEngaged = true;
                     }
 
-                    // 3c. Movement (Kite or Charge)
+                    if (creep.getActiveBodyparts(ATTACK) > 0 && range <= 1) {
+                        destroyer.attack(target);
+                        meleeEngaged = true;
+                    }
+
+                    // 3b. Movement (Kite or Charge)
                     const isRanged = creep.getActiveBodyparts(RANGED_ATTACK) > creep.getActiveBodyparts(ATTACK);
                     if (isRanged && range < 3) {
                         const path = PathFinder.search(
@@ -125,6 +119,22 @@ export class DestroyerOverlord extends Overlord {
             } else {
                 // Room clear — idle / patrol
                 log.info("Target room clear.");
+            }
+
+            // 3c. Healing (Post-Combat)
+            if (creep.getActiveBodyparts(HEAL) > 0) {
+                if (creep.hits < creep.hitsMax) {
+                    if (!meleeEngaged) destroyer.heal(creep);
+                } else {
+                    const wounded = destroyer.pos.findInRange(FIND_MY_CREEPS, 3, {
+                        filter: (c: Creep) => c.hits < c.hitsMax
+                    });
+                    if (wounded.length > 0) {
+                        const healTarget = wounded.sort((a, b) => a.hits - b.hits)[0];
+                        if (destroyer.pos.isNearTo(healTarget) && !meleeEngaged) destroyer.heal(healTarget);
+                        else if (!rangedEngaged) destroyer.rangedHeal(healTarget);
+                    }
+                }
             }
         }
     }
