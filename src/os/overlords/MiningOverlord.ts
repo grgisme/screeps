@@ -62,7 +62,7 @@ export class MiningOverlord extends Overlord {
             const capacity = room.energyCapacityAvailable;
             const body = capacity >= 700
                 ? [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] // Optimal Static Miner (700e)
-                : [WORK, WORK, CARRY, MOVE, MOVE]; // Early RCL Fallback
+                : (capacity >= 350 ? [WORK, WORK, CARRY, MOVE, MOVE] : [WORK, CARRY, MOVE]); // RCL 1 Fallback (200e)
 
             this.colony.hatchery.enqueue({
                 priority: 100,

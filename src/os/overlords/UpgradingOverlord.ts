@@ -111,7 +111,7 @@ export class UpgradingOverlord extends Overlord {
                     log.warning(`Polymorphic shift: Re-tasking gated upgrader ${u.name} to worker`);
                     if (u.memory) {
                         (u.memory as any).role = "worker";
-                        (u.memory as any)._overlord = `worker:${this.colony.name}`;
+                        (u.memory as any)._overlord = "worker";
                     }
                     u.setTask(null);
                 }

@@ -96,14 +96,11 @@ export class Hatchery {
                 if (room.energyAvailable >= 200) {
                     log.warning(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning ${bootstrapperName}.`);
 
-                    const workerOverlord = this.colony.overlords.find(o => o.processId.startsWith("worker:"));
-                    const overlordId = workerOverlord ? workerOverlord.processId : `worker:${this.colony.name}`;
-
                     const result = spawn.spawnCreep([WORK, CARRY, MOVE], bootstrapperName, {
                         memory: {
                             role: 'worker',
                             colony: this.colony.name,
-                            _overlord: overlordId
+                            _overlord: "worker"
                         } as any
                     });
 

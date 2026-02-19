@@ -435,29 +435,30 @@ export class Zerg {
                     const room = Game.rooms[roomName];
                     if (!room) return false;
 
-                    const cacheKey = `matrix:${roomName}:${Game.time}`;
-                    let costs = GlobalCache.get<CostMatrix>(cacheKey);
+                    const cacheKey = `matrix:${roomName}`;
+                    let cached = GlobalCache.get<{ tick: number, matrix: CostMatrix }>(cacheKey);
 
-                    if (!costs) {
-                        costs = new PathFinder.CostMatrix();
+                    if (!cached || cached.tick !== Game.time) {
+                        const costs = new PathFinder.CostMatrix();
                         room.find(FIND_STRUCTURES).forEach(s => {
                             if (s.structureType === STRUCTURE_ROAD) {
-                                costs!.set(s.pos.x, s.pos.y, 1);
+                                costs.set(s.pos.x, s.pos.y, 1);
                             } else if ((OBSTACLE_OBJECT_TYPES as string[]).includes(s.structureType) ||
                                 (s.structureType === STRUCTURE_RAMPART && !(s as OwnedStructure).my)) {
-                                costs!.set(s.pos.x, s.pos.y, 255);
+                                costs.set(s.pos.x, s.pos.y, 255);
                             }
                         });
 
                         room.find(FIND_MY_CREEPS).forEach(c => {
                             if (c.memory.role === 'miner') {
-                                costs!.set(c.pos.x, c.pos.y, 255); // Avoid stationary miners
+                                costs.set(c.pos.x, c.pos.y, 255); // Avoid stationary miners
                             }
                         });
 
-                        GlobalCache.set(cacheKey, costs);
+                        cached = { tick: Game.time, matrix: costs };
+                        GlobalCache.set(cacheKey, cached);
                     }
-                    return costs;
+                    return cached.matrix;
                 }
             });
 
