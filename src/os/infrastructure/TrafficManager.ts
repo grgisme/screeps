@@ -4,32 +4,9 @@
 
 import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
+import "../../utils/RoomPosition"; // Ensure O(1) prototype extension is loaded
 
 const log = new Logger("TrafficManager");
-
-/** Direction offsets: [dx, dy] indexed by DirectionConstant (1-8). */
-const DIR_OFFSETS: Record<DirectionConstant, [number, number]> = {
-    [TOP]: [0, -1],
-    [TOP_RIGHT]: [1, -1],
-    [RIGHT]: [1, 0],
-    [BOTTOM_RIGHT]: [1, 1],
-    [BOTTOM]: [0, 1],
-    [BOTTOM_LEFT]: [-1, 1],
-    [LEFT]: [-1, 0],
-    [TOP_LEFT]: [-1, -1],
-};
-
-/**
- * Get the RoomPosition one step in the given direction from `pos`.
- * Returns null if the result would be out of bounds (0–49).
- */
-function positionAtDirection(pos: RoomPosition, dir: DirectionConstant): RoomPosition | null {
-    const [dx, dy] = DIR_OFFSETS[dir];
-    const x = pos.x + dx;
-    const y = pos.y + dy;
-    if (x < 0 || x > 49 || y < 0 || y > 49) return null;
-    return new RoomPosition(x, y, pos.roomName);
-}
 
 export interface MoveIntent {
     zerg: Zerg;
@@ -42,110 +19,112 @@ export class TrafficManager {
     private static movesThisTick = 0;
     private static shovesThisTick = 0;
 
-    /**
-     * Register a movement intent for this tick.
-     */
     static register(zerg: Zerg, direction: DirectionConstant, priority: number): void {
         this.intents.push({ zerg, direction, priority });
     }
 
-    /**
-     * Resolve conflicts and execute moves.
-     * High priority (lower number) moves first.
-     */
     static run(): void {
-        // Sort by priority (ascending: 0 is highest)
-        this.intents.sort((a, b) => a.priority - b.priority);
+        try {
+            this.intents.sort((a, b) => a.priority - b.priority);
 
-        for (const intent of this.intents) {
-            const zerg = intent.zerg;
-            const targetPos = positionAtDirection(zerg.pos!, intent.direction);
+            for (const intent of this.intents) {
+                if ((intent.direction as number) === 0) continue; // Skip swapped/cancelled intents
 
-            if (!targetPos) continue;
+                const zerg = intent.zerg;
+                if (!zerg.pos) continue;
 
-            // Check for creeps at target
-            const creepsAtTarget = targetPos.lookFor(LOOK_CREEPS);
-            const blocker = creepsAtTarget.length > 0 ? (creepsAtTarget[0] as Creep) : null;
+                const targetPos = zerg.pos.getPositionAtDirection(intent.direction);
 
-            // If blocked by a friendly creep
-            if (blocker && blocker.owner && blocker.owner.username === zerg.room!.controller?.owner?.username) {
-                // Is the blocker moving?
-                const blockerIntent = this.intents.find(i => i.zerg.name === blocker.name);
+                if (!targetPos) {
+                    // Border transition
+                    zerg.creep!.move(intent.direction);
+                    this.movesThisTick++;
+                    continue;
+                }
 
-                // If blocker is stationary (idle), try to shove it
-                if (!blockerIntent) {
-                    // Only shove if we have higher priority (lower value)
-                    // Assume idle creeps have priority ~100.
-                    // If current intent is critical (0) or high (1), we shove.
-                    // For now, allow shoving for any priority < 10.
-                    if (intent.priority < 10) {
-                        const shoved = this.shove(blocker);
-                        if (shoved) {
-                            this.shovesThisTick++;
+                const creepsAtTarget = targetPos.lookFor(LOOK_CREEPS);
+                const blocker = creepsAtTarget.length > 0 ? creepsAtTarget[0] : null;
+
+                // ── FIX: Safe hostile detection via `blocker.my` for Remote Rooms ──
+                if (blocker && blocker.my) {
+                    const blockerIntentIndex = this.intents.findIndex(i => i.zerg.name === blocker.name && (i.direction as number) !== 0);
+                    const blockerIntent = blockerIntentIndex > -1 ? this.intents[blockerIntentIndex] : null;
+
+                    if (!blockerIntent) {
+                        // Blocker is stationary
+                        if (intent.priority < 10) {
+                            const shoved = this.shove(blocker, zerg); // Pass initiator for swapping
+                            if (shoved) this.shovesThisTick++;
                         }
+                    } else if (intent.priority < blockerIntent.priority) {
+                        // ── FIX 4: Head-to-Head Deadlock (Force Swap) ──
+                        const swapDir = blocker.pos.getDirectionTo(zerg.pos);
+                        blocker.move(swapDir);
+                        blocker.say("🔄");
+                        this.shovesThisTick++;
+
+                        // Cancel blocker's old intent so it doesn't overwrite our swap
+                        this.intents[blockerIntentIndex].direction = 0 as DirectionConstant;
                     }
                 }
+
+                zerg.creep!.move(intent.direction);
+                this.movesThisTick++;
             }
 
-            // Execute move
-            zerg.creep!.move(intent.direction);
-            this.movesThisTick++;
+            if (this.shovesThisTick > 0 && Game.time % 5 === 0) {
+                log.debug(`Traffic: ${this.movesThisTick} moves, ${this.shovesThisTick} shoves/swaps.`);
+            }
+        } finally {
+            // Guarantee state clearing to prevent Intent Bleed if the loop crashes
+            this.intents = [];
+            this.movesThisTick = 0;
+            this.shovesThisTick = 0;
         }
-
-        // Report
-        if (this.shovesThisTick > 0 && Game.time % 5 === 0) {
-            log.debug(`Traffic: ${this.movesThisTick} moves, ${this.shovesThisTick} shoves.`);
-        }
-
-        // Cleanup
-        this.intents = [];
-        this.movesThisTick = 0;
-        this.shovesThisTick = 0;
     }
 
-    /**
-     * Shove a blocker to a random free adjacent square.
-     * Returns true if a shove command was successfully issued.
-     */
-    private static shove(creep: Creep): boolean {
-        // 1. Check fatigue
-        if (creep.fatigue > 0) {
-            return false;
-        }
+    private static shove(creep: Creep, initiator: Zerg): boolean {
+        if (creep.fatigue > 0) return false;
+        if ((creep.memory as any).role === "miner") return false; // ── FIX 5: Protect Static Miners
 
-        // 2. Find a random free adjacent square
         const directions: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
-        // Shuffle directions
         for (let i = directions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [directions[i], directions[j]] = [directions[j], directions[i]];
         }
 
         for (const dir of directions) {
-            const pos = positionAtDirection(creep.pos, dir);
+            const pos = creep.pos.getPositionAtDirection(dir);
             if (!pos) continue;
 
-            // Check for obstacles
-            const creeps = pos.lookFor(LOOK_CREEPS);
-            const structures = pos.lookFor(LOOK_STRUCTURES);
-            const terrain = Game.map.getRoomTerrain(pos.roomName).get(pos.x, pos.y);
+            // ── FIX 5: Prevent Exit Bouncing ──
+            if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) continue;
 
-            const isBlockedByCreep = creeps.length > 0;
-            const isBlockedByStructure = structures.some((s: any) =>
-                s.structureType !== STRUCTURE_ROAD &&
-                s.structureType !== STRUCTURE_CONTAINER &&
-                (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART && !s.my)
+            const isBlockedByCreep = pos.lookFor(LOOK_CREEPS).length > 0;
+
+            // ── FIX 3: Correctly use OBSTACLE_OBJECT_TYPES ──
+            const isBlockedByStructure = pos.lookFor(LOOK_STRUCTURES).some((s: Structure) =>
+                (OBSTACLE_OBJECT_TYPES as string[]).includes(s.structureType) ||
+                (s.structureType === STRUCTURE_RAMPART && !(s as OwnedStructure).my)
             );
-            const isWall = terrain === TERRAIN_MASK_WALL;
+
+            const isWall = Game.map.getRoomTerrain(pos.roomName).get(pos.x, pos.y) === TERRAIN_MASK_WALL;
 
             if (!isBlockedByCreep && !isBlockedByStructure && !isWall) {
-                // Found a spot!
                 creep.move(dir);
-                creep.say("shove");
+                creep.say("🚶");
                 return true;
             }
         }
+
+        // ── FIX 4: The Swap Fallback ──
+        if (initiator.pos) {
+            const swapDir = creep.pos.getDirectionTo(initiator.pos);
+            creep.move(swapDir);
+            creep.say("🔄");
+            return true;
+        }
+
         return false;
     }
 }
-

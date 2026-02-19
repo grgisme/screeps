@@ -46,12 +46,24 @@ export class HarvestDirective extends Directive {
         if (!this._initialized) {
             this._initialized = true;
 
-            // Calculate distance from home colony to remote room
+            // Add fallback position in case Spawn doesn't exist yet
             const homeSpawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
+            const homeOrigin = homeSpawn ? homeSpawn.pos : new RoomPosition(25, 25, this.colony.name);
+
             const remoteRoom = Game.rooms[target];
-            if (homeSpawn && remoteRoom) {
-                const path = PathFinder.search(homeSpawn.pos, { pos: new RoomPosition(25, 25, target), range: 20 });
-                this._distance = path.path.length;
+            if (remoteRoom) {
+                // ── FIX: Bump maxOps to 10000 for cross-room paths ──
+                const path = PathFinder.search(homeOrigin, { pos: new RoomPosition(25, 25, target), range: 20 }, {
+                    maxOps: 10000
+                });
+
+                if (path.incomplete) {
+                    const linear = Game.map.getRoomLinearDistance(homeOrigin.roomName, target);
+                    this._distance = linear * 50;
+                    log.warning(`Path to ${target} incomplete! Falling back to linear distance: ${this._distance}`);
+                } else {
+                    this._distance = path.path.length;
+                }
             }
 
             // Instantiate RemoteMiningOverlord
@@ -68,7 +80,6 @@ export class HarvestDirective extends Directive {
             const reservation = remoteRoom?.controller?.reservation;
             const tickCount = reservation ? reservation.ticksToEnd : 0;
             log.info(`Directive: Remote Mining initiated in ${target}. Distance: ${this._distance}. Reservation Status: ${tickCount}.`);
-            console.log(`Directive: Remote Mining initiated in ${target}. Distance: ${this._distance}. Reservation Status: ${tickCount}.`);
         }
     }
 

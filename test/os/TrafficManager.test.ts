@@ -40,8 +40,8 @@ describe("Movement Optimization", () => {
 
             expect(zerg._path).to.not.be.null;
             expect(zerg._path?.target).to.equal(target.toString());
-            // Path length is 3. Step 0 taken. Remaining TTL = 2.
-            expect(zerg._path?.ticksToLive).to.equal(2);
+            // Step deferred — TTL stays at full path length on first call.
+            expect(zerg._path?.ticksToLive).to.equal(zerg._path?.path.length);
         });
 
         it("should reuse cached path", () => {
@@ -56,7 +56,7 @@ describe("Movement Optimization", () => {
             // Second call
             zerg.travelTo(target, 0);
             expect(zerg._path).to.equal(pathRef); // Should be same object
-            expect(zerg._path?.step).to.equal(2); // Advanced step
+            expect(zerg._path?.step).to.equal(1); // Step validated and advanced at start of 2nd call
         });
 
         it("should repath if stuck", () => {
@@ -64,18 +64,17 @@ describe("Movement Optimization", () => {
 
             zerg.travelTo(target, 0);
             const initialPath = zerg._path;
+            expect(initialPath).to.not.be.null;
 
-            // Stuck for 3 ticks
-            zerg.travelTo(target, 0);
-            zerg.travelTo(target, 0);
-            zerg.travelTo(target, 0);
+            // Stuck for 3 ticks (position doesn't change)
+            zerg.travelTo(target, 0); // stuckCount = 1
+            zerg.travelTo(target, 0); // stuckCount = 2
+            zerg.travelTo(target, 0); // stuckCount = 3, triggers repath + resets to 0
 
-            expect(zerg._stuckCount).to.be.greaterThan(2);
-
-            // Next call should invalidate and repath
-            zerg.travelTo(target, 0);
-            expect(zerg._path).to.not.equal(initialPath);
+            // After repath: stuckCount is reset, path is regenerated (new object)
             expect(zerg._stuckCount).to.equal(0);
+            expect(zerg._path).to.not.be.null;
+            expect(zerg._path).to.not.equal(initialPath);
         });
     });
 

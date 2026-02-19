@@ -122,16 +122,15 @@ describe("Overlord Control Pattern", () => {
             const task = new HarvestTask(source.id);
             zerg.task = task;
 
-            // Creep out of range — travelTo falls back to moveTo when PathFinder returns empty
+            // Creep out of range — PathFinder returns empty, so creep says blocked (no moveTo fallback)
             creep.pos = new RoomPosition(20, 20, "W1N1");
-            let moveCalled = false;
-            creep.moveTo = ((_target: any) => { moveCalled = true; return OK; }) as any;
-            creep.say = (() => OK) as any;
+            let sayCalled = false;
+            creep.say = (() => { sayCalled = true; return OK; }) as any;
             // Force PathFinder to return empty path
             (globalThis as any).PathFinder.search = () => ({ path: [], ops: 0, cost: 0, incomplete: true });
 
             zerg.run();
-            expect(moveCalled).to.be.true;
+            expect(sayCalled).to.be.true;
 
             // Creep in range
             creep.pos = new RoomPosition(11, 10, "W1N1");

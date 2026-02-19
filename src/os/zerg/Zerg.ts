@@ -27,6 +27,7 @@ import { RepairTask } from "../tasks/RepairTask";
 import { ReserveTask } from "../tasks/ReserveTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 const log = new Logger("Zerg");
 
@@ -81,6 +82,7 @@ export class Zerg {
     _path: { path: string; step: number; target: string; ticksToLive: number } | null = null;
     _stuckCount = 0;
     _lastPos: RoomPosition | null = null;
+    _expectedPos: RoomPosition | null = null; // Tracks Shove Drift
 
     constructor(creepName: string) {
         this.creepName = creepName;
@@ -373,73 +375,110 @@ export class Zerg {
     travelTo(target: RoomPosition | { pos: RoomPosition }, range = 1, priority = 1): void {
         const creep = this.creep;
         const currentPos = this.pos;
-        if (!creep || !currentPos) return; // Dead creep — no-op
+        if (!creep || !currentPos) return;
+
+        // ── FIX 1: Fatigue Guard ──
+        if ((this.fatigue ?? 0) > 0) return;
 
         const targetPos = "pos" in target ? target.pos : target;
 
-        // 1. Stuck Detection
-        if (this._lastPos && currentPos.isEqualTo(this._lastPos)) {
+        // ── FIX 2: Shove Detection & Step Validation ──
+        if (this._path && this._lastPos) {
+            const expectedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
+            const expectedPos = this._lastPos.getPositionAtDirection(expectedDir);
+
+            if (currentPos.isEqualTo(this._lastPos)) {
+                this._stuckCount++;
+            } else if (expectedPos && currentPos.isEqualTo(expectedPos)) {
+                // Moved correctly along the path
+                this._stuckCount = 0;
+                this._path.step++;
+                this._path.ticksToLive--;
+            } else {
+                // We moved, but NOT along the expected path (we were shoved off-route!)
+                this._path = null;
+                this._stuckCount = 0;
+            }
+        } else if (this._lastPos && currentPos.isEqualTo(this._lastPos)) {
             this._stuckCount++;
         } else {
             this._stuckCount = 0;
-            this._lastPos = currentPos;
         }
 
-        // 2. Validate Cache
+        this._lastPos = currentPos;
+
+        // Validate remaining cache
         if (this._path) {
-            if (this._stuckCount > 2) {
+            if (this._stuckCount > 2 ||
+                this._path.ticksToLive <= 0 ||
+                this._path.target !== targetPos.toString() ||
+                this._path.step >= this._path.path.length) {
+
                 this._path = null;
                 this._stuckCount = 0;
-            } else if (this._path.ticksToLive <= 0) {
-                this._path = null;
-            } else if (this._path.target !== targetPos.toString()) {
-                this._path = null;
             } else if (currentPos.getRangeTo(targetPos) <= range) {
                 this._path = null;
+                return;
             }
         }
 
-        // Target reached?
-        if (currentPos.inRangeTo(targetPos, range)) {
-            return;
-        }
+        if (currentPos.inRangeTo(targetPos, range)) return;
 
-        // 3. Generate Path if needed
+        // ── FIX 3: Road-Aware Pathfinding ──
         if (!this._path) {
             const ret = PathFinder.search(currentPos, { pos: targetPos, range }, {
                 plainCost: 2,
                 swampCost: 10,
-                maxOps: 2000
+                maxOps: 10000, // Increased for safe inter-room routing
+                roomCallback: (roomName) => {
+                    const room = Game.rooms[roomName];
+                    if (!room) return false;
+
+                    const cacheKey = `matrix:${roomName}:${Game.time}`;
+                    let costs = GlobalCache.get<CostMatrix>(cacheKey);
+
+                    if (!costs) {
+                        costs = new PathFinder.CostMatrix();
+                        room.find(FIND_STRUCTURES).forEach(s => {
+                            if (s.structureType === STRUCTURE_ROAD) {
+                                costs!.set(s.pos.x, s.pos.y, 1);
+                            } else if ((OBSTACLE_OBJECT_TYPES as string[]).includes(s.structureType) ||
+                                (s.structureType === STRUCTURE_RAMPART && !(s as OwnedStructure).my)) {
+                                costs!.set(s.pos.x, s.pos.y, 255);
+                            }
+                        });
+
+                        room.find(FIND_MY_CREEPS).forEach(c => {
+                            if (c.memory.role === 'miner') {
+                                costs!.set(c.pos.x, c.pos.y, 255); // Avoid stationary miners
+                            }
+                        });
+
+                        GlobalCache.set(cacheKey, costs);
+                    }
+                    return costs;
+                }
             });
 
             if (ret.path.length === 0) {
-                creep.say("⛔ Path");
-                creep.moveTo(targetPos, { range });
-                return;
+                creep.say("⛔ Blocked");
+                return; // ── FIX 6: Do NOT fallback to creep.moveTo()
             }
 
-            const pathString = this.serializePath(currentPos, ret.path);
             this._path = {
-                path: pathString,
+                path: this.serializePath(currentPos, ret.path),
                 step: 0,
                 target: targetPos.toString(),
                 ticksToLive: ret.path.length
             };
         }
 
-        // 4. Follow Path
-        if (this._path) {
+        // Follow Path
+        if (this._path && this._path.step < this._path.path.length) {
             const direction = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
-
             if (direction) {
                 TrafficManager.register(this, direction, priority);
-
-                this._path.step++;
-                this._path.ticksToLive--;
-
-                if (this._path.step >= this._path.path.length) {
-                    this._path = null;
-                }
+                // Note: We DO NOT increment `step` here anymore. It increments safely at the top next tick.
             }
         }
     }
