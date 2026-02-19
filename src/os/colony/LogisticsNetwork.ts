@@ -65,19 +65,41 @@ export class LogisticsNetwork {
     }
 
     private registerInfrastructure(): void {
-        // Buffer Logic (State Aware)
+        // ── Fix #4: Scavenge dropped energy and tombstones ────────────
+        const dropped = this.colony.room?.find(FIND_DROPPED_RESOURCES, {
+            filter: (r: Resource) => r.resourceType === RESOURCE_ENERGY && r.amount > 50
+        }) || [];
+        for (const r of dropped) this.offerIds.push(r.id as Id<Structure | Resource>);
+
+        const tombstones = this.colony.room?.find(FIND_TOMBSTONES, {
+            filter: (t: Tombstone) => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+        }) || [];
+        for (const t of tombstones) this.offerIds.push(t.id as unknown as Id<Structure | Resource>);
+
+        // ── Fix #4: Storage — always offer + always request (priority 0 sink) ──
         if (this.colony.room?.storage) {
             const storage = this.colony.room.storage;
-            const energy = storage.store.getUsedCapacity(RESOURCE_ENERGY);
-
-            // Surplus Mode: Storage acts as Provider
-            if (energy > 100000) {
+            if (storage.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
                 this.offerIds.push(storage.id as Id<Structure | Resource>);
             }
+            if (storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                this.requestInput(storage.id as Id<Structure | Resource>, {
+                    amount: storage.store.getFreeCapacity(RESOURCE_ENERGY),
+                    priority: 0
+                });
+            }
+        }
 
-            // Deficit Mode: Storage acts as Requester
-            if (energy < 100000) {
-                this.requestInput(storage.id as Id<Structure | Resource>, { amount: 100000 - energy, priority: 1 });
+        // ── Fix #1: Hatchery Integration (moved from Hatchery.registerRefillRequests) ──
+        const target = this.colony.hatchery.spawns.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) ||
+            this.colony.hatchery.extensions.find(e => e.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+
+        if (target) {
+            const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
+            const available = this.colony.room?.energyAvailable ?? 0;
+            const deficit = capacity - available;
+            if (deficit > 0) {
+                this.requestInput(target.id as Id<Structure | Resource>, { amount: deficit, priority: 10 });
             }
         }
 
@@ -114,12 +136,13 @@ export class LogisticsNetwork {
         for (const zerg of this.colony.zergs.values()) {
             if (!zerg.task) continue;
 
-            if (zerg.task.name === "Withdraw") {
-                const withdrawTask = zerg.task as WithdrawTask;
+            // Fix #3: Include Pickup tasks in outgoing reservations
+            if (zerg.task.name === "Withdraw" || zerg.task.name === "Pickup") {
+                const taskWithTarget = zerg.task as WithdrawTask;
                 const amount = zerg.store?.getFreeCapacity() ?? 0;
                 if (amount > 0) {
-                    const current = this.outgoingReservations.get(withdrawTask.targetId) || 0;
-                    this.outgoingReservations.set(withdrawTask.targetId, current + amount);
+                    const current = this.outgoingReservations.get(taskWithTarget.targetId) || 0;
+                    this.outgoingReservations.set(taskWithTarget.targetId, current + amount);
                 }
             }
 
@@ -143,7 +166,7 @@ export class LogisticsNetwork {
             targetId,
             amount: opts.amount || 0,
             resourceType: opts.resourceType || RESOURCE_ENERGY,
-            priority: opts.priority || 1,
+            priority: opts.priority ?? 1,
         };
         this.requesters.push(req);
     }
@@ -193,6 +216,20 @@ export class LogisticsNetwork {
 
             const target = Game.getObjectById(offerId);
             if (!target) continue;
+
+            // ── Fix #4: Ping-Pong prevention for buffers ──────────────
+            const isBuffer = 'structureType' in target &&
+                ((target as Structure).structureType === STRUCTURE_STORAGE ||
+                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+
+            if (isBuffer) {
+                // Only withdraw from buffers if there is real demand (priority > 1)
+                const realDemand = this.requesters.some(r =>
+                    r.priority > 1 &&
+                    (r.amount - (this.incomingReservations.get(r.targetId) || 0)) > 0
+                );
+                if (!realDemand) continue;
+            }
 
             const distance = zerg.pos.getRangeTo(target.pos);
             const score = effectiveAmount / Math.max(1, distance);

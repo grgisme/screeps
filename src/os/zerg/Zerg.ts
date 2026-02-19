@@ -20,6 +20,7 @@ import { ITask, TaskMemory } from "../tasks/ITask";
 import { HarvestTask } from "../tasks/HarvestTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
+import { PickupTask } from "../tasks/PickupTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { Logger } from "../../utils/Logger";
 
@@ -152,6 +153,8 @@ export class Zerg {
                 return new WithdrawTask(taskMem.targetId as Id<Structure | Tombstone | Ruin>);
             case "Transfer":
                 return new TransferTask(taskMem.targetId as Id<Structure | Creep>);
+            case "Pickup":
+                return new PickupTask(taskMem.targetId as Id<Resource>);
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;

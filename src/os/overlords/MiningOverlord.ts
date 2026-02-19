@@ -14,6 +14,7 @@ import { Zerg } from "../zerg/Zerg";
 import { HarvestTask } from "../tasks/HarvestTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
+import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("Mining");
@@ -175,6 +176,13 @@ export class MiningOverlord extends Overlord {
                 // Empty — go withdraw from site container
                 if (site?.containerId) {
                     hauler.setTask(new WithdrawTask(site.containerId));
+                } else if (site?.source) {
+                    // Fix #3: Early game — no container. Pick up dropped energy near source.
+                    const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1)
+                        .find(r => r.resourceType === RESOURCE_ENERGY);
+                    if (dropped) {
+                        hauler.setTask(new PickupTask(dropped.id as Id<Resource>));
+                    }
                 }
             } else {
                 // Full or partially full — deliver to storage or spawn

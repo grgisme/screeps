@@ -45,12 +45,12 @@ export class Transporter extends Zerg {
         const workParts = creep.body.filter(b => b.type === WORK).length;
         if (workParts === 0) return;
 
-        // 2. Check structure underfoot
+        // 2. Check structure underfoot — use intent-cached wrapper
         const pos = this.pos;
         if (!pos) return;
         const road = pos.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_ROAD);
         if (road && road.hits < road.hitsMax) {
-            creep.repair(road);
+            this.repair(road);
         }
     }
 }

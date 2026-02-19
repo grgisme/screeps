@@ -126,6 +126,13 @@ export class Hatchery {
                 const energyAvailable = this.colony.room?.energyAvailable ?? 0;
                 const bodyCost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 
+                // Fix #2: Empty body deadlock — template too expensive for room capacity
+                if (body.length === 0) {
+                    log.warn(`Template too expensive for capacity (${energyCapacity}). Dropping request ${request.name}.`);
+                    this.queue.shift();
+                    continue;
+                }
+
                 // If we can't afford it yet, but it fits in capacity, we wait (block lower priorities).
                 if (bodyCost > energyAvailable) {
                     if (bodyCost > energyCapacity) {
@@ -160,30 +167,7 @@ export class Hatchery {
             }
         }
 
-        // 3. Logistics Integration (Refill)
-        this.registerRefillRequests();
-
-        // 4. Cleanup pending spawns
+        // 3. Cleanup pending spawns
         this.pendingSpawns = this.pendingSpawns.filter(name => !Game.creeps[name]);
-    }
-
-    private registerRefillRequests(): void {
-        const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
-        const available = this.colony.room?.energyAvailable ?? 0;
-        const deficit = capacity - available;
-
-        if (deficit > 0) {
-            // Find a structure that needs energy — use getters for live objects
-            const target = this.spawns.find(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) ||
-                this.extensions.find(e => e.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
-
-            if (target) {
-                this.colony.logistics.requestInput(target.id as Id<Structure | Resource>, {
-                    amount: deficit,
-                    priority: 10, // Critical
-                    resourceType: RESOURCE_ENERGY
-                });
-            }
-        }
     }
 }

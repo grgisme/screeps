@@ -56,7 +56,8 @@ export class LinkNetwork {
     // -----------------------------------------------------------------------
 
     refresh(): void {
-        if (Game.time % 50 !== 0) return;
+        // Bypass throttle when uninitialized (e.g. after global reset)
+        if (Game.time % 50 !== 0 && this.sourceLinkIds.length > 0) return;
 
         this.sourceLinkIds = [];
         this.hubLinkId = undefined;

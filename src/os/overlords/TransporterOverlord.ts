@@ -74,7 +74,15 @@ export class TransporterOverlord extends Overlord {
     private calculateTransportDeficit(): number {
         let total = 0;
         for (const req of this.colony.logistics.requesters) {
-            total += req.amount;
+            const target = Game.getObjectById(req.targetId);
+            const isBuffer = target && 'structureType' in target &&
+                ((target as Structure).structureType === STRUCTURE_STORAGE ||
+                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+
+            if (isBuffer) continue; // Ignore infinite sinks for spawn calculations
+
+            const incoming = this.colony.logistics.incomingReservations.get(req.targetId) || 0;
+            total += Math.max(0, req.amount - incoming);
         }
         return total;
     }
