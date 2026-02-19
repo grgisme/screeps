@@ -40,11 +40,18 @@ const log = new Logger("Zerg");
  * **Task persistence:** Tasks are serialized to `CreepMemory.task` so
  * they survive global resets. Deserialization is handled in `run()`.
  *
- * **Intent caching:** Screeps allows ONE Work intent (harvest, build,
- * repair, attack, heal, …) AND ONE Store intent (transfer, withdraw,
- * drop, pickup) in the *same* tick. Two separate pipeline flags
- * (`hasWorkIntent` / `hasStoreIntent`) enforce this without blocking
- * legitimate simultaneous actions.
+ * **Intent caching:** Screeps has THREE independent intent pipelines
+ * per tick. Three separate flags enforce this without blocking
+ * legitimate simultaneous actions:
+ *
+ *   Work Pipeline  (hasWorkIntent):  harvest, build, repair,
+ *       upgradeController, dismantle, attack, heal
+ *   Store Pipeline (hasStoreIntent): transfer, withdraw, drop, pickup
+ *   Ranged Pipeline (hasRangedIntent): rangedAttack, rangedMassAttack,
+ *       rangedHeal
+ *
+ * A creep CAN `heal()` + `rangedAttack()` in the same tick because
+ * they live on separate pipelines.
  */
 export class Zerg {
     /** The creep's name — used to resolve the live Creep each tick. */
@@ -53,15 +60,19 @@ export class Zerg {
     /** Current assigned task. Managed by setTask() for serialization. */
     task: ITask | null = null;
 
-    // ── Dual Intent Pipeline Flags ────────────────────────────────────
-    // Screeps permits one Work intent AND one Store intent per tick.
-    // A single flag would block legitimate combos (e.g. harvest + transfer).
+    // ── Tri-Pipeline Intent Flags ─────────────────────────────────────
+    // Screeps permits one Work intent, one Store intent, AND one Ranged
+    // intent per tick. Three flags prevent blocking legitimate combos
+    // (e.g. heal + rangedAttack, harvest + transfer).
 
-    /** Work pipeline: harvest, build, repair, upgrade, dismantle, attack, heal, rangedAttack. */
+    /** Work pipeline: harvest, build, repair, upgrade, dismantle, attack, heal. */
     protected hasWorkIntent = false;
 
     /** Store pipeline: transfer, withdraw, drop, pickup. */
     protected hasStoreIntent = false;
+
+    /** Ranged pipeline: rangedAttack, rangedMassAttack, rangedHeal. */
+    protected hasRangedIntent = false;
 
     // -----------------------------------------------------------------------
     // Path caching — safe to store in heap (serialized strings + primitives)
@@ -171,14 +182,17 @@ export class Zerg {
     }
 
     // -----------------------------------------------------------------------
-    // Intent-Cached Action Wrappers — Dual Pipeline
+    // Intent-Cached Action Wrappers — Tri-Pipeline
     // -----------------------------------------------------------------------
-    // Screeps allows ONE Work intent AND ONE Store intent per tick.
+    // Screeps allows ONE Work, ONE Store, AND ONE Ranged intent per tick.
     //
-    // Work Pipeline  (hasWorkIntent):  harvest, build, repair,
-    //    upgradeController, dismantle, attack, heal, rangedAttack
+    // Work Pipeline   (hasWorkIntent):   harvest, build, repair,
+    //    upgradeController, dismantle, attack, heal
     //
-    // Store Pipeline (hasStoreIntent): transfer, withdraw, drop, pickup
+    // Store Pipeline  (hasStoreIntent):  transfer, withdraw, drop, pickup
+    //
+    // Ranged Pipeline (hasRangedIntent): rangedAttack, rangedMassAttack,
+    //    rangedHeal
     // -----------------------------------------------------------------------
 
     // ── Work Pipeline ─────────────────────────────────────────────────
@@ -253,13 +267,35 @@ export class Zerg {
         return result;
     }
 
+    // ── Ranged Pipeline ───────────────────────────────────────────────
+
     /** Ranged attack a target. */
     rangedAttack(target: Creep | Structure): ScreepsReturnCode {
-        if (this.hasWorkIntent) return ERR_BUSY;
+        if (this.hasRangedIntent) return ERR_BUSY;
         const creep = this.creep;
         if (!creep) return ERR_NOT_OWNER;
         const result = creep.rangedAttack(target);
-        if (result === OK) this.hasWorkIntent = true;
+        if (result === OK) this.hasRangedIntent = true;
+        return result;
+    }
+
+    /** Ranged mass attack. */
+    rangedMassAttack(): ScreepsReturnCode {
+        if (this.hasRangedIntent) return ERR_BUSY;
+        const creep = this.creep;
+        if (!creep) return ERR_NOT_OWNER;
+        const result = creep.rangedMassAttack();
+        if (result === OK) this.hasRangedIntent = true;
+        return result;
+    }
+
+    /** Heal self or another creep at a distance. */
+    rangedHeal(target: Creep): ScreepsReturnCode {
+        if (this.hasRangedIntent) return ERR_BUSY;
+        const creep = this.creep;
+        if (!creep) return ERR_NOT_OWNER;
+        const result = creep.rangedHeal(target);
+        if (result === OK) this.hasRangedIntent = true;
         return result;
     }
 
@@ -421,9 +457,10 @@ export class Zerg {
         if (!this.isAlive()) return;
         if (this.creep?.spawning) return; // Spawning creeps waste CPU on pathfinding/logic
 
-        // Reset dual intent pipeline for this tick
+        // Reset tri-pipeline intent flags for this tick
         this.hasWorkIntent = false;
         this.hasStoreIntent = false;
+        this.hasRangedIntent = false;
 
         // Deserialize task from memory if heap was wiped (global reset)
         const mem = this.memory;

@@ -5,76 +5,35 @@ import "../../mock.setup";
 import { resetMocks } from "../../mock.setup";
 
 describe("CombatZerg", () => {
-    let room: Room;
-    let creep: Creep;
-    let combatZerg: CombatZerg;
-    let hostile: Creep;
-
     beforeEach(() => {
         resetMocks();
-        room = new Room("W1N1");
-        (globalThis as any).Game.rooms["W1N1"] = room;
+    });
 
-        creep = new Creep("defender1" as any);
-        creep.room = room;
-        creep.body = [
-            { type: HEAL, hits: 100 },
-            { type: RANGED_ATTACK, hits: 100 },
-            { type: MOVE, hits: 100 }
-        ] as any;
+    it("should be an instance of CombatZerg and resolve a live creep", () => {
+        const creep = new Creep("defender1" as any);
         creep.pos = new RoomPosition(10, 10, "W1N1");
         (globalThis as any).Game.creeps["defender1"] = creep;
 
-        combatZerg = new CombatZerg(creep.name);
+        const combatZerg = new CombatZerg("defender1");
 
-        hostile = new Creep("hostile1" as any);
-        hostile.room = room;
-        hostile.pos = new RoomPosition(10, 10, "W1N1"); // Range 0
+        expect(combatZerg).to.be.instanceOf(CombatZerg);
+        expect(combatZerg.creepName).to.equal("defender1");
+        expect(combatZerg.isAlive()).to.be.true;
+        expect(combatZerg.creep).to.equal(creep);
     });
 
-    it("should pre-heal self when damaged", () => {
-        creep.hits = 50;
-        creep.hitsMax = 100;
-        creep.getActiveBodyparts = () => 1; // 1 HEAL part
+    it("should report dead when creep is not in Game.creeps", () => {
+        const combatZerg = new CombatZerg("ghost");
 
-        let healCalled = false;
-        creep.heal = (target) => {
-            if (target === creep) healCalled = true;
-            return OK;
-        };
-
-        combatZerg.autoEngage([hostile]);
-
-        expect(healCalled).to.be.true;
+        expect(combatZerg.isAlive()).to.be.false;
+        expect(combatZerg.creep).to.be.undefined;
     });
 
-    it("should attack and kite (ranged behavior)", () => {
-        creep.getActiveBodyparts = (part) => {
-            if (part === RANGED_ATTACK) return 1;
-            if (part === ATTACK) return 0;
-            return 1;
-        };
+    it("should not have autonomous combat methods (IoC enforcement)", () => {
+        const combatZerg = new CombatZerg("defender1");
 
-        // Hostile at range 1 (too close)
-        hostile.pos = new RoomPosition(11, 10, "W1N1");
-
-        let rangedAttackCalled = false;
-        creep.rangedAttack = (t) => {
-            if (t === hostile) rangedAttackCalled = true;
-            return OK;
-        };
-
-        let moveCalled = false; // Should flee/kite
-        creep.move = () => {
-            moveCalled = true;
-            return OK;
-        };
-        // Mock pathfinder for flee
-        (globalThis as any).PathFinder.search = () => ({ path: [new RoomPosition(9, 10, "W1N1")] });
-
-        combatZerg.autoEngage([hostile]);
-
-        expect(rangedAttackCalled).to.be.true;
-        expect(moveCalled).to.be.true;
+        // CombatZerg is now an empty shell — no autoEngage, kite, or flee
+        expect((combatZerg as any).autoEngage).to.be.undefined;
+        expect((combatZerg as any).kite).to.be.undefined;
     });
 });
