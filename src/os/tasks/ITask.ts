@@ -35,6 +35,9 @@ export interface TaskSettings {
 
     /** If true, the task completes after a single successful action. */
     oneShot?: boolean;
+
+    /** Custom HP threshold — task completes when target hits reach this value. */
+    targetHits?: number;
 }
 
 // -------------------------------------------------------------------------

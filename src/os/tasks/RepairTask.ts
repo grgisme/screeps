@@ -11,8 +11,8 @@ import type { Zerg } from "../zerg/Zerg";
  * **Heap-safe:** Stores `targetId` (string), resolves the live object
  * each tick via `Game.getObjectById()`.
  *
- * **Completion:** Returns true when the structure reaches full HP,
- * the target is destroyed, or on fatal errors.
+ * **Completion:** Returns true when the structure reaches `targetHits`
+ * (defaults to hitsMax), the target is destroyed, or on fatal errors.
  */
 export class RepairTask implements ITask {
     readonly name = "Repair";
@@ -39,25 +39,23 @@ export class RepairTask implements ITask {
 
     isValid(): boolean {
         const t = this.target;
-        return !!t && t.hits < t.hitsMax;
+        return !!t && t.hits < (this.settings.targetHits || t.hitsMax);
     }
 
     run(zerg: Zerg): boolean {
         const target = this.target;
         if (!target) return true; // Target destroyed — task complete
-        if (target.hits === target.hitsMax) return true; // Fully repaired
+
+        // Stop repairing if we hit the custom threshold OR max hits
+        const maxHits = this.settings.targetHits || target.hitsMax;
+        if (target.hits >= maxHits) return true;
 
         // Out of energy — task done, overlord will reassign
         if (zerg.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) return true;
 
         if (zerg.pos && zerg.pos.inRangeTo(target, this.settings.workRange)) {
             const result = zerg.repair(target);
-            if (
-                result === ERR_INVALID_TARGET ||
-                result === ERR_NOT_OWNER
-            ) {
-                return true; // Fatal
-            }
+            if (result === ERR_INVALID_TARGET || result === ERR_NOT_OWNER) return true;
             return false; // Keep repairing
         } else {
             zerg.travelTo(target, this.settings.targetRange);

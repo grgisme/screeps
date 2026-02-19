@@ -59,19 +59,26 @@ describe("WorkerOverlord", () => {
         overlord = new WorkerOverlord(colony);
     });
 
-    it("should adopt orphan workers", () => {
-        // Force adoptOrphans to run by setting Game.time to a multiple of 100
-        (global as any).Game.time = 200;
+    it("should adopt workers via subreaper _overlord tag", () => {
+        // Simulate a creep with the correct _overlord tag
+        const workerCreep = new MockCreep("worker_1", "W1N1");
+        workerCreep.memory = { role: "worker", _overlord: `worker:${colony.name}` };
+        Game.creeps["worker_1"] = workerCreep as any;
 
-        // Mock an orphan creep
-        const orphan = new MockCreep("worker_1", "W1N1");
-        orphan.memory = { role: "worker" };
-        Game.creeps["worker_1"] = orphan as any;
+        // Register the creep in colony.creeps
+        (colony as any).creeps = [workerCreep];
 
-        // Mock colony.creeps to return the orphan
-        (colony as any).creeps = [orphan];
+        // Set up the subreaper backing field with a mock zerg
+        const mockZerg = {
+            creepName: "worker_1",
+            name: "worker_1",
+            creep: workerCreep,
+            memory: workerCreep.memory,
+            store: workerCreep.store,
+            isAlive: () => true
+        } as any;
+        (overlord as any)._zergs = [mockZerg]; (overlord as any)._zergsTick = Game.time;
 
-        // Run init (adoption logic)
         overlord.init();
 
         expect(overlord.workers.length).to.equal(1);
@@ -141,11 +148,11 @@ describe("WorkerOverlord", () => {
         expect(request.memory.role).to.equal("worker");
     });
 
-    it("should prioritize Containers over Extensions", () => {
+    it("should prioritize Spawns over Extensions", () => {
         // Setup construction sites
-        const containerSite = {
+        const spawnSite = {
             id: "site1",
-            structureType: STRUCTURE_CONTAINER,
+            structureType: STRUCTURE_SPAWN,
             progress: 0,
             progressTotal: 1000
         };
@@ -159,13 +166,16 @@ describe("WorkerOverlord", () => {
         // Mock room.find to return reasonable objects that mimic construction sites
         (colony as any).room.find = (type: number) => {
             if (type === (global as any).FIND_MY_CONSTRUCTION_SITES) {
-                return [extensionSite, containerSite];
+                return [extensionSite, spawnSite];
             }
             return [];
         };
 
+        // Bump tick to invalidate per-tick memoization cache
+        (global as any).Game.time = 999;
+
         const best = overlord.getBestConstructionSite();
         expect(best).to.not.be.null;
-        expect((best as any).structureType).to.equal(STRUCTURE_CONTAINER);
+        expect((best as any).structureType).to.equal(STRUCTURE_SPAWN);
     });
 });

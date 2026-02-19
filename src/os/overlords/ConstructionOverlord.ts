@@ -114,7 +114,26 @@ export class ConstructionOverlord extends Overlord {
 
         const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
 
-        for (const typeStr of Object.keys(layoutStructures)) {
+        // Sort structural placement by absolute priority
+        const BUILD_PRIORITY: Partial<Record<StructureConstant, number>> = {
+            [STRUCTURE_SPAWN]: 1,
+            [STRUCTURE_TOWER]: 2,
+            [STRUCTURE_EXTENSION]: 3,
+            [STRUCTURE_STORAGE]: 4,
+            [STRUCTURE_TERMINAL]: 5,
+            [STRUCTURE_LINK]: 6,
+            [STRUCTURE_LAB]: 7,
+            [STRUCTURE_CONTAINER]: 8,
+            [STRUCTURE_ROAD]: 9,
+            [STRUCTURE_RAMPART]: 10,
+            [STRUCTURE_WALL]: 11,
+        };
+
+        const sortedTypes = (Object.keys(layoutStructures) as StructureConstant[]).sort((a, b) =>
+            (BUILD_PRIORITY[a] ?? 99) - (BUILD_PRIORITY[b] ?? 99)
+        );
+
+        for (const typeStr of sortedTypes) {
             const type = typeStr as BuildableStructureConstant;
             const maxAllowed = this.getMaxStructures(type, rcl);
             if (maxAllowed === 0) continue;
@@ -160,22 +179,28 @@ export class ConstructionOverlord extends Overlord {
             ...room.find(FIND_SOURCES).map((s: Source) => s.pos)
         ];
 
+        // Cache CostMatrix outside the loop — same room, same tick
+        let cachedMatrix: CostMatrix | null = null;
+
         for (const dest of destinations) {
             if (!dest) continue;
             const path = PathFinder.search(anchor, { pos: dest, range: 1 }, {
                 plainCost: 2,
-                swampCost: 5, // Reflects 5x energy cost to build roads on swamps
+                swampCost: 5,
                 roomCallback: (roomName) => {
                     if (roomName !== this.colony.name) return false;
+
+                    if (cachedMatrix) return cachedMatrix;
+
                     const cm = new PathFinder.CostMatrix();
                     const cbRoom = Game.rooms[roomName];
                     if (!cbRoom) return cm;
 
                     cbRoom.find(FIND_STRUCTURES).forEach(s => {
                         if (s.structureType === STRUCTURE_ROAD) {
-                            cm.set(s.pos.x, s.pos.y, 1); // Prefer existing roads
+                            cm.set(s.pos.x, s.pos.y, 1);
                         } else if (s.structureType !== STRUCTURE_CONTAINER && s.structureType !== STRUCTURE_RAMPART) {
-                            cm.set(s.pos.x, s.pos.y, 255); // Solid buildings are unwalkable
+                            cm.set(s.pos.x, s.pos.y, 255);
                         }
                     });
                     cbRoom.find(FIND_MY_CONSTRUCTION_SITES).forEach(s => {
@@ -183,6 +208,8 @@ export class ConstructionOverlord extends Overlord {
                             cm.set(s.pos.x, s.pos.y, 255);
                         }
                     });
+
+                    cachedMatrix = cm;
                     return cm;
                 }
             });

@@ -115,6 +115,7 @@
 (globalThis as any).STRUCTURE_NUKER = "nuker";
 (globalThis as any).STRUCTURE_POWER_SPAWN = "powerSpawn";
 (globalThis as any).STRUCTURE_FACTORY = "factory";
+(globalThis as any).STRUCTURE_EXTRACTOR = "extractor";
 
 // Mock Controller Structures Map
 (globalThis as any).CONTROLLER_STRUCTURES = {

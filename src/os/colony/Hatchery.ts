@@ -23,6 +23,7 @@ export interface SpawnRequest {
     overlord: Overlord;
     name?: string;
     memory?: any;
+    maxEnergy?: number; // Allows Overlords to cap morphological growth
 }
 
 export class Hatchery {
@@ -127,7 +128,11 @@ export class Hatchery {
 
                 const request = this.queue[0];
                 const energyCapacity = room.energyCapacityAvailable ?? 300;
-                const body = CreepBody.grow(request.bodyTemplate, energyCapacity);
+
+                // Apply Overlord's maximum energy budget if provided
+                const energyToUse = request.maxEnergy ? Math.min(energyCapacity, request.maxEnergy) : energyCapacity;
+
+                const body = CreepBody.grow(request.bodyTemplate, energyToUse);
                 const bodyCost = body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 
                 // Empty body deadlock — template too expensive for room capacity

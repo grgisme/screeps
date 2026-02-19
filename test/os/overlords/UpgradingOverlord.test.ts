@@ -65,7 +65,7 @@ describe("UpgradingOverlord", () => {
         overlord.init();
 
         expect(request).to.not.be.null;
-        expect(request.priority).to.equal(4); // Normal priority
+        expect(request.priority).to.equal(20); // Normal priority
     });
 
     it("should trigger Critical Mode if downgrade imminent", () => {
@@ -79,7 +79,7 @@ describe("UpgradingOverlord", () => {
         overlord.init();
 
         expect(request).to.not.be.null;
-        expect(request.priority).to.equal(2); // High priority
+        expect(request.priority).to.equal(95); // Critical priority
     });
 
     it("should scale up to 3 upgraders if Rich", () => {

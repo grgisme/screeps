@@ -16,12 +16,15 @@ import { HarvestTask } from "../tasks/HarvestTask";
 import { UpgradeTask } from "../tasks/UpgradeTask";
 import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
-import { Logger } from "../../utils/Logger";
 
-const log = new Logger("Worker");
+
 
 export class WorkerOverlord extends Overlord {
     workers: Worker[];
+
+    // Memoization cache for getBestConstructionSite CPU bomb fix
+    private _bestSite?: ConstructionSite | null;
+    private _bestSiteTick?: number;
 
     constructor(colony: Colony) {
         super(colony, "worker");
@@ -29,11 +32,8 @@ export class WorkerOverlord extends Overlord {
     }
 
     init(): void {
-        // Cast existing zergs — no re-wrapping (prevents wrapper thrashing)
-        this.workers = this.zergs
-            .filter(z => z.isAlive() && (z.memory as any)?.role === "worker") as Worker[];
-
-        this.adoptOrphans();
+        // adoptOrphans() removed — base Overlord getter handles adoption via _overlord tag
+        this.workers = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "worker") as Worker[];
         this.handleSpawning();
     }
 
@@ -58,22 +58,23 @@ export class WorkerOverlord extends Overlord {
 
                 // 2. Peasant Mode fallback — harvest directly from source
                 const source = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
-                if (source) {
-                    worker.setTask(new HarvestTask(source.id));
-                }
+                if (source) worker.setTask(new HarvestTask(source.id));
             } else {
                 // Has energy — work priority cascade
 
-                // 1. Emergency repairs
+                // 1. Emergency repairs (with targetHits barrier threshold)
                 const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
                     filter: (s: Structure) => {
-                        if (s.structureType === STRUCTURE_WALL) return false; // Walls are handled by Masons/Defense
+                        if (s.structureType === STRUCTURE_WALL) return false; // Walls handled by Masons/Defense
                         if (s.structureType === STRUCTURE_RAMPART) return s.hits < 10000; // Save newborn ramparts from decay
                         return s.hits < s.hitsMax * 0.5;
                     }
                 });
                 if (damaged) {
-                    worker.setTask(new RepairTask(damaged.id));
+                    // Apply the barrier threshold to prevent 300M HP rampart deadlock
+                    const task = new RepairTask(damaged.id);
+                    task.settings.targetHits = damaged.structureType === STRUCTURE_RAMPART ? 15000 : damaged.hitsMax;
+                    worker.setTask(task);
                     continue;
                 }
 
@@ -93,76 +94,35 @@ export class WorkerOverlord extends Overlord {
         }
     }
 
-    private adoptOrphans(): void {
-        if (Game.time % 100 !== 0) return;
-
-        const orphans = this.colony.creeps.filter(
-            (creep: Creep) => creep.memory.role === "worker" && !this.colony.getZerg(creep.name)
-        );
-
-        for (const orphan of orphans) {
-            const zerg = this.colony.registerZerg(orphan);
-            zerg.task = null;
-            this.zergs.push(zerg);
-            this.workers.push(zerg as Worker);
-            log.info(`${this.colony.name}: Adopted orphan worker ${orphan.name}`);
-        }
-    }
-
     private handleSpawning(): void {
         const room = this.colony.room;
         if (!room) return;
 
-        // Check if mining is suspended (no containers/storage yet)
         const miningOverlord = this.colony.overlords
             .find((o: Overlord) => o instanceof MiningOverlord) as MiningOverlord | undefined;
         const miningSuspended = miningOverlord ? miningOverlord.isSuspended : true;
 
-        // Slot-based cap: count walkable tiles around all sources
-        const maxWorkers = this.countMiningSpots(room) + 2;
+        let maxWorkers = miningSuspended ? this.countMiningSpots(room) + 2 : 4;
 
-        // Despawn: if way over cap, suicide lowest-TTL worker
-        if (this.workers.length > maxWorkers + 2) {
-            let worst: Worker | null = null;
-            let worstTTL = Infinity;
-            for (const w of this.workers) {
-                const ttl = w.creep?.ticksToLive ?? Infinity;
-                if (ttl < worstTTL) {
-                    worstTTL = ttl;
-                    worst = w;
-                }
-            }
-            if (worst) {
-                log.info(`Despawning excess worker ${worst.name} (TTL: ${worstTTL}, cap: ${maxWorkers})`);
-                worst.creep?.suicide();
-                this.workers = this.workers.filter(w => w.name !== worst!.name);
-            }
-        }
-
-        // Don't spawn if at or over cap
-        if (this.workers.length >= maxWorkers) return;
-
-        // Base target: more during genesis, fewer once mining is online
-        let target = miningSuspended ? Math.min(4, maxWorkers) : 1;
-
-        // Scale up for construction work
         const sites = room.find(FIND_MY_CONSTRUCTION_SITES);
         const progressTotal = sites.reduce((sum: number, site: ConstructionSite) => sum + (site.progressTotal - site.progress), 0);
 
-        if (progressTotal > 0) {
-            target += Math.floor(progressTotal / 2000);
-        }
+        if (progressTotal > 0) maxWorkers += Math.floor(progressTotal / 10000); // Prevent explosive spawning
+        if (maxWorkers > 10) maxWorkers = 10;
 
-        if (target > maxWorkers) target = maxWorkers;
+        let target = miningSuspended ? Math.max(2, this.countMiningSpots(room)) : 1;
+        if (progressTotal > 0) target = maxWorkers;
 
-        if (this.workers.length < target) {
-            this.colony.hatchery.enqueue({
-                priority: miningSuspended ? 80 : 3,
-                bodyTemplate: [WORK, CARRY, MOVE],
-                overlord: this,
-                memory: { role: "worker" }
-            });
-        }
+        // Removed suicide loop entirely. Creeps naturally TTL out.
+        if (this.workers.length >= target) return;
+
+        this.colony.hatchery.enqueue({
+            priority: miningSuspended ? 80 : 30, // Absolute Priority Ladder
+            bodyTemplate: [WORK, CARRY, CARRY, MOVE, MOVE], // Optimal 2:1 ratio
+            overlord: this,
+            memory: { role: "worker" },
+            maxEnergy: 2000 // Cap generic workers
+        });
     }
 
     /**
@@ -191,23 +151,35 @@ export class WorkerOverlord extends Overlord {
     }
 
     getBestConstructionSite(): ConstructionSite | null {
-        // Priority Table
+        // Return cached site if already sorted this tick
+        if (this._bestSiteTick === Game.time) return this._bestSite ?? null;
+        this._bestSiteTick = Game.time;
+
         const priority: { [key in StructureConstant]?: number } = {
-            [STRUCTURE_CONTAINER]: 0,
-            [STRUCTURE_SPAWN]: 1,
-            [STRUCTURE_EXTENSION]: 2,
-            [STRUCTURE_TOWER]: 3,
-            [STRUCTURE_ROAD]: 4,
-            [STRUCTURE_STORAGE]: 5,
-            [STRUCTURE_TERMINAL]: 5
+            [STRUCTURE_SPAWN]: 0,
+            [STRUCTURE_TOWER]: 1,
+            [STRUCTURE_CONTAINER]: 2,
+            [STRUCTURE_EXTENSION]: 3,
+            [STRUCTURE_STORAGE]: 4,
+            [STRUCTURE_LINK]: 5,
+            [STRUCTURE_TERMINAL]: 6,
+            [STRUCTURE_EXTRACTOR]: 7,
+            [STRUCTURE_LAB]: 8,
+            [STRUCTURE_FACTORY]: 9,
+            [STRUCTURE_ROAD]: 10,
+            [STRUCTURE_RAMPART]: 11,
+            [STRUCTURE_WALL]: 12
         };
 
         const sites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES) as ConstructionSite[] ?? [];
-        if (sites.length === 0) return null;
+        if (sites.length === 0) {
+            this._bestSite = null;
+            return null;
+        }
 
-        return sites.sort((a, b) => {
-            const pA = priority[a.structureType] !== undefined ? priority[a.structureType]! : 10;
-            const pB = priority[b.structureType] !== undefined ? priority[b.structureType]! : 10;
+        this._bestSite = sites.sort((a, b) => {
+            const pA = priority[a.structureType] !== undefined ? priority[a.structureType]! : 20;
+            const pB = priority[b.structureType] !== undefined ? priority[b.structureType]! : 20;
 
             if (pA !== pB) return pA - pB;
 
@@ -218,5 +190,7 @@ export class WorkerOverlord extends Overlord {
 
             return 0;
         })[0];
+
+        return this._bestSite;
     }
 }
