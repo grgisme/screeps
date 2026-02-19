@@ -32,7 +32,15 @@ export class TransporterOverlord extends Overlord {
 
     run(): void {
         for (const transporter of this.transporters) {
-            if (!transporter.isAlive() || transporter.task) continue;
+            if (!transporter.isAlive()) continue;
+
+            // Road Repair-on-Transit
+            if (transporter.store?.energy && transporter.store.energy > 0 && transporter.creep?.getActiveBodyparts(WORK)) {
+                const road = transporter.pos?.lookFor(LOOK_STRUCTURES).find(s => s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax);
+                if (road) transporter.repair(road);
+            }
+
+            if (transporter.task) continue;
 
             const mem = transporter.memory as any;
 
@@ -88,7 +96,8 @@ export class TransporterOverlord extends Overlord {
                 priority: 4,
                 bodyTemplate: template,
                 overlord: this,
-                name: `Transporter_${this.colony.name}_${Game.time}`
+                name: `Transporter_${this.colony.name}_${Game.time}`,
+                memory: { role: "transporter" }
             });
 
             log.info(`Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);

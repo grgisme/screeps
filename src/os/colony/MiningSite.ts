@@ -160,7 +160,14 @@ export class MiningSite {
         if (!dropoff || !this.containerPos) return;
 
         const path = PathFinder.search(this.containerPos, { pos: dropoff.pos, range: 1 });
-        this.distance = path.path.length;
+
+        // Fallback to a linear distance heuristic if the path is incomplete/blocked
+        if (path.incomplete) {
+            this.distance = Math.round(this.containerPos.getRangeTo(dropoff.pos) * 1.5);
+            if (this.distance === 0) this.distance = 10; // Safe minimum
+        } else {
+            this.distance = path.path.length;
+        }
     }
 
     /**

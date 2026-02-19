@@ -244,6 +244,10 @@ function pruneStaleColonies(kernel: Kernel): void {
         if (!room || !room.controller || !room.controller.my) {
             log.warning(`Pruning stale colony process for ${colonyName} (no longer owned)`);
             kernel.removeProcess(proc.pid);
+
+            // Purge the Colony data object from the Heap Cache
+            GlobalCache.delete(`ColonyObj:${colonyName}`);
+
             pruned++;
         }
     }

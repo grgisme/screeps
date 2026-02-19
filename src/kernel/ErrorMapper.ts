@@ -56,6 +56,11 @@ function sourceMappedStackTrace(error: Error | string): string {
         return _traceCache[stack];
     }
 
+    // Prevent unbounded memory leak in the event of a bug storm
+    if (Object.keys(_traceCache).length > 200) {
+        for (const key in _traceCache) delete _traceCache[key];
+    }
+
     // Regex matches V8 stack frames:
     //   at FunctionName (main:123:45)
     //   at main:123:45

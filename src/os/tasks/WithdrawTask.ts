@@ -37,7 +37,14 @@ export class WithdrawTask implements ITask {
     // -----------------------------------------------------------------------
 
     isValid(): boolean {
-        return !!this.target;
+        const target = this.target;
+        if (!target) return false;
+
+        // Ensure the target actually has energy to withdraw
+        if ('store' in target) {
+            return (target as any).store.getUsedCapacity(RESOURCE_ENERGY) > 0;
+        }
+        return false;
     }
 
     run(zerg: Zerg): boolean {
