@@ -112,11 +112,23 @@ export class ConstructionOverlord extends Overlord {
         const room = this.colony.room;
         if (!room) return;
 
-        // O(1) cache — completely eliminates lookFor CPU bombs
-        const existing = new Set([
-            ...room.find(FIND_STRUCTURES).map(s => `${s.structureType}:${s.pos.x},${s.pos.y}`),
-            ...room.find(FIND_MY_CONSTRUCTION_SITES).map(s => `${s.structureType}:${s.pos.x},${s.pos.y}`)
-        ]);
+        // O(1) caches:
+        // - existing: type+position for exact duplicate check
+        // - blockedTiles: positions with non-stackable structures/sites (can't place new structure here)
+        const existing = new Set<string>();
+        const blockedTiles = new Set<string>();
+        for (const s of room.find(FIND_STRUCTURES)) {
+            existing.add(`${s.structureType}:${s.pos.x},${s.pos.y}`);
+            // Roads and ramparts can coexist with other structures
+            if (s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART) {
+                blockedTiles.add(`${s.pos.x},${s.pos.y}`);
+            }
+        }
+        for (const s of room.find(FIND_MY_CONSTRUCTION_SITES)) {
+            existing.add(`${s.structureType}:${s.pos.x},${s.pos.y}`);
+            // ANY construction site blocks new site placement on that tile
+            blockedTiles.add(`${s.pos.x},${s.pos.y}`);
+        }
 
         const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
 
@@ -155,12 +167,19 @@ export class ConstructionOverlord extends Overlord {
                 const key = `${type}:${pos.x},${pos.y}`;
                 if (existing.has(key)) continue;
 
+                // Skip tiles blocked by existing non-stackable structures or construction sites
+                const tileKey = `${pos.x},${pos.y}`;
+                if (type !== STRUCTURE_ROAD && type !== STRUCTURE_RAMPART && blockedTiles.has(tileKey)) continue;
+
                 if (Game.map.getRoomTerrain(this.colony.name).get(pos.x, pos.y) === TERRAIN_MASK_WALL) continue;
 
-                if (pos.createConstructionSite(type) === OK) {
+                const result = pos.createConstructionSite(type);
+                if (result === OK) {
                     log.info(`Architect: Placed ${type} site at ${pos.x}, ${pos.y}`);
                     budget.count--;
                     if (budget.count <= 0) return;
+                } else {
+                    log.warning(`Architect: FAILED to place ${type} at ${pos.x},${pos.y} — error ${result}`);
                 }
             }
         }
