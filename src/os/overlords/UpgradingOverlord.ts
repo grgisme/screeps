@@ -147,8 +147,35 @@ export class UpgradingOverlord extends Overlord {
         }
 
         let shouldSpawn = false;
-        if (hasStorage && storage.store.energy > 10000) shouldSpawn = true;
-        else if (hasContainers && room.energyAvailable > room.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) shouldSpawn = true;
+
+        // ── U_trigger: Only spawn upgraders if we can afford them WITHOUT
+        //    endangering critical creep replacement reserves ──
+        //    S_eff > T_crit + UpgraderCost
+        //    where T_crit = cost to replace all active miners + haulers
+        if (hasStorage) {
+            const effectiveEnergy = this.colony.logistics.getEffectiveStore(storage.id);
+
+            // Calculate T_crit: sum of body costs for all active miners and transporters
+            const criticalCreeps = this.colony.creeps.filter(
+                (c: any) => c.memory.role === "miner" || c.memory.role === "transporter"
+            );
+            const tCrit = criticalCreeps.reduce((sum: number, c: any) => {
+                const body = c.body as Array<{ type: BodyPartConstant }>;
+                return sum + (body ? body.reduce((s: number, p: { type: BodyPartConstant }) => s + BODYPART_COST[p.type], 0) : 0);
+            }, 0);
+
+            // Upgrader body cost estimate
+            const energyCap = room.energyCapacityAvailable ?? 300;
+            const upgraderCost = this.colony.linkNetwork?.controllerLink
+                ? Math.min(energyCap, 350) // [WORK, WORK, WORK, CARRY, MOVE] = 350
+                : Math.min(energyCap, 300); // [WORK, WORK, CARRY, MOVE] = 300
+
+            if (effectiveEnergy > tCrit + upgraderCost) {
+                shouldSpawn = true;
+            }
+        } else if (hasContainers && room.energyAvailable > room.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) {
+            shouldSpawn = true;
+        }
 
         if (downgradeImminent) shouldSpawn = true;
         if (!shouldSpawn) return;

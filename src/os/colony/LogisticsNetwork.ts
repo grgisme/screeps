@@ -214,6 +214,22 @@ export class LogisticsNetwork {
         return amount + incoming - outgoing;
     }
 
+    /**
+     * Calculate the effective energy in a store, accounting for all reservations.
+     * Effective = CurrentStore + IncomingReservations - OutgoingReservations
+     * Used by Overlords to make economically-safe spawn decisions.
+     */
+    getEffectiveStore(targetId: Id<Structure>): number {
+        const target = Game.getObjectById(targetId);
+        if (!target || !('store' in target)) return 0;
+
+        const current = (target as any).store[RESOURCE_ENERGY] || 0;
+        const incoming = this.incomingReservations.get(targetId as any) || 0;
+        const outgoing = this.outgoingReservations.get(targetId as any) || 0;
+
+        return current + incoming - outgoing;
+    }
+
     // -----------------------------------------------------------------------
     // Task Matching — Atomic withdraw/transfer assignment
     // -----------------------------------------------------------------------

@@ -392,6 +392,7 @@ export class MockColony {
         matchTransfer: (zerg: any) => null;
         requestInput: (targetId: any, opts?: any) => void;
         requestOutput: (targetId: any, opts?: any) => void;
+        getEffectiveStore: (targetId: any) => number;
     };
 
     constructor(name: string) {
@@ -406,7 +407,8 @@ export class MockColony {
             matchWithdraw: () => null,
             matchTransfer: () => null,
             requestInput: () => { },
-            requestOutput: () => { }
+            requestOutput: () => { },
+            getEffectiveStore: () => 999999
         };
     }
 }
