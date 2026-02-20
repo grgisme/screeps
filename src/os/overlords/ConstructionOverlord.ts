@@ -424,75 +424,47 @@ export class ConstructionOverlord extends Overlord {
     }
 
     /**
-     * Place a Hatchery Container within 2 tiles of the spawn.
-     * Acts as a central energy buffer for workers refilling extensions.
-     * Skipped if Storage exists (RCL 4+ makes this redundant).
-     */
+ * Place a Hatchery Container at the bunker's future Storage position (0,-1).
+ * Acts as the Fast Filler's energy hub until Storage is built at RCL 4.
+ * Filler at standing tile (-1,-1) is adjacent to this position within range 1.
+ * Skipped if Storage exists (RCL 4+ makes this redundant).
+ */
     private checkHatcheryContainer(budget: { count: number }): void {
         const room = this.colony.room;
         if (!room) return;
 
-        const spawns = room.find(FIND_MY_SPAWNS);
-        if (spawns.length === 0) return;
-        const spawn = spawns[0];
+        const anchor = this.colony.memory.anchor;
+        if (!anchor) return;
 
-        // Check if a non-source, non-controller container already exists near spawn
-        const controller = room.controller;
-        const nearbyContainers = spawn.pos.findInRange(FIND_STRUCTURES, 3, {
-            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
-        }).filter(c => {
-            // Exclude source containers (within 2 of a source)
-            const nearSource = c.pos.findInRange(FIND_SOURCES, 2).length > 0;
-            // Exclude controller containers (within 3 of controller)
-            const nearCtrl = controller && c.pos.getRangeTo(controller) <= 3;
-            return !nearSource && !nearCtrl;
-        });
-        if (nearbyContainers.length > 0) return;
+        // Target position: future Storage tile (anchor offset 0,-1)
+        const hubPos = new RoomPosition(anchor.x, anchor.y - 1, room.name);
 
-        // Also skip if construction site already exists
-        const nearbySites = spawn.pos.findInRange(FIND_MY_CONSTRUCTION_SITES, 3, {
-            filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
-        });
-        if (nearbySites.length > 0) return;
+        // Check if container already exists at this position
+        const existingContainer = hubPos.lookFor(LOOK_STRUCTURES)
+            .some(s => s.structureType === STRUCTURE_CONTAINER);
+        if (existingContainer) return;
 
-        // Find optimal position: on path from spawn toward nearest source
-        const sources = room.find(FIND_SOURCES);
-        if (sources.length === 0) return;
+        // Check if construction site already exists
+        const existingSite = hubPos.lookFor(LOOK_CONSTRUCTION_SITES)
+            .some(s => s.structureType === STRUCTURE_CONTAINER);
+        if (existingSite) return;
 
-        const nearest = spawn.pos.findClosestByRange(sources);
-        if (!nearest) return;
+        // Check terrain is walkable
+        const terrain = Game.map.getRoomTerrain(room.name).get(hubPos.x, hubPos.y);
+        if (terrain === TERRAIN_MASK_WALL) {
+            log.warn(`Cannot place Hatchery Container at ${hubPos.x},${hubPos.y} — wall tile!`);
+            return;
+        }
 
-        const path = PathFinder.search(spawn.pos, { pos: nearest.pos, range: 2 }, {
-            plainCost: 2,
-            swampCost: 10,
-            roomCallback: (roomName) => {
-                const r = Game.rooms[roomName];
-                if (!r) return false;
-                const cm = new PathFinder.CostMatrix();
-                r.find(FIND_STRUCTURES).forEach(s => {
-                    if (s.structureType === STRUCTURE_WALL) cm.set(s.pos.x, s.pos.y, 255);
-                });
-                return cm;
-            }
-        });
+        // Check not blocked by another structure
+        const blocked = hubPos.lookFor(LOOK_STRUCTURES)
+            .some((s: Structure) => s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART);
+        if (blocked) return;
 
-        // Pick a tile within 2 of spawn that isn't blocked
-        for (const pos of path.path) {
-            if (pos.getRangeTo(spawn.pos) <= 2 && pos.getRangeTo(spawn.pos) >= 1) {
-                const terrain = Game.map.getRoomTerrain(room.name).get(pos.x, pos.y);
-                if (terrain === TERRAIN_MASK_WALL) continue;
-
-                const blocked = pos.lookFor(LOOK_STRUCTURES)
-                    .some((s: Structure) => s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART);
-                if (blocked) continue;
-
-                const result = pos.createConstructionSite(STRUCTURE_CONTAINER);
-                if (result === OK) {
-                    log.info(`Architect: Placed Hatchery Container at ${pos.x},${pos.y}`);
-                    budget.count--;
-                    return;
-                }
-            }
+        const result = hubPos.createConstructionSite(STRUCTURE_CONTAINER);
+        if (result === OK) {
+            log.info(`Architect: Placed Hatchery Container at ${hubPos.x},${hubPos.y} (future Storage position)`);
+            budget.count--;
         }
     }
 
