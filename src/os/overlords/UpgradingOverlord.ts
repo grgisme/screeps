@@ -70,20 +70,8 @@ export class UpgradingOverlord extends Overlord {
             // STATE MACHINE LOGIC
             if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
 
-                // Try LogisticsNetwork first — controller container is registered
-                // as an offer and will score high due to proximity
-                const targetId = this.colony.logistics.matchWithdraw(upgrader);
-                if (targetId) {
-                    const target = Game.getObjectById(targetId) as any;
-                    if (target && 'amount' in target) {
-                        upgrader.setTask(new PickupTask(targetId as Id<Resource>));
-                    } else {
-                        upgrader.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
-                    }
-                    continue;
-                }
-
-                // No logistics match — wait near controller for delivery
+                // When transporters exist: stay near controller, wait for delivery
+                // (upgraders are registered as requesters — haulers deliver to them)
                 if (hasTransporters && controller) {
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
@@ -91,7 +79,7 @@ export class UpgradingOverlord extends Overlord {
                     continue;
                 }
 
-                // Fallback (Only happens if all Transporters die)
+                // No transporters — self-collect via LogisticsNetwork
                 mem.collecting = true;
             }
 
