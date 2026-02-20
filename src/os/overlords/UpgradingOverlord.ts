@@ -33,6 +33,10 @@ export class UpgradingOverlord extends Overlord {
         const controllerLink = this.colony.linkNetwork?.controllerLink;
         const controller = this.colony.room?.controller;
 
+        // Map out sources claimed by dedicated miners
+        const activeMiners = this.colony.creeps.filter(c => (c.memory as any).role === "miner");
+        const minedSourceIds = new Set(activeMiners.map(m => (m.memory as any).state?.siteId));
+
         for (const upgrader of this.upgraders) {
             if (!upgrader.isAlive()) continue;
 
@@ -79,9 +83,18 @@ export class UpgradingOverlord extends Overlord {
                     continue;
                 }
 
-                const source = upgrader.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
+                // Miner Deference: Ignore sources with a dedicated miner
+                const source = upgrader.pos?.findClosestByRange(FIND_SOURCES_ACTIVE, {
+                    filter: (s: Source) => !minedSourceIds.has(s.id)
+                });
+
                 if (source) {
                     upgrader.setTask(new HarvestTask(source.id));
+                } else if (controller) {
+                    // Rally at the controller and wait for logistics
+                    if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
+                        upgrader.travelTo(controller, 3);
+                    }
                 }
             } else {
                 if (controller) {

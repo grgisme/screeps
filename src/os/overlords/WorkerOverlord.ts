@@ -54,6 +54,9 @@ export class WorkerOverlord extends Overlord {
                 }) as (StructureSpawn | StructureExtension)[];
             }
         }
+        // Map out sources claimed by dedicated miners
+        const activeMiners = this.colony.creeps.filter(c => (c.memory as any).role === "miner");
+        const minedSourceIds = new Set(activeMiners.map(m => (m.memory as any).state?.siteId));
 
         for (const worker of this.workers) {
             if (!worker.isAlive() || worker.task) continue;
@@ -74,8 +77,21 @@ export class WorkerOverlord extends Overlord {
                 }
 
                 // 2. Peasant Mode fallback — harvest directly from source
-                const source = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
-                if (source) worker.setTask(new HarvestTask(source.id));
+
+                // Miner Deference: Ignore sources that already have a dedicated miner
+                const source = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE, {
+                    filter: (s: Source) => !minedSourceIds.has(s.id)
+                });
+
+                if (source) {
+                    worker.setTask(new HarvestTask(source.id));
+                } else {
+                    // Starved & waiting on miner — idle near spawn to keep logistics clear
+                    const rally = room?.storage?.pos || room?.find(FIND_MY_SPAWNS)?.[0]?.pos;
+                    if (rally && worker.pos && worker.pos.getRangeTo(rally) > 4) {
+                        worker.travelTo(rally, 4);
+                    }
+                }
             } else {
                 // Has energy — work priority cascade
 

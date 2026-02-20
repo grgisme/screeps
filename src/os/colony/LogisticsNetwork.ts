@@ -228,9 +228,13 @@ export class LogisticsNetwork {
         let bestId: Id<Structure | Resource> | null = null;
         let bestScore = -Infinity;
 
+        // Role-based thresholds: Workers grab crumbs, Transporters wait for bulk efficiency
+        const isWorker = (zerg.memory as any).role === "worker" || (zerg.memory as any).role === "upgrader";
+        const threshold = isWorker ? 10 : 50;
+
         for (const offerId of this.offerIds) {
             const effectiveAmount = this.getEffectiveAmount(offerId);
-            if (effectiveAmount <= 50) continue; // Minimum threshold to bother
+            if (effectiveAmount < threshold) continue;
 
             const target = Game.getObjectById(offerId);
             if (!target) continue;

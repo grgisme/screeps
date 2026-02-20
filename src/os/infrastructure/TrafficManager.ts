@@ -85,7 +85,13 @@ export class TrafficManager {
 
     private static shove(creep: Creep, initiator: Zerg): boolean {
         if (creep.fatigue > 0) return false;
-        if ((creep.memory as any).role === "miner") return false; // ── FIX 5: Protect Static Miners
+        if ((creep.memory as any).role === "miner") return false; // Protect Static Miners
+
+        // Shove Dance Prevention: Do not shove creeps actively performing localized tasks
+        const taskName = (creep.memory as any).task?.name;
+        if (taskName === "Harvest" || taskName === "Upgrade") {
+            return false;
+        }
 
         const directions: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
         for (let i = directions.length - 1; i > 0; i--) {
