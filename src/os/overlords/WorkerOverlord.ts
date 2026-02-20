@@ -163,10 +163,17 @@ export class WorkerOverlord extends Overlord {
                     continue;
                 }
 
-                // 3. Upgrade controller (default)
+                // 3. Upgrade controller (only if no dedicated upgraders)
+                const hasUpgraders = this.colony.creeps.some(c => (c.memory as any)?.role === "upgrader");
                 const controller = this.colony.room?.controller;
-                if (controller) {
+                if (!hasUpgraders && controller) {
                     worker.setTask(new UpgradeTask(controller.id));
+                } else {
+                    // Dedicated upgraders handle this — rally near spawn, don't crowd controller
+                    const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
+                    if (spawn && worker.pos && worker.pos.getRangeTo(spawn) > 5) {
+                        worker.travelTo(spawn, 4);
+                    }
                 }
             }
         }
