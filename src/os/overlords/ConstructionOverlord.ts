@@ -52,7 +52,7 @@ export class ConstructionOverlord extends Overlord {
 
         // 4. Place structures
         this.checkBunker(anchorPos, rcl, budget);
-        if (rcl >= 3 && budget.count > 0) {
+        if (rcl >= 2 && budget.count > 0) {
             this.checkRoads(anchorPos, rcl, budget);
         }
 
@@ -299,7 +299,7 @@ export class ConstructionOverlord extends Overlord {
     // ========================================================================
 
     private checkRoads(anchor: RoomPosition, rcl: number, budget: { count: number }): void {
-        if (rcl < 3) return;
+        if (rcl < 2) return;
         const room = this.colony.room;
         if (!room) return;
 
