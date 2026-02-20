@@ -98,11 +98,8 @@ export class LogisticsNetwork {
             }) as StructureContainer[];
 
             for (const c of ctrlContainers) {
-                // Offer: upgraders can withdraw from here
-                if (c.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-                    this.offerIds.push(c.id as Id<Structure | Resource>);
-                }
-                // Request: haulers should deliver energy here (priority 3 — below hatchery)
+                // Requester only — upgraders pull directly via findInRange(1), not via logistics.
+                // NOT an offer: prevents transporter oscillation (deposit then withdraw).
                 const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
                 if (free > 100) {
                     this.requestInput(c.id as Id<Structure | Resource>, { amount: free, priority: 3 });
