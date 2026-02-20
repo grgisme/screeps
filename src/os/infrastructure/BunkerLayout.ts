@@ -53,6 +53,17 @@ export class BunkerLayout {
             { x: 0, y: 1 }  // Center link
         ],
 
+        // ── Labs (Diamond Grid — upper-right quadrant, RCL 6-8) ──
+        // Ordered: first 3 at RCL 6, first 6 at RCL 7, all 10 at RCL 8
+        [STRUCTURE_LAB]: [
+            // Core triangle (RCL 6: 3 labs)
+            { x: 5, y: -1 }, { x: 4, y: -2 }, { x: 5, y: -3 },
+            // Mid diamond (RCL 7: +3 = 6 labs)
+            { x: 6, y: -2 }, { x: 6, y: -3 }, { x: 5, y: -4 },
+            // Outer diamond (RCL 8: +4 = 10 labs)
+            { x: 4, y: -5 }, { x: 5, y: -5 }, { x: 6, y: -4 }, { x: 6, y: -5 }
+        ],
+
         // ── Towers (moved outward from filler tiles) ──
         [STRUCTURE_TOWER]: [
             { x: -2, y: -2 }, { x: 2, y: -2 },
