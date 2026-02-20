@@ -72,7 +72,12 @@ export class ConstructionOverlord extends Overlord {
             this.cleanupHatcheryContainer();
         }
 
-        // 8. Reset the RCL changed flag
+        // 8. Obsolete Structure Sweep (on RCL change or every 1000 ticks)
+        if (this.colony.state.rclChanged || Game.time % 1000 === 0) {
+            this.sweepObsoleteStructures(anchorPos, rcl);
+        }
+
+        // 9. Reset the RCL changed flag
         this.colony.state.rclChanged = false;
     }
 
@@ -492,6 +497,66 @@ export class ConstructionOverlord extends Overlord {
         for (const c of hatchContainers) {
             log.info(`Architect: Destroying obsolete Hatchery Container at ${c.pos.x},${c.pos.y} (Storage built)`);
             c.destroy();
+        }
+    }
+
+    // ========================================================================
+    // Obsolete Structure Detection — Blueprint Validation Sweep
+    // ========================================================================
+
+    /**
+     * Compare room structures against BunkerLayout blueprint.
+     * Any structure at a bunker position that doesn't match the expected type
+     * is flagged as obsolete. IDs stored in colony memory for workers to dismantle.
+     *
+     * Runs on RCL change or every 1000 ticks (low frequency to save CPU).
+     */
+    private sweepObsoleteStructures(anchor: RoomPosition, _rcl: number): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        const obsoleteIds: string[] = [];
+        const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
+
+        // Build a map of expected positions: "x,y" → Set of expected structure types
+        const expectedAt = new Map<string, Set<StructureConstant>>();
+        for (const type of Object.keys(layoutStructures) as StructureConstant[]) {
+            const coords = layoutStructures[type] || [];
+            for (const rel of coords) {
+                const pos = BunkerLayout.getPos(anchor, rel);
+                const key = `${pos.x},${pos.y}`;
+                if (!expectedAt.has(key)) expectedAt.set(key, new Set());
+                expectedAt.get(key)!.add(type);
+            }
+        }
+
+        // Scan all structures in the room
+        for (const s of room.find(FIND_STRUCTURES)) {
+            // Skip structures we don't manage
+            if (s.structureType === STRUCTURE_CONTROLLER) continue;
+            if (s.structureType === STRUCTURE_WALL) continue;
+            if (s.structureType === STRUCTURE_CONTAINER) continue; // Managed separately
+            if (s.structureType === STRUCTURE_ROAD) continue;      // Roads are stackable, don't dismantle
+            if (s.structureType === STRUCTURE_RAMPART) continue;    // Ramparts are defensive, don't dismantle
+
+            // Only check our own structures
+            if ('my' in s && !(s as OwnedStructure).my) continue;
+
+            const key = `${s.pos.x},${s.pos.y}`;
+            const expected = expectedAt.get(key);
+
+            if (!expected || !expected.has(s.structureType)) {
+                // This structure's type is NOT expected at this position per the blueprint
+                obsoleteIds.push(s.id);
+                log.info(`Obsolete: ${s.structureType} at ${s.pos.x},${s.pos.y} — not in blueprint`);
+            }
+        }
+
+        // Store in colony memory for workers to pick up
+        (this.colony.memory as any).obsoleteStructures = obsoleteIds;
+
+        if (obsoleteIds.length > 0) {
+            log.info(`Blueprint sweep: ${obsoleteIds.length} obsolete structure(s) flagged for dismantling`);
         }
     }
 }

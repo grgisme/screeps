@@ -17,6 +17,7 @@ import { UpgradeTask } from "../tasks/UpgradeTask";
 import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
 import { TransferTask } from "../tasks/TransferTask";
+import { DismantleTask } from "../tasks/DismantleTask";
 
 
 
@@ -156,7 +157,22 @@ export class WorkerOverlord extends Overlord {
                     continue;
                 }
 
-                // 2. Build construction sites
+                // 2. Dismantle obsolete structures (blueprint validation)
+                const obsoleteIds = ((this.colony.memory as any).obsoleteStructures || []) as string[];
+                if (obsoleteIds.length > 0) {
+                    const targetId = obsoleteIds[0];
+                    const target = Game.getObjectById(targetId as Id<Structure>);
+                    if (target) {
+                        worker.setTask(new DismantleTask(target.id));
+                        continue;
+                    } else {
+                        // Target already gone — remove from list
+                        obsoleteIds.shift();
+                        (this.colony.memory as any).obsoleteStructures = obsoleteIds;
+                    }
+                }
+
+                // 3. Build construction sites
                 const site = this.getBestConstructionSite();
                 if (site) {
                     worker.setTask(new BuildTask(site.id));
