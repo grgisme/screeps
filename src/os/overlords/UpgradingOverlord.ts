@@ -106,9 +106,13 @@ export class UpgradingOverlord extends Overlord {
                 if (source) {
                     upgrader.setTask(new HarvestTask(source.id));
                 } else if (controller) {
+                    // Nothing to collect — rally to controller and stop collecting.
+                    // This prevents idle-in-the-middle-of-nowhere: the upgrader
+                    // parks at the controller where it can receive deliveries.
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
+                    mem.collecting = false; // Break out of collecting — upgrade with whatever we have
                 }
             } else {
                 if (controller) {
