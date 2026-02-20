@@ -39,6 +39,22 @@ export class WorkerOverlord extends Overlord {
     }
 
     run(): void {
+        const room = this.colony.room;
+
+        // Hoist queries OUTSIDE the loop to save CPU
+        let hasTransporters = false;
+        let spawnOrExtNeedEnergy: (StructureSpawn | StructureExtension)[] = [];
+
+        if (room && room.energyAvailable < room.energyCapacityAvailable) {
+            hasTransporters = this.colony.creeps.some(c => (c.memory as any).role === "transporter");
+            if (!hasTransporters) {
+                spawnOrExtNeedEnergy = room.find(FIND_MY_STRUCTURES, {
+                    filter: (s) => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION)
+                        && (s as StructureSpawn | StructureExtension).store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                }) as (StructureSpawn | StructureExtension)[];
+            }
+        }
+
         for (const worker of this.workers) {
             if (!worker.isAlive() || worker.task) continue;
 
@@ -63,22 +79,12 @@ export class WorkerOverlord extends Overlord {
             } else {
                 // Has energy — work priority cascade
 
-                // Peasant Logistics (Refill Spawn if no Transporters exist)
-                const room = this.colony.room;
-                if (room && room.energyAvailable < room.energyCapacityAvailable) {
-                    const hasTransporters = this.colony.creeps.some(c => (c.memory as any).role === "transporter");
-                    if (!hasTransporters) {
-                        const spawnOrExt = room.find(FIND_MY_STRUCTURES, {
-                            filter: (s) => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION)
-                                && (s as StructureSpawn | StructureExtension).store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                        });
-                        if (spawnOrExt && spawnOrExt.length > 0) {
-                            const target = worker.pos?.findClosestByRange(spawnOrExt);
-                            if (target) {
-                                worker.setTask(new TransferTask(target.id as Id<Structure>));
-                                continue;
-                            }
-                        }
+                // Peasant Logistics (Using the hoisted cached array)
+                if (!hasTransporters && spawnOrExtNeedEnergy.length > 0) {
+                    const target = worker.pos?.findClosestByRange(spawnOrExtNeedEnergy);
+                    if (target) {
+                        worker.setTask(new TransferTask(target.id as Id<Structure>));
+                        continue;
                     }
                 }
 
