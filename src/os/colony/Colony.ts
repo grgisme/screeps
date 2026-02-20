@@ -17,6 +17,7 @@ import { WorkerOverlord } from "../overlords/WorkerOverlord";
 import { UpgradingOverlord } from "../overlords/UpgradingOverlord";
 import { TerminalOverlord } from "../overlords/TerminalOverlord";
 import { DefenseOverlord } from "../overlords/DefenseOverlord";
+import { FillerOverlord } from "../overlords/FillerOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LinkNetwork } from "./LinkNetwork";
 import { LogisticsNetwork } from "./LogisticsNetwork";
@@ -100,6 +101,7 @@ export class Colony {
 
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
+        this.registerOverlord(new FillerOverlord(this));
         this.registerOverlord(new TerminalOverlord(this));
         this.registerOverlord(new DefenseOverlord(this));
     }

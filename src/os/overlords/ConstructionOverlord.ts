@@ -56,7 +56,12 @@ export class ConstructionOverlord extends Overlord {
             this.checkRoads(anchorPos, rcl, budget);
         }
 
-        // 5. Reset the RCL changed flag
+        // 5. Controller Container (RCL 2+)
+        if (rcl >= 2 && budget.count > 0) {
+            this.checkControllerContainer(budget);
+        }
+
+        // 6. Reset the RCL changed flag
         this.colony.state.rclChanged = false;
     }
 
@@ -337,6 +342,71 @@ export class ConstructionOverlord extends Overlord {
                 if (pos.createConstructionSite(STRUCTURE_ROAD) === OK) {
                     budget.count--;
                     if (budget.count <= 0) return;
+                }
+            }
+        }
+    }
+
+    /**
+     * Place a container within 2 tiles of the controller for upgrader energy supply.
+     * Picks the tile on the path from controller to the nearest source container
+     * (optimal for hauler routes). Skips if a container already exists nearby.
+     */
+    private checkControllerContainer(budget: { count: number }): void {
+        const room = this.colony.room;
+        if (!room || !room.controller) return;
+
+        const controller = room.controller;
+
+        // Check if a container already exists within 3 tiles of controller
+        const nearbyContainers = controller.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        });
+        if (nearbyContainers.length > 0) return;
+
+        // Also skip if a construction site already exists
+        const nearbySites = controller.pos.findInRange(FIND_MY_CONSTRUCTION_SITES, 3, {
+            filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
+        });
+        if (nearbySites.length > 0) return;
+
+        // Find the nearest source to path from controller toward it
+        const sources = room.find(FIND_SOURCES);
+        if (sources.length === 0) return;
+
+        const nearest = controller.pos.findClosestByRange(sources);
+        if (!nearest) return;
+
+        const path = PathFinder.search(controller.pos, { pos: nearest.pos, range: 2 }, {
+            plainCost: 2,
+            swampCost: 10,
+            roomCallback: (roomName) => {
+                const r = Game.rooms[roomName];
+                if (!r) return false;
+                const cm = new PathFinder.CostMatrix();
+                r.find(FIND_STRUCTURES).forEach(s => {
+                    if (s.structureType === STRUCTURE_WALL) cm.set(s.pos.x, s.pos.y, 255);
+                });
+                return cm;
+            }
+        });
+
+        // Pick the first path tile within 2 tiles of controller (optimal hauler route position)
+        for (const pos of path.path) {
+            if (pos.getRangeTo(controller.pos) <= 2 && pos.getRangeTo(controller.pos) >= 1) {
+                // Verify the tile isn't blocked
+                const terrain = Game.map.getRoomTerrain(room.name).get(pos.x, pos.y);
+                if (terrain === TERRAIN_MASK_WALL) continue;
+
+                const blocked = pos.lookFor(LOOK_STRUCTURES)
+                    .some((s: Structure) => s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART);
+                if (blocked) continue;
+
+                const result = pos.createConstructionSite(STRUCTURE_CONTAINER);
+                if (result === OK) {
+                    log.info(`Architect: Placed Controller Container at ${pos.x},${pos.y}`);
+                    budget.count--;
+                    return;
                 }
             }
         }

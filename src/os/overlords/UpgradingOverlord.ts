@@ -70,12 +70,25 @@ export class UpgradingOverlord extends Overlord {
             // STATE MACHINE LOGIC
             if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
 
-                // Stay and wait for delivery if Transporters exist
+                // Try LogisticsNetwork first — controller container is registered
+                // as an offer and will score high due to proximity
+                const targetId = this.colony.logistics.matchWithdraw(upgrader);
+                if (targetId) {
+                    const target = Game.getObjectById(targetId) as any;
+                    if (target && 'amount' in target) {
+                        upgrader.setTask(new PickupTask(targetId as Id<Resource>));
+                    } else {
+                        upgrader.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                    }
+                    continue;
+                }
+
+                // No logistics match — wait near controller for delivery
                 if (hasTransporters && controller) {
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
-                    continue; // Skip the rest of the loop and wait for delivery!
+                    continue;
                 }
 
                 // Fallback (Only happens if all Transporters die)
@@ -184,13 +197,30 @@ export class UpgradingOverlord extends Overlord {
         if (downgradeImminent) shouldSpawn = true;
         if (!shouldSpawn) return;
 
+        // ── Target Scaling ──
+        // RCL 2-3 (pre-Storage): scale with energy saturation
+        // RCL 4+ (Storage): scale with stored energy
         let target = 1;
-        if (isRCL8) target = 1;
-        else {
-            if (storage && storage.store.energy > 100000) target = 3;
-            if (storage && storage.store.energy > 500000) target = 5;
+        if (isRCL8) {
+            target = 1;
+        } else if (storage) {
+            if (storage.store.energy > 500000) target = 5;
+            else if (storage.store.energy > 100000) target = 3;
+        } else {
+            // Pre-Storage: if economy is saturated (spawn+ext ≥90% full),
+            // scale up upgraders to absorb surplus energy
+            const saturation = room.energyAvailable / Math.max(room.energyCapacityAvailable, 1);
+            const offerCount = this.colony.logistics.offerIds.length;
+
+            if (saturation >= 0.9 && offerCount >= 2) {
+                target = 4; // Full surplus → max upgrader throughput
+            } else if (saturation >= 0.7 && offerCount >= 1) {
+                target = 2; // Moderate surplus
+            }
+            // else target = 1 (minimal safety upgrader)
         }
 
+        // Priority: 20 (below workers, haulers, miners)
         let priority = downgradeImminent ? 95 : 20;
 
         if (this.upgraders.length < target) {

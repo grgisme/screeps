@@ -90,6 +90,26 @@ export class LogisticsNetwork {
             }
         }
 
+        // ── Controller Container — local energy buffer for upgraders ──
+        const controller = this.colony.room?.controller;
+        if (controller) {
+            const ctrlContainers = controller.pos.findInRange(FIND_STRUCTURES, 3, {
+                filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+            }) as StructureContainer[];
+
+            for (const c of ctrlContainers) {
+                // Offer: upgraders can withdraw from here
+                if (c.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+                    this.offerIds.push(c.id as Id<Structure | Resource>);
+                }
+                // Request: haulers should deliver energy here (priority 3 — below spawns/towers)
+                const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 100) {
+                    this.requestInput(c.id as Id<Structure | Resource>, { amount: free, priority: 3 });
+                }
+            }
+        }
+
         // ── Fix 1: Hatchery Integration (Individual Registration) ──
         for (const spawn of this.colony.hatchery.spawns) {
             const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);

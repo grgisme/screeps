@@ -46,7 +46,10 @@ export class WorkerOverlord extends Overlord {
         let spawnOrExtNeedEnergy: (StructureSpawn | StructureExtension)[] = [];
 
         if (room && room.energyAvailable < room.energyCapacityAvailable) {
-            hasTransporters = this.colony.creeps.some(c => (c.memory as any).role === "transporter");
+            hasTransporters = this.colony.creeps.some(c => {
+                const role = (c.memory as any).role;
+                return role === "transporter" || role === "filler";
+            });
             if (!hasTransporters) {
                 spawnOrExtNeedEnergy = room.find(FIND_MY_STRUCTURES, {
                     filter: (s) => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION)
