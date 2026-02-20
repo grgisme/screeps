@@ -163,6 +163,15 @@ export class WorkerOverlord extends Overlord {
                     const targetId = obsoleteIds[0];
                     const target = Game.getObjectById(targetId as Id<Structure>);
                     if (target) {
+                        // SAFETY: Never dismantle the last spawn
+                        if (target.structureType === STRUCTURE_SPAWN) {
+                            const spawnCount = this.colony.room?.find(FIND_MY_SPAWNS)?.length ?? 0;
+                            if (spawnCount <= 1) {
+                                obsoleteIds.shift(); // Remove from list, never dismantle
+                                (this.colony.memory as any).obsoleteStructures = obsoleteIds;
+                                continue; // Skip to next task
+                            }
+                        }
                         worker.setTask(new DismantleTask(target.id));
                         continue;
                     } else {

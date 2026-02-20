@@ -527,6 +527,9 @@ export class ConstructionOverlord extends Overlord {
         const obsoleteIds: string[] = [];
         const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
 
+        // Safety: count spawns so we never flag the last one
+        const spawnCount = room.find(FIND_MY_SPAWNS).length;
+
         // Build a map of expected positions: "x,y" → Set of expected structure types
         const expectedAt = new Map<string, Set<StructureConstant>>();
         for (const type of Object.keys(layoutStructures) as StructureConstant[]) {
@@ -555,6 +558,12 @@ export class ConstructionOverlord extends Overlord {
             const expected = expectedAt.get(key);
 
             if (!expected || !expected.has(s.structureType)) {
+                // SAFETY: Never flag the last spawn — colony dies without it
+                if (s.structureType === STRUCTURE_SPAWN && spawnCount <= 1) {
+                    log.warn(`Skipping obsolete spawn at ${s.pos.x},${s.pos.y} — it's the only spawn!`);
+                    continue;
+                }
+
                 // This structure's type is NOT expected at this position per the blueprint
                 obsoleteIds.push(s.id);
                 log.info(`Obsolete: ${s.structureType} at ${s.pos.x},${s.pos.y} — not in blueprint`);
