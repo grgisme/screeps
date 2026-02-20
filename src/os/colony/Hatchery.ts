@@ -115,9 +115,9 @@ export class Hatchery {
 
         // 2. Process Queue
         if (Game.time % 10 === 0) {
-            log.info(`Queue: ${this.queue.length} requests | Energy: ${room.energyAvailable}/${room.energyCapacityAvailable} | Spawns: ${spawns.length} (${spawns.filter(s => !s.spawning).length} idle)`);
+            log.debug(() => `Queue: ${this.queue.length} requests | Energy: ${room.energyAvailable}/${room.energyCapacityAvailable} | Spawns: ${spawns.length} (${spawns.filter(s => !s.spawning).length} idle)`);
             for (const req of this.queue) {
-                log.info(`  → [P${req.priority}] ${req.name} for ${req.overlord.processId}`);
+                log.debug(() => `  → [P${req.priority}] ${req.name} for ${req.overlord.processId}`);
             }
         }
         if (this.queue.length > 0 && spawns.length > 0) {
