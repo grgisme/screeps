@@ -61,8 +61,18 @@ export class WorkerOverlord extends Overlord {
         for (const worker of this.workers) {
             if (!worker.isAlive() || worker.task) continue;
 
-            if (worker.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-                // Empty — find energy source
+            const mem = worker.memory as any;
+
+            // STATE MACHINE: Commit to collecting until full, then work until empty
+            if ((worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+                mem.collecting = true;
+            }
+            if ((worker.store?.getFreeCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+                mem.collecting = false;
+            }
+
+            if (mem.collecting) {
+                // Collecting energy — fill up completely before working
 
                 // 1. LogisticsNetwork matching (polymorphic)
                 const targetId = this.colony.logistics.matchWithdraw(worker);
