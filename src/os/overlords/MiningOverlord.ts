@@ -58,12 +58,10 @@ export class MiningOverlord extends Overlord {
 
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
         if (siteMiners.length < 1) {
-            // Bootstrap cap: if NO miners alive at all, cap energy to spawn-only (300)
-            // to avoid deadlock where extensions need miners to fill them.
+            // Bootstrap cap: if NO miners alive at all, cap to spawn-only energy (300)
+            // so the Hatchery doesn't wait for unfilled extensions.
             const isBootstrap = this.miners.length === 0;
-            const capacity = isBootstrap
-                ? Math.min(room.energyCapacityAvailable, 300)
-                : room.energyCapacityAvailable;
+            const capacity = room.energyCapacityAvailable;
             const body = capacity >= 700
                 ? [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] // Optimal Static Miner (700e)
                 : (capacity >= 350 ? [WORK, WORK, CARRY, MOVE, MOVE] : [WORK, CARRY, MOVE]); // RCL 1 Fallback (200e)
