@@ -92,7 +92,7 @@ export class TransporterOverlord extends Overlord {
             const template = [CARRY, CARRY, MOVE];
 
             this.colony.hatchery.enqueue({
-                priority: 4,
+                priority: 90, // Logistics > Workers!
                 bodyTemplate: template,
                 overlord: this,
                 name: `Transporter_${this.colony.name}_${Game.time}`,

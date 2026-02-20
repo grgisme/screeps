@@ -51,6 +51,11 @@ export class HarvestTask implements ITask {
         const source = this.target;
         if (!source) return true; // Target gone — task complete (invalid)
 
+        // Non-miners must stop harvesting when full so they can build/upgrade
+        if (zerg.store && zerg.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+            if ((zerg.memory as any)?.role !== "miner") return true;
+        }
+
         if (zerg.pos && zerg.pos.inRangeTo(source, this.settings.workRange)) {
             const result = zerg.harvest(source);
             // Only abort on *fatal* errors. Transient errors (BUSY, TIRED,

@@ -16,6 +16,7 @@ import { HarvestTask } from "../tasks/HarvestTask";
 import { UpgradeTask } from "../tasks/UpgradeTask";
 import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
+import { TransferTask } from "../tasks/TransferTask";
 
 
 
@@ -61,6 +62,25 @@ export class WorkerOverlord extends Overlord {
                 if (source) worker.setTask(new HarvestTask(source.id));
             } else {
                 // Has energy — work priority cascade
+
+                // Peasant Logistics (Refill Spawn if no Transporters exist)
+                const room = this.colony.room;
+                if (room && room.energyAvailable < room.energyCapacityAvailable) {
+                    const hasTransporters = this.colony.creeps.some(c => (c.memory as any).role === "transporter");
+                    if (!hasTransporters) {
+                        const spawnOrExt = room.find(FIND_MY_STRUCTURES, {
+                            filter: (s) => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION)
+                                && (s as StructureSpawn | StructureExtension).store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                        });
+                        if (spawnOrExt && spawnOrExt.length > 0) {
+                            const target = worker.pos?.findClosestByRange(spawnOrExt);
+                            if (target) {
+                                worker.setTask(new TransferTask(target.id as Id<Structure>));
+                                continue;
+                            }
+                        }
+                    }
+                }
 
                 // 1. Emergency repairs (with targetHits barrier threshold)
                 const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
