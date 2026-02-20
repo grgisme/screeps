@@ -108,10 +108,21 @@ export class WorkerOverlord extends Overlord {
                 if (source) {
                     worker.setTask(new HarvestTask(source.id));
                 } else {
-                    // Starved & waiting on miner — idle near spawn to keep logistics clear
-                    const rally = room?.storage?.pos || room?.find(FIND_MY_SPAWNS)?.[0]?.pos;
-                    if (rally && worker.pos && worker.pos.getRangeTo(rally) > 4) {
-                        worker.travelTo(rally, 4);
+                    // All sources have miners — try withdrawing from containers first
+                    const container = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
+                        filter: (s: Structure) =>
+                            s.structureType === STRUCTURE_CONTAINER &&
+                            (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 50
+                    }) as StructureContainer | undefined;
+
+                    if (container) {
+                        worker.setTask(new WithdrawTask(container.id as Id<Structure>));
+                    } else {
+                        // Last resort: share a mined source rather than idle
+                        const anySource = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
+                        if (anySource) {
+                            worker.setTask(new HarvestTask(anySource.id));
+                        }
                     }
                 }
             } else {
