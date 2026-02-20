@@ -70,9 +70,23 @@ export class UpgradingOverlord extends Overlord {
             // STATE MACHINE LOGIC
             if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
 
-                // When transporters exist: stay near controller, wait for delivery
-                // (upgraders are registered as requesters — haulers deliver to them)
+                // When transporters exist: stay near controller, use controller container if adjacent
                 if (hasTransporters && controller) {
+                    // Check for controller container within 1 tile — hyperlocal, no trekking
+                    if (upgrader.pos) {
+                        const adjContainer = upgrader.pos.findInRange(FIND_STRUCTURES, 1, {
+                            filter: (s: Structure) =>
+                                s.structureType === STRUCTURE_CONTAINER &&
+                                (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 0
+                        })[0] as StructureContainer | undefined;
+
+                        if (adjContainer) {
+                            upgrader.withdraw(adjContainer);
+                            continue;
+                        }
+                    }
+
+                    // No adjacent container — rally near controller and wait for delivery
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
