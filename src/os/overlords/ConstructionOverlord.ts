@@ -29,6 +29,11 @@ export class ConstructionOverlord extends Overlord {
             return;
         }
 
+        // Bunker Plan Visualization (every 5 ticks — RoomVisual is ~0 CPU, client-side only)
+        if (Game.time % 5 === 0) {
+            this.drawBunkerPlan();
+        }
+
         // 2. Global Guard: yield 0 CPU while workers are busy
         const activeSites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES).length ?? 0;
         if (activeSites >= 3) return;
@@ -84,6 +89,80 @@ export class ConstructionOverlord extends Overlord {
                 this.colony.memory.anchor = { x: bestPos.x, y: bestPos.y };
             }
         }
+    }
+
+    // ========================================================================
+    // Bunker Plan Visualization — RoomVisual overlay (~0 CPU)
+    // ========================================================================
+
+    private drawBunkerPlan(): void {
+        const anchor = this.colony.memory.anchor;
+        if (!anchor) return;
+
+        const visual = new RoomVisual(this.colony.name);
+        const anchorPos = new RoomPosition(anchor.x, anchor.y, this.colony.name);
+
+        // Color mapping by structure type
+        const COLORS: Partial<Record<StructureConstant, string>> = {
+            [STRUCTURE_SPAWN]: '#00ff00',
+            [STRUCTURE_EXTENSION]: '#ffcc00',
+            [STRUCTURE_TOWER]: '#ff3333',
+            [STRUCTURE_STORAGE]: '#00ccff',
+            [STRUCTURE_TERMINAL]: '#0099ff',
+            [STRUCTURE_LINK]: '#66ddff',
+            [STRUCTURE_LAB]: '#cc66ff',
+            [STRUCTURE_ROAD]: '#666666',
+            [STRUCTURE_RAMPART]: '#336633',
+            [STRUCTURE_CONTAINER]: '#996633',
+        };
+
+        const LABELS: Partial<Record<StructureConstant, string>> = {
+            [STRUCTURE_SPAWN]: 'Spn',
+            [STRUCTURE_EXTENSION]: 'Ext',
+            [STRUCTURE_TOWER]: 'Twr',
+            [STRUCTURE_STORAGE]: 'Sto',
+            [STRUCTURE_TERMINAL]: 'Trm',
+            [STRUCTURE_LINK]: 'Lnk',
+            [STRUCTURE_LAB]: 'Lab',
+            [STRUCTURE_ROAD]: '·',
+            [STRUCTURE_RAMPART]: '',
+            [STRUCTURE_CONTAINER]: 'Con',
+        };
+
+        const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
+
+        for (const [typeStr, positions] of Object.entries(layoutStructures)) {
+            const type = typeStr as StructureConstant;
+            const color = COLORS[type] || '#ffffff';
+            const label = LABELS[type] ?? typeStr.substring(0, 3);
+            const isRoad = type === STRUCTURE_ROAD;
+            const isRampart = type === STRUCTURE_RAMPART;
+
+            for (const rel of positions as Array<{ x: number, y: number }>) {
+                const pos = BunkerLayout.getPos(anchorPos, rel);
+                if (pos.x < 1 || pos.x > 48 || pos.y < 1 || pos.y > 48) continue;
+
+                if (isRampart) {
+                    // Ramparts: subtle border squares
+                    visual.rect(pos.x - 0.5, pos.y - 0.5, 1, 1, {
+                        fill: color, opacity: 0.08, stroke: color, strokeWidth: 0.05
+                    });
+                } else if (isRoad) {
+                    // Roads: small dots
+                    visual.circle(pos.x, pos.y, { radius: 0.1, fill: color, opacity: 0.4 });
+                } else {
+                    // Structures: colored circles with labels
+                    visual.circle(pos.x, pos.y, { radius: 0.4, fill: color, opacity: 0.25, stroke: color, strokeWidth: 0.1 });
+                    if (label) {
+                        visual.text(label, pos.x, pos.y + 0.1, { font: 0.28, color: color, opacity: 0.8 });
+                    }
+                }
+            }
+        }
+
+        // Anchor crosshair
+        visual.circle(anchor.x, anchor.y, { radius: 0.6, fill: '', stroke: '#ffffff', strokeWidth: 0.15, opacity: 0.6 });
+        visual.text('⚓', anchor.x, anchor.y + 0.15, { font: 0.5, opacity: 0.7 });
     }
 
     // ========================================================================
