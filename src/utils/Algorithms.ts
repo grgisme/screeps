@@ -115,3 +115,127 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
 
     return cm;
 }
+
+// ============================================================================
+// Gale-Shapley Stable Matching Algorithm
+// ============================================================================
+//
+// Given N proposers and M receivers, each with ranked preference lists,
+// produces a stable matching where no two unmatched pairs mutually prefer
+// each other over their current assignment.
+//
+// In the Screeps logistics context:
+//   Transfer: proposers = loaded haulers, receivers = requesters
+//   Withdraw: proposers = empty haulers, receivers = offers
+//
+// Receivers can accept multiple proposers up to their capacity.
+// Runs in O(N * M) worst case.
+// ============================================================================
+
+export interface MatchProposer {
+    /** Unique ID of the proposer (e.g., creep name) */
+    id: string;
+    /** Ordered preference list: receiver IDs from most to least preferred */
+    preferences: string[];
+}
+
+export interface MatchReceiver {
+    /** Unique ID of the receiver (e.g., structure ID) */
+    id: string;
+    /** How many proposers this receiver can accept (e.g., 1 for most, more for storage) */
+    capacity: number;
+    /** Scoring function: given a proposer ID, return a preference score (higher = more preferred) */
+    score: (proposerId: string) => number;
+}
+
+/**
+ * Gale-Shapley Stable Matching.
+ *
+ * @returns Map of proposerId → receiverId (the stable matching)
+ */
+export function stableMatch(
+    proposers: MatchProposer[],
+    receivers: MatchReceiver[]
+): Map<string, string> {
+    // Build receiver lookup
+    const receiverMap = new Map<string, MatchReceiver>();
+    for (const r of receivers) {
+        receiverMap.set(r.id, r);
+    }
+
+    // Track state
+    const proposalIndex = new Map<string, number>();       // proposer → next preference to try
+    const matches = new Map<string, string>();             // proposer → receiver
+    const receiverSlots = new Map<string, string[]>();     // receiver → list of matched proposers
+
+    // Initialize
+    const free: string[] = [];
+    for (const p of proposers) {
+        proposalIndex.set(p.id, 0);
+        free.push(p.id);
+    }
+    for (const r of receivers) {
+        receiverSlots.set(r.id, []);
+    }
+
+    // Build proposer lookup for preferences
+    const proposerMap = new Map<string, MatchProposer>();
+    for (const p of proposers) {
+        proposerMap.set(p.id, p);
+    }
+
+    // Main loop: while there are free proposers with preferences remaining
+    while (free.length > 0) {
+        const pId = free.pop()!;
+        const proposer = proposerMap.get(pId)!;
+        const idx = proposalIndex.get(pId)!;
+
+        // No more preferences to try — proposer stays unmatched
+        if (idx >= proposer.preferences.length) continue;
+
+        const rId = proposer.preferences[idx];
+        proposalIndex.set(pId, idx + 1);
+
+        const receiver = receiverMap.get(rId);
+        if (!receiver) {
+            // Receiver doesn't exist — try next preference
+            free.push(pId);
+            continue;
+        }
+
+        const slots = receiverSlots.get(rId)!;
+
+        if (slots.length < receiver.capacity) {
+            // Receiver has room — accept
+            slots.push(pId);
+            matches.set(pId, rId);
+        } else {
+            // Receiver is full — check if this proposer is preferred over the worst match
+            const pScore = receiver.score(pId);
+            let worstIdx = 0;
+            let worstScore = receiver.score(slots[0]);
+
+            for (let i = 1; i < slots.length; i++) {
+                const s = receiver.score(slots[i]);
+                if (s < worstScore) {
+                    worstScore = s;
+                    worstIdx = i;
+                }
+            }
+
+            if (pScore > worstScore) {
+                // Reject worst, accept new proposer
+                const rejected = slots[worstIdx];
+                slots[worstIdx] = pId;
+                matches.set(pId, rId);
+                matches.delete(rejected);
+                free.push(rejected); // Rejected proposer becomes free again
+            } else {
+                // Rejected — proposer tries next preference
+                free.push(pId);
+            }
+        }
+    }
+
+    return matches;
+}

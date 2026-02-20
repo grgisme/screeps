@@ -108,6 +108,7 @@ describe("LogisticsNetwork", () => {
         };
 
         const zerg = {
+            name: "hauler1",
             pos: new RoomPosition(10, 10, "W1N1"),
             store: {
                 getFreeCapacity: () => 100,
@@ -115,10 +116,8 @@ describe("LogisticsNetwork", () => {
             }
         } as any;
 
-        // offer1: score = 400 / max(1, ~28) ≈ 14.3
-        // offer2: score = 200 / max(1, 2) = 100
         // offer2 wins (closer and still decent amount)
-        const result = network.matchWithdraw(zerg);
+        const result = network.matchWithdraw(zerg, [zerg]);
         expect(result).to.equal("offer2");
 
         // Check reservation was set
@@ -148,6 +147,7 @@ describe("LogisticsNetwork", () => {
         };
 
         const zerg = {
+            name: "hauler1",
             pos: new RoomPosition(10, 10, "W1N1"),
             store: {
                 getFreeCapacity: () => 0,
@@ -159,7 +159,7 @@ describe("LogisticsNetwork", () => {
         // req1: score = (10 * 1000) - ~28 = 9972
         // req2: score = (5 * 1000) - 2  = 4998
         // req1 wins (higher priority is absolute, distance is only a tie-breaker)
-        const result = network.matchTransfer(zerg);
+        const result = network.matchTransfer(zerg, [zerg]);
         expect(result).to.equal("req1");
 
         // Check reservation was set
@@ -172,32 +172,41 @@ describe("LogisticsNetwork", () => {
         const offerId = "offer1" as Id<Structure | Resource>;
         network.requestOutput(offerId);
 
+        // 60 energy → capacity = ceil(60/50) = 2 slots
+        // Both haulers should match since capacity allows it
         (globalThis as any).Game.getObjectById = (id: string) => {
             if (id === "offer1") return {
                 id: "offer1",
                 pos: new RoomPosition(15, 15, "W1N1"),
-                store: { [RESOURCE_ENERGY]: 150 }
+                store: { [RESOURCE_ENERGY]: 60 }
             };
             return null;
         };
 
+        // Use worker role for 10-energy threshold (below the 50 transporter threshold)
         const zerg1 = {
+            name: "hauler1",
             pos: new RoomPosition(10, 10, "W1N1"),
-            store: { getFreeCapacity: () => 100, getUsedCapacity: () => 0 }
+            memory: { role: "worker" },
+            store: { getFreeCapacity: () => 30, getUsedCapacity: () => 0 }
         } as any;
 
         const zerg2 = {
-            pos: new RoomPosition(10, 10, "W1N1"),
-            store: { getFreeCapacity: () => 100, getUsedCapacity: () => 0 }
+            name: "hauler2",
+            pos: new RoomPosition(20, 20, "W1N1"),
+            memory: { role: "worker" },
+            store: { getFreeCapacity: () => 30, getUsedCapacity: () => 0 }
         } as any;
 
-        // First zerg matches — reserves 100, effective becomes 50
-        const r1 = network.matchWithdraw(zerg1);
-        expect(r1).to.equal("offer1");
-        expect(network.outgoingReservations.get("offer1")).to.equal(100);
-
-        // Second zerg — effective is now 150 - 100 = 50, which is <= 50 threshold
+        // Batch match both — capacity = 2, both should match
+        const r1 = network.matchWithdraw(zerg1, [zerg1, zerg2]);
         const r2 = network.matchWithdraw(zerg2);
-        expect(r2).to.be.null; // Not enough effective energy
+
+        // Both should match (capacity allows 2)
+        expect(r1).to.equal("offer1");
+        expect(r2).to.equal("offer1");
+
+        // Reservations should accumulate
+        expect(network.outgoingReservations.get("offer1")).to.equal(60); // 30 + 30
     });
 });

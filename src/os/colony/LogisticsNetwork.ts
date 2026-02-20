@@ -13,6 +13,7 @@ import type { Zerg } from "../zerg/Zerg";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { Logger } from "../../utils/Logger";
+import { stableMatch, MatchProposer, MatchReceiver } from "../../utils/Algorithms";
 
 const log = new Logger("Logistics");
 
@@ -284,70 +285,129 @@ export class LogisticsNetwork {
     // Task Matching — Atomic withdraw/transfer assignment
     // -----------------------------------------------------------------------
 
+    // ========================================================================
+    // Gale-Shapley Stable Matching — Batch Logistics
+    // ========================================================================
+
+    /**  Cached batch results for the current tick */
+    private _withdrawMatches: Map<string, string> | null = null;
+    private _transferMatches: Map<string, string> | null = null;
+    private _matchTick: number = -1;
+
     /**
-     * Find the best withdraw target for an empty hauler.
-     * Score = effectiveAmount / max(1, distance)
+     * Run Gale-Shapley for all free haulers needing withdraw targets.
+     * Called lazily on first matchWithdraw() of each tick.
      */
-    matchWithdraw(zerg: Zerg): Id<Structure | Resource> | null {
-        if (!zerg.pos) return null;
+    private ensureWithdrawBatch(haulers: Zerg[]): void {
+        if (this._matchTick === Game.time && this._withdrawMatches) return;
+        this._matchTick = Game.time;
 
-        let bestId: Id<Structure | Resource> | null = null;
-        let bestScore = -Infinity;
+        // Build proposers: each hauler ranks offers by effectiveAmount / distance
+        const proposers: MatchProposer[] = [];
+        const haulerMap = new Map<string, Zerg>();
 
-        // Role-based thresholds: Workers grab crumbs, Transporters wait for bulk efficiency
-        const isWorker = (zerg.memory as any)?.role === "worker" || (zerg.memory as any)?.role === "upgrader";
-        const threshold = isWorker ? 10 : 50;
+        for (const h of haulers) {
+            if (!h.pos) continue;
+            const isWorker = (h.memory as any)?.role === "worker" || (h.memory as any)?.role === "upgrader";
+            const threshold = isWorker ? 10 : 50;
 
+            // Rank offers by score descending
+            const scored: { id: string; score: number }[] = [];
+            for (const offerId of this.offerIds) {
+                const effectiveAmount = this.getEffectiveAmount(offerId);
+                if (effectiveAmount <= threshold) continue;
+
+                const target = Game.getObjectById(offerId);
+                if (!target) continue;
+
+                // Ping-pong prevention for buffers
+                const isBuffer = 'structureType' in target &&
+                    ((target as Structure).structureType === STRUCTURE_STORAGE ||
+                        (target as Structure).structureType === STRUCTURE_TERMINAL);
+                if (isBuffer) {
+                    const realDemand = this.requesters.some(r =>
+                        r.priority > 0 &&
+                        (r.amount - (this.incomingReservations.get(r.targetId) || 0)) > 0
+                    );
+                    if (!realDemand) continue;
+                }
+
+                const distance = h.pos.getRangeTo(target.pos);
+                scored.push({ id: offerId as string, score: effectiveAmount / Math.max(1, distance) });
+            }
+
+            scored.sort((a, b) => b.score - a.score);
+            if (scored.length > 0) {
+                proposers.push({ id: h.name, preferences: scored.map(s => s.id) });
+                haulerMap.set(h.name, h);
+            }
+        }
+
+        // Build receivers: each offer can accept multiple haulers based on stored energy
+        const receivers: MatchReceiver[] = [];
         for (const offerId of this.offerIds) {
-            const effectiveAmount = this.getEffectiveAmount(offerId);
-            if (effectiveAmount <= threshold) continue;
-
             const target = Game.getObjectById(offerId);
             if (!target) continue;
 
-            // ── Fix #4: Ping-Pong prevention for buffers ──────────────
-            const isBuffer = 'structureType' in target &&
-                ((target as Structure).structureType === STRUCTURE_STORAGE ||
-                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+            const effectiveAmount = this.getEffectiveAmount(offerId);
+            if (effectiveAmount <= 0) continue;
 
-            if (isBuffer) {
-                // Only withdraw from buffers if there is real demand (priority > 0)
-                const realDemand = this.requesters.some(r =>
-                    r.priority > 0 &&
-                    (r.amount - (this.incomingReservations.get(r.targetId) || 0)) > 0
-                );
-                if (!realDemand) continue;
-            }
+            // Capacity: how many haulers can withdraw simultaneously
+            // Each hauler takes ~50 energy, so capacity = ceil(amount / 50)
+            const cap = Math.max(1, Math.ceil(effectiveAmount / 50));
 
-            const distance = zerg.pos.getRangeTo(target.pos);
-            const score = effectiveAmount / Math.max(1, distance);
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestId = offerId;
-            }
+            receivers.push({
+                id: offerId as string,
+                capacity: cap,
+                score: (proposerId: string) => {
+                    const h = haulerMap.get(proposerId);
+                    if (!h?.pos || !target.pos) return 0;
+                    // Receivers prefer closer haulers (higher score = closer)
+                    return 100 - h.pos.getRangeTo(target.pos);
+                }
+            });
         }
 
-        if (bestId) {
-            // Reserve: add zerg's free capacity to outgoing
-            const freeCapacity = zerg.store?.getFreeCapacity() ?? 0;
-            const current = this.outgoingReservations.get(bestId) || 0;
-            this.outgoingReservations.set(bestId, current + freeCapacity);
-        }
-
-        return bestId;
+        this._withdrawMatches = stableMatch(proposers, receivers);
+        this._transferMatches = null; // Reset transfer for this tick
     }
 
     /**
-     * Find the best transfer target for a loaded hauler.
-     * Score = priority / max(1, distance)
+     * Run Gale-Shapley for all free haulers needing transfer targets.
+     * Called lazily on first matchTransfer() of each tick.
      */
-    matchTransfer(zerg: Zerg): Id<Structure | Resource> | null {
-        if (!zerg.pos) return null;
+    private ensureTransferBatch(haulers: Zerg[]): void {
+        if (this._matchTick === Game.time && this._transferMatches) return;
+        this._matchTick = Game.time;
 
-        let bestId: Id<Structure | Resource> | null = null;
-        let bestScore = -Infinity;
+        const proposers: MatchProposer[] = [];
+        const haulerMap = new Map<string, Zerg>();
 
+        for (const h of haulers) {
+            if (!h.pos) continue;
+
+            const scored: { id: string; score: number }[] = [];
+            for (const req of this.requesters) {
+                const incoming = this.incomingReservations.get(req.targetId) || 0;
+                const deficit = req.amount - incoming;
+                if (deficit <= 0) continue;
+
+                const target = Game.getObjectById(req.targetId);
+                if (!target) continue;
+
+                const distance = h.pos.getRangeTo(target.pos);
+                // Strict priority bands: priority * 1000 - distance
+                scored.push({ id: req.targetId as string, score: (req.priority * 1000) - distance });
+            }
+
+            scored.sort((a, b) => b.score - a.score);
+            if (scored.length > 0) {
+                proposers.push({ id: h.name, preferences: scored.map(s => s.id) });
+                haulerMap.set(h.name, h);
+            }
+        }
+
+        const receivers: MatchReceiver[] = [];
         for (const req of this.requesters) {
             const incoming = this.incomingReservations.get(req.targetId) || 0;
             const deficit = req.amount - incoming;
@@ -356,25 +416,73 @@ export class LogisticsNetwork {
             const target = Game.getObjectById(req.targetId);
             if (!target) continue;
 
-            const distance = zerg.pos.getRangeTo(target.pos);
+            // Capacity: how many haulers needed to fill the deficit
+            const cap = Math.max(1, Math.ceil(deficit / 50));
 
-            // ── Fix 4: Strict Priority Bands ──
-            // Priority is absolute. Distance acts only as a tie-breaker within the same tier.
-            const score = (req.priority * 1000) - distance;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestId = req.targetId;
-            }
+            receivers.push({
+                id: req.targetId as string,
+                capacity: cap,
+                score: (proposerId: string) => {
+                    const h = haulerMap.get(proposerId);
+                    if (!h?.pos || !target.pos) return 0;
+                    return 100 - h.pos.getRangeTo(target.pos);
+                }
+            });
         }
 
-        if (bestId) {
+        this._transferMatches = stableMatch(proposers, receivers);
+        this._withdrawMatches = null; // Reset withdraw for this tick
+    }
+
+    /**
+     * Find the best withdraw target for an empty hauler.
+     * Uses Gale-Shapley stable matching for global optimality.
+     */
+    matchWithdraw(zerg: Zerg, allFreeHaulers?: Zerg[]): Id<Structure | Resource> | null {
+        if (!zerg.pos) return null;
+
+        // Run batch matching if not yet computed this tick
+        if (allFreeHaulers && allFreeHaulers.length > 0) {
+            this.ensureWithdrawBatch(allFreeHaulers);
+        }
+
+        // Look up this hauler's assignment
+        const matchedId = this._withdrawMatches?.get(zerg.name);
+        if (matchedId) {
+            const bestId = matchedId as Id<Structure | Resource>;
+            // Reserve: add zerg's free capacity to outgoing
+            const freeCapacity = zerg.store?.getFreeCapacity() ?? 0;
+            const current = this.outgoingReservations.get(bestId) || 0;
+            this.outgoingReservations.set(bestId, current + freeCapacity);
+            return bestId;
+        }
+
+        return null;
+    }
+
+    /**
+     * Find the best transfer target for a loaded hauler.
+     * Uses Gale-Shapley stable matching for global optimality.
+     */
+    matchTransfer(zerg: Zerg, allFreeHaulers?: Zerg[]): Id<Structure | Resource> | null {
+        if (!zerg.pos) return null;
+
+        // Run batch matching if not yet computed this tick
+        if (allFreeHaulers && allFreeHaulers.length > 0) {
+            this.ensureTransferBatch(allFreeHaulers);
+        }
+
+        // Look up this hauler's assignment
+        const matchedId = this._transferMatches?.get(zerg.name);
+        if (matchedId) {
+            const bestId = matchedId as Id<Structure | Resource>;
             // Reserve: add zerg's used capacity to incoming
             const usedCapacity = zerg.store?.getUsedCapacity() ?? 0;
             const current = this.incomingReservations.get(bestId) || 0;
             this.incomingReservations.set(bestId, current + usedCapacity);
+            return bestId;
         }
 
-        return bestId;
+        return null;
     }
 }

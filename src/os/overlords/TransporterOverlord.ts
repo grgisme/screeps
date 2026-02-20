@@ -31,6 +31,9 @@ export class TransporterOverlord extends Overlord {
     }
 
     run(): void {
+        const freeWithdraw: Zerg[] = [];
+        const freeTransfer: Zerg[] = [];
+
         for (const transporter of this.transporters) {
             if (!transporter.isAlive()) continue;
 
@@ -49,33 +52,41 @@ export class TransporterOverlord extends Overlord {
             if (transporter.store?.getFreeCapacity() === 0) mem.collecting = false;
 
             if (mem.collecting) {
-                const targetId = this.colony.logistics.matchWithdraw(transporter);
-                if (targetId) {
-                    const target = Game.getObjectById(targetId);
-                    if (target && 'amount' in target) {
-                        transporter.setTask(new PickupTask(targetId as Id<Resource>));
-                    } else {
-                        transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
-                    }
-                } else if ((transporter.store?.getUsedCapacity() ?? 0) > 0) {
-                    mem.collecting = false; // Nothing to withdraw, go deliver what we have
-                }
+                freeWithdraw.push(transporter);
+            } else {
+                freeTransfer.push(transporter);
             }
+        }
 
-            // Separate if, not else, so it can pivot in the same tick
-            if (!mem.collecting) {
-                const targetId = this.colony.logistics.matchTransfer(transporter);
-                if (targetId) {
-                    transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
-                } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
-                    mem.collecting = true; // Nothing to deliver, go collect more
+        // ── Batch Gale-Shapley matching ──
+        // Pass all free haulers at once for stable matching
+        for (const transporter of freeWithdraw) {
+            const mem = transporter.memory as any;
+            const targetId = this.colony.logistics.matchWithdraw(transporter, freeWithdraw);
+            if (targetId) {
+                const target = Game.getObjectById(targetId);
+                if (target && 'amount' in target) {
+                    transporter.setTask(new PickupTask(targetId as Id<Resource>));
                 } else {
-                    // Full but nowhere to deliver — rally near spawn (logistics hub)
-                    // Stay close to hatchery container and source routes for next cycle
-                    const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                    if (spawn && transporter.pos && transporter.pos.getRangeTo(spawn) > 5) {
-                        transporter.travelTo(spawn, 4);
-                    }
+                    transporter.setTask(new WithdrawTask(targetId as Id<Structure | Tombstone | Ruin>));
+                }
+            } else if ((transporter.store?.getUsedCapacity() ?? 0) > 0) {
+                mem.collecting = false; // Nothing to withdraw, go deliver what we have
+                freeTransfer.push(transporter); // Re-add to transfer batch
+            }
+        }
+
+        for (const transporter of freeTransfer) {
+            const targetId = this.colony.logistics.matchTransfer(transporter, freeTransfer);
+            if (targetId) {
+                transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
+            } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
+                (transporter.memory as any).collecting = true;
+            } else {
+                // Full but nowhere to deliver — rally near spawn (logistics hub)
+                const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
+                if (spawn && transporter.pos && transporter.pos.getRangeTo(spawn) > 5) {
+                    transporter.travelTo(spawn, 4);
                 }
             }
         }
