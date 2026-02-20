@@ -80,12 +80,21 @@ export class MiningSite {
         if (this._scanned && Game.time % 50 !== 0) return;
         this._scanned = true;
 
-        // If we failed to calculate a position previously (e.g. no spawn existed yet), retry!
-        if (!this.containerPos) {
-            this.calculateContainerPos();
+        // Recalculate container position every refresh — roads may have changed the path
+        this.calculateContainerPos();
+
+        // 1. Validate existing container is at the optimal position
+        //    (path may have changed after roads were built)
+        if (this.containerId && this.containerPos) {
+            const existing = this.container;
+            if (existing && !existing.pos.isEqualTo(this.containerPos)) {
+                log.info(`Container ${this.containerId.slice(-4)} at ${existing.pos.x},${existing.pos.y} is misplaced (should be ${this.containerPos.x},${this.containerPos.y}) — destroying`);
+                existing.destroy();
+                this.containerId = undefined;
+            }
         }
 
-        // 1. Find container at the calculated position
+        // 2. Find container at the calculated position
         if (this.containerPos && !this.containerId) {
             const found = this.containerPos
                 .lookFor(LOOK_STRUCTURES)
@@ -157,6 +166,8 @@ export class MiningSite {
                 r.find(FIND_STRUCTURES).forEach(s => {
                     if (s.structureType === STRUCTURE_WALL) {
                         costMatrix.set(s.pos.x, s.pos.y, 255);
+                    } else if (s.structureType === STRUCTURE_ROAD) {
+                        costMatrix.set(s.pos.x, s.pos.y, 1);
                     }
                 });
                 return costMatrix;
