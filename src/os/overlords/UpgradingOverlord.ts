@@ -1,80 +1,96 @@
-// ============================================================================
-// UpgradingOverlord — IoC task assignment for upgrader creeps
-// ============================================================================
-
 import { Overlord } from "./Overlord";
-import type { Colony } from "../colony/Colony";
-import { Upgrader } from "../zerg/Upgrader";
-import { WithdrawTask } from "../tasks/WithdrawTask";
-import { PickupTask } from "../tasks/PickupTask";
 import { HarvestTask } from "../tasks/HarvestTask";
 import { UpgradeTask } from "../tasks/UpgradeTask";
+import { WithdrawTask } from "../tasks/WithdrawTask";
+import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("Upgrading");
 
 export class UpgradingOverlord extends Overlord {
-    upgraders: Upgrader[];
+    upgraders: any[] = [];
 
-    constructor(colony: Colony) {
+    constructor(colony: any) {
         super(colony, "upgrading");
-        this.upgraders = [];
     }
 
-    init(): void {
-        // adoptOrphans() removed — base Overlord getter handles adoption via _overlord tag
-        this.upgraders = this.zergs
-            .filter(z => z.isAlive() && (z.memory as any)?.role === "upgrader") as Upgrader[];
+    init() {
+        this.upgraders = this.zergs.filter(z => z.isAlive() && z.memory?.role === "upgrader");
+
+        // Register Upgraders as Energy Sinks for creep-to-creep transfers
+        for (const upgrader of this.upgraders) {
+            const creep = upgrader.creep;
+            if (creep) {
+                const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 0) {
+                    // Priority 4 ensures Spawns/Exts (10) and Towers (5) are filled first
+                    this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 4 });
+                }
+            }
+        }
 
         this.handleSpawning();
     }
 
-    run(): void {
+    run() {
         const controllerLink = this.colony.linkNetwork?.controllerLink;
         const controller = this.colony.room?.controller;
+        const activeMiners = this.colony.creeps.filter((c: any) => c.memory.role === "miner");
+        const minedSourceIds = new Set(activeMiners.map((m: any) => m.memory.state?.siteId));
 
-        // Map out sources claimed by dedicated miners
-        const activeMiners = this.colony.creeps.filter(c => (c.memory as any).role === "miner");
-        const minedSourceIds = new Set(activeMiners.map(m => (m.memory as any).state?.siteId));
+        // Check for Transporters
+        const hasTransporters = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
 
         for (const upgrader of this.upgraders) {
             if (!upgrader.isAlive()) continue;
 
-            // ── Tri-Pipeline Optimization ──
-            // If we have a link, lock the creep in place and execute
-            // Withdraw AND Upgrade on the exact same tick (separate pipelines).
+            // Existing Link Logic
             if (controllerLink && controller) {
                 if (!upgrader.pos?.inRangeTo(controllerLink, 1) || !upgrader.pos?.inRangeTo(controller, 3)) {
-                    // Move into the "Sweet Spot" (Range 1 to Link, Range <=3 to Controller)
                     upgrader.travelTo(controllerLink, 1);
                     continue;
                 } else {
-                    // In position — execute both intents simultaneously!
                     const used = upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
                     const workParts = upgrader.creep?.getActiveBodyparts(WORK) ?? 0;
-
-                    // If we don't have enough energy for the NEXT tick's upgrade, withdraw now
                     if (used <= workParts && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
                         upgrader.withdraw(controllerLink);
                     }
-
-                    // If we have any energy, upgrade now
                     if (used > 0) {
                         upgrader.upgradeController(controller);
                     }
-
                     if (upgrader.task) upgrader.setTask(null);
-                    continue; // Skip standard task assignment
+                    continue;
                 }
             }
 
             if (upgrader.task) continue;
 
-            // ── Standard Dynamic Upgrader Logic (Pre-Link) ──
-            if (upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) {
+            const mem = upgrader.memory as any;
+
+            // STATE MACHINE LOGIC
+            if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+
+                // Stay and wait for delivery if Transporters exist
+                if (hasTransporters && controller) {
+                    if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
+                        upgrader.travelTo(controller, 3);
+                    }
+                    continue; // Skip the rest of the loop and wait for delivery!
+                }
+
+                // Fallback (Only happens if all Transporters die)
+                mem.collecting = true;
+            }
+
+            // Toggle collecting state off when full so we don't crumb chase
+            if ((upgrader.store?.getFreeCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+                mem.collecting = false;
+            }
+
+            if (mem.collecting) {
                 const targetId = this.colony.logistics.matchWithdraw(upgrader);
                 if (targetId) {
-                    const target = Game.getObjectById(targetId);
+                    const target = Game.getObjectById(targetId) as any;
                     if (target && 'amount' in target) {
                         upgrader.setTask(new PickupTask(targetId as Id<Resource>));
                     } else {
@@ -83,7 +99,6 @@ export class UpgradingOverlord extends Overlord {
                     continue;
                 }
 
-                // Miner Deference: Ignore sources with a dedicated miner
                 const source = upgrader.pos?.findClosestByRange(FIND_SOURCES_ACTIVE, {
                     filter: (s: Source) => !minedSourceIds.has(s.id)
                 });
@@ -91,7 +106,6 @@ export class UpgradingOverlord extends Overlord {
                 if (source) {
                     upgrader.setTask(new HarvestTask(source.id));
                 } else if (controller) {
-                    // Rally at the controller and wait for logistics
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
@@ -104,12 +118,12 @@ export class UpgradingOverlord extends Overlord {
         }
     }
 
-    private handleSpawning(): void {
+    private handleSpawning() {
         const room = this.colony.room;
         if (!room) return;
+
         const storage = room.storage;
         const controller = room.controller;
-
         if (!controller) return;
 
         const downgradeImminent = controller.ticksToDowngrade < 4000;
@@ -118,36 +132,34 @@ export class UpgradingOverlord extends Overlord {
         const isRCL8 = controller.level === 8;
 
         if (!downgradeImminent && !hasStorage && !hasContainers && !isRCL8) {
-            // ── Polymorphic Re-tasking (No Suicides!) ──
             if (this.upgraders.length > 0) {
                 for (const u of this.upgraders) {
                     log.warning(`Polymorphic shift: Re-tasking gated upgrader ${u.name} to worker`);
                     if (u.memory) {
-                        (u.memory as any).role = "worker";
-                        (u.memory as any)._overlord = "worker";
+                        u.memory.role = "worker";
+                        u.memory._overlord = "worker";
                     }
                     u.setTask(null);
                 }
-                this.upgraders = []; // Clear array, WorkerOverlord will adopt them next tick
+                this.upgraders = [];
             }
             return;
         }
 
         let shouldSpawn = false;
-        if (hasStorage && storage!.store.energy > 10000) shouldSpawn = true;
+        if (hasStorage && storage.store.energy > 10000) shouldSpawn = true;
         else if (hasContainers && room.energyAvailable > room.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) shouldSpawn = true;
 
         if (downgradeImminent) shouldSpawn = true;
         if (!shouldSpawn) return;
 
         let target = 1;
-        if (isRCL8) target = 1; // HARD CAP: RCL 8 controllers max out at 15 energy/tick.
+        if (isRCL8) target = 1;
         else {
             if (storage && storage.store.energy > 100000) target = 3;
             if (storage && storage.store.energy > 500000) target = 5;
         }
 
-        // Priority Inversion Fix: emergency upgraders spawn at near-max priority
         let priority = downgradeImminent ? 95 : 20;
 
         if (this.upgraders.length < target) {
@@ -155,8 +167,6 @@ export class UpgradingOverlord extends Overlord {
             let maxEnergy: number | undefined = undefined;
 
             if (isRCL8) {
-                // RCL 8 Optimal Body (15 WORK Limit)
-                // 15 WORK, 1 CARRY, 8 MOVE = 2000 Energy
                 template = [
                     WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK,
                     CARRY,
@@ -164,7 +174,7 @@ export class UpgradingOverlord extends Overlord {
                 ];
                 maxEnergy = 2000;
             } else if (this.colony.linkNetwork?.controllerLink) {
-                template = [WORK, WORK, WORK, CARRY, MOVE]; // Heavy WORK for static links
+                template = [WORK, WORK, WORK, CARRY, MOVE];
             }
 
             this.colony.hatchery.enqueue({
