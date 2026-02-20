@@ -215,7 +215,7 @@ export class UpgradingOverlord extends Overlord {
             const offerCount = this.colony.logistics.offerIds.length;
 
             if (saturation >= 0.9 && offerCount >= 2) {
-                target = 4; // Full surplus → max upgrader throughput
+                target = 3; // Full surplus → max upgrader throughput
             } else if (saturation >= 0.7 && offerCount >= 1) {
                 target = 2; // Moderate surplus
             }
@@ -226,7 +226,10 @@ export class UpgradingOverlord extends Overlord {
         let priority = downgradeImminent ? 95 : 20;
 
         if (this.upgraders.length < target) {
-            let template: BodyPartConstant[] = [WORK, WORK, CARRY, MOVE];
+            // Controller container-aware body: WORK-heavy since upgraders pull
+            // from adjacent container — no long-distance hauling needed.
+            // Base: [W,W,W,C,M] = 400e → grows to [W,W,W,W,C,M,M] = 550e at RCL 2
+            let template: BodyPartConstant[] = [WORK, WORK, WORK, CARRY, MOVE];
             let maxEnergy: number | undefined = undefined;
 
             if (isRCL8) {
