@@ -59,7 +59,19 @@ export class WorkerOverlord extends Overlord {
         const minedSourceIds = new Set(activeMiners.map(m => (m.memory as any).state?.siteId));
 
         for (const worker of this.workers) {
-            if (!worker.isAlive() || worker.task) continue;
+            if (!worker.isAlive()) continue;
+
+            // Stale task breaker: if worker has 0 energy but a work-phase task,
+            // the task can never complete — clear it and switch to collecting.
+            if (worker.task && (worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+                const taskName = worker.task.name;
+                if (taskName === 'Transfer' || taskName === 'Build' || taskName === 'Upgrade' || taskName === 'Repair') {
+                    worker.setTask(null);
+                    (worker.memory as any).collecting = true;
+                }
+            }
+
+            if (worker.task) continue;
 
             const mem = worker.memory as any;
 

@@ -28,6 +28,9 @@ export class MiningSite {
     /** Cached path length to storage/spawn. */
     distance: number = 0;
 
+    /** First scan flag — ensures container detection runs immediately after reset */
+    private _scanned = false;
+
     constructor(colony: Colony, sourceId: Id<Source>) {
         this.colony = colony;
         this.sourceId = sourceId;
@@ -65,7 +68,9 @@ export class MiningSite {
      * Throttled to once every 50 ticks to avoid CPU bombs from lookFor.
      */
     refreshStructureIds(): void {
-        if (Game.time % 50 !== 0) return;
+        // Always run first scan immediately; then throttle to every 50 ticks
+        if (this._scanned && Game.time % 50 !== 0) return;
+        this._scanned = true;
 
         // If we failed to calculate a position previously (e.g. no spawn existed yet), retry!
         if (!this.containerPos) {
