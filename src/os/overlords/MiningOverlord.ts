@@ -62,9 +62,22 @@ export class MiningOverlord extends Overlord {
             // so the Hatchery doesn't wait for unfilled extensions.
             const isBootstrap = this.miners.length === 0;
             const capacity = room.energyCapacityAvailable;
-            const body = capacity >= 700
-                ? [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE] // Optimal Static Miner (700e)
-                : (capacity >= 350 ? [WORK, WORK, CARRY, MOVE, MOVE] : [WORK, CARRY, MOVE]); // RCL 1 Fallback (200e)
+
+            // Miner body tiers (research-backed optimal morphologies):
+            // ≥700: Self-Repair Miner — 5W+1C+3M (700e) — 10e/tick + container repair
+            // ≥550: Dedicated Miner  — 5W+1M   (550e) — 10e/tick, full saturation
+            // ≥300: Starter Miner    — 2W+1M   (250e) — 4e/tick
+            //  <300: Pioneer Fallback — 1W+1C+1M (200e) — 2e/tick
+            let body: BodyPartConstant[];
+            if (capacity >= 700) {
+                body = [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE];
+            } else if (capacity >= 550) {
+                body = [WORK, WORK, WORK, WORK, WORK, MOVE];
+            } else if (capacity >= 300) {
+                body = [WORK, WORK, MOVE];
+            } else {
+                body = [WORK, CARRY, MOVE];
+            }
 
             this.colony.hatchery.enqueue({
                 priority: 100,

@@ -28,6 +28,14 @@ export class MiningSite {
     /** Cached path length to storage/spawn. */
     distance: number = 0;
 
+    /**
+     * Route terrain analysis (cached in heap — calculated once).
+     * roadCoverage: 0.0–1.0 ratio of road tiles along the hauling route.
+     * hasSwamp: true if any non-road swamp tile exists on the route.
+     */
+    roadCoverage: number = -1; // -1 = not yet calculated
+    hasSwamp: boolean = false;
+
     /** First scan flag — ensures container detection runs immediately after reset */
     private _scanned = false;
 
@@ -116,10 +124,13 @@ export class MiningSite {
             this.linkId = undefined;
         }
 
-        // 4. Recalculate distance if not yet computed
+        // 4. Recalculate distance and route terrain if not yet computed
         if (this.distance === 0) {
             this.calculateDistance();
         }
+
+        // 5. Recalculate route terrain (roads may have been built since last check)
+        this.calculateRouteTerrain();
     }
 
     // -----------------------------------------------------------------------
@@ -173,6 +184,51 @@ export class MiningSite {
         } else {
             this.distance = path.path.length;
         }
+    }
+
+    /**
+     * Analyze terrain composition along the hauling route.
+     * Walks the path from containerPos to dropoff and checks each tile
+     * for road structures and terrain type.
+     *
+     * Cached in heap — only recalculates every 50 ticks (during refreshStructureIds)
+     * to detect newly built roads without burning CPU every tick.
+     */
+    private calculateRouteTerrain(): void {
+        const room = this.colony.room;
+        if (!room || !this.containerPos) return;
+
+        const dropoff = room.storage || room.find(FIND_MY_SPAWNS)?.[0];
+        if (!dropoff) return;
+
+        const path = PathFinder.search(this.containerPos, { pos: dropoff.pos, range: 1 });
+        if (path.incomplete || path.path.length === 0) {
+            this.roadCoverage = 0;
+            return;
+        }
+
+        const terrain = Game.map.getRoomTerrain(room.name);
+        let roadTiles = 0;
+        let swampTiles = 0;
+
+        for (const pos of path.path) {
+            // Check for road structure at this position
+            const hasRoad = pos.lookFor(LOOK_STRUCTURES)
+                .some((s: Structure) => s.structureType === STRUCTURE_ROAD);
+
+            if (hasRoad) {
+                roadTiles++;
+            } else {
+                // No road — check raw terrain
+                const terrainType = terrain.get(pos.x, pos.y);
+                if (terrainType === TERRAIN_MASK_SWAMP) {
+                    swampTiles++;
+                }
+            }
+        }
+
+        this.roadCoverage = path.path.length > 0 ? roadTiles / path.path.length : 0;
+        this.hasSwamp = swampTiles > 0;
     }
 
     /**

@@ -4,6 +4,7 @@
 
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
+import { MiningOverlord } from "./MiningOverlord";
 import { Zerg } from "../zerg/Zerg"; // ── FIX: Import base Zerg
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
@@ -79,60 +80,108 @@ export class TransporterOverlord extends Overlord {
     }
 
     private wishlistSpawns(): void {
-        const deficit = this.calculateTransportDeficit();
-        const transportPower = this.transporters.reduce(
-            (sum, z) => sum + (z.store?.getCapacity() ?? 0), 0
+        const room = this.colony.room;
+        if (!room) return;
+
+        // ── Part-Count Balancing (Research-backed) ─────────────────────────
+        // Total CARRY parts = Σ(energyPerTick × 2 × distance) / 50
+        // per source, summed across all mining sites.
+        const miningOverlord = this.colony.overlords
+            .find((o: Overlord) => o instanceof MiningOverlord) as MiningOverlord | undefined;
+
+        if (!miningOverlord || miningOverlord.sites.length === 0) return;
+
+        // Only count sites that are actively mined (have container/link)
+        const activeSites = miningOverlord.sites.filter(s => s.container || s.link);
+        if (activeSites.length === 0) return;
+
+        let totalCarryNeeded = 0;
+        for (const site of activeSites) {
+            totalCarryNeeded += Math.ceil(site.calculateHaulingPowerNeeded() / 50);
+        }
+
+        // Current CARRY capacity across all transporters
+        const currentCarry = this.transporters.reduce(
+            (sum, z) => sum + (z.creep?.getActiveBodyparts(CARRY) ?? 0), 0
         );
 
-        // Cap max transporters to prevent a queue death-spiral
-        const maxTransporters = 3;
+        if (currentCarry >= totalCarryNeeded) return; // Fully staffed
 
-        if (transportPower < deficit && this.transporters.length < maxTransporters) {
-            // [CARRY, CARRY, MOVE] is optimal 2:1 ratio for moving on roads 
-            const template = [CARRY, CARRY, MOVE];
+        // ── Road-Aware Body Template ───────────────────────────────────────
+        const body = this.buildTransporterBody(room);
 
-            this.colony.hatchery.enqueue({
-                priority: 90, // Logistics > Workers!
-                bodyTemplate: template,
-                overlord: this,
-                name: `Transporter_${this.colony.name}_${Game.time}`,
-                memory: { role: "transporter" }
-            });
+        if (body.length === 0) return; // Can't afford minimum body
 
-            log.debug(`Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
-        }
+        // Dynamic cap: how many of this body size fill the CARRY requirement?
+        const carryPerCreep = body.filter(p => p === CARRY).length;
+        const maxTransporters = Math.ceil(totalCarryNeeded / Math.max(carryPerCreep, 1));
+
+        if (this.transporters.length >= maxTransporters) return;
+
+        this.colony.hatchery.enqueue({
+            priority: 90,
+            bodyTemplate: body,
+            overlord: this,
+            name: `Transporter_${this.colony.name}_${Game.time}`,
+            memory: { role: "transporter" }
+        });
+
+        log.debug(() => `Hauler deficit: ${currentCarry}/${totalCarryNeeded} CARRY. Spawning (${body.length} parts).`);
     }
 
-    private calculateTransportDeficit(): number {
-        // 1. Calculate Sink Deficit
-        let sinkDeficit = 0;
-        for (const req of this.colony.logistics.requesters) {
-            const target = Game.getObjectById(req.targetId);
-            const isBuffer = target && 'structureType' in target &&
-                ((target as Structure).structureType === STRUCTURE_STORAGE ||
-                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+    /**
+     * Build a route-aware transporter body using MiningSite terrain data.
+     *
+     * Uses cached `roadCoverage` and `hasSwamp` from each MiningSite's
+     * actual hauling route (containerPos → spawn/storage), NOT a naive
+     * room-wide road count. Data lives in heap, recalculated every 50 ticks.
+     *
+     * - ≥75% road coverage: [CARRY, CARRY, MOVE] × N + 1 WORK (2:1 ratio + repair)
+     * - <75% (plains/swamp): [CARRY, MOVE] × N (1:1 ratio, no WORK)
+     */
+    private buildTransporterBody(room: Room): BodyPartConstant[] {
+        const capacity = room.energyCapacityAvailable;
 
-            if (isBuffer) continue; // Ignore infinite sinks
+        // Read route terrain from MiningSite cache (0 CPU — heap data)
+        const miningOverlord = this.colony.overlords
+            .find((o: Overlord) => o instanceof MiningOverlord) as MiningOverlord | undefined;
 
-            const incoming = this.colony.logistics.incomingReservations.get(req.targetId) || 0;
-            sinkDeficit += Math.max(0, req.amount - incoming);
+        let avgRoadCoverage = 0;
+        if (miningOverlord) {
+            const activeSites = miningOverlord.sites.filter(s => s.container || s.link);
+            if (activeSites.length > 0) {
+                const validSites = activeSites.filter(s => s.roadCoverage >= 0);
+                if (validSites.length > 0) {
+                    avgRoadCoverage = validSites.reduce((sum, s) => sum + s.roadCoverage, 0) / validSites.length;
+                }
+            }
         }
 
-        // 2. Calculate Source Surplus so haulers spawn for dropped energy
-        let sourceSurplus = 0;
-        for (const offerId of this.colony.logistics.offerIds) {
-            const target = Game.getObjectById(offerId);
-            const isBuffer = target && 'structureType' in target &&
-                ((target as Structure).structureType === STRUCTURE_STORAGE ||
-                    (target as Structure).structureType === STRUCTURE_TERMINAL);
+        const hasGoodRoads = avgRoadCoverage >= 0.75;
+        const body: BodyPartConstant[] = [];
 
-            if (isBuffer) continue; // Ignore infinite sources
+        if (hasGoodRoads) {
+            // Road mode: 2:1 CARRY:MOVE ratio + 1 WORK for repair-on-transit
+            const remaining = capacity - 100; // Reserve 100e for WORK
+            const segmentCost = 150; // CARRY(50) + CARRY(50) + MOVE(50)
+            const segments = Math.min(Math.floor(remaining / segmentCost), 16);
+            if (segments < 1) return [];
 
-            const effectiveAmount = this.colony.logistics.getEffectiveAmount(offerId);
-            sourceSurplus += Math.max(0, effectiveAmount);
+            for (let i = 0; i < segments; i++) {
+                body.push(CARRY, CARRY, MOVE);
+            }
+            body.push(WORK); // Single WORK for road repair
+        } else {
+            // Plains/swamp mode: 1:1 ratio for full speed, no WORK (nothing to repair)
+            const segmentCost = 100; // CARRY(50) + MOVE(50)
+            const segments = Math.min(Math.floor(capacity / segmentCost), 25);
+            if (segments < 1) return [];
+
+            for (let i = 0; i < segments; i++) {
+                body.push(CARRY, MOVE);
+            }
         }
 
-        // Return whichever demand is higher
-        return Math.max(sinkDeficit, sourceSurplus);
+        return body;
     }
 }
