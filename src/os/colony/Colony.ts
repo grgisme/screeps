@@ -23,6 +23,9 @@ import { LogisticsNetwork } from "./LogisticsNetwork";
 import { Hatchery } from "./Hatchery";
 import { Directive } from "../directives/Directive";
 import { HarvestDirective } from "../directives/HarvestDirective";
+import { GuardDirective } from "../directives/GuardDirective";
+import { AttackDirective } from "../directives/AttackDirective";
+import { ColonizeDirective } from "../directives/ColonizeDirective";
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };
@@ -156,13 +159,25 @@ export class Colony {
 
     private initDirectives(): void {
         if (!Game.flags) return;
+
+        // Flag prefix → Directive class mapping
+        const DIRECTIVE_MAP: { prefix: string; factory: (flag: Flag, colony: Colony) => Directive }[] = [
+            { prefix: "inc:", factory: (f, c) => new HarvestDirective(f, c) },
+            { prefix: "guard:", factory: (f, c) => new GuardDirective(f, c) },
+            { prefix: "atk:", factory: (f, c) => new AttackDirective(f, c) },
+            { prefix: "claim:", factory: (f, c) => new ColonizeDirective(f, c) },
+        ];
+
         for (const name in Game.flags) {
-            if (name.startsWith("inc:")) {
-                const existing = this.directives.find(d => d.flagName === name);
-                if (!existing) {
-                    const flag = Game.flags[name];
-                    const directive = new HarvestDirective(flag, this);
-                    this.directives.push(directive);
+            for (const { prefix, factory } of DIRECTIVE_MAP) {
+                if (name.startsWith(prefix)) {
+                    const existing = this.directives.find(d => d.flagName === name);
+                    if (!existing) {
+                        const flag = Game.flags[name];
+                        const directive = factory(flag, this);
+                        this.directives.push(directive);
+                    }
+                    break; // Only one prefix can match
                 }
             }
         }
