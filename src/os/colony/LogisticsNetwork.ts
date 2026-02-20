@@ -125,11 +125,8 @@ export class LogisticsNetwork {
             }) as StructureContainer[];
 
             for (const c of hatchContainers) {
-                // Always offer: workers/fillers can withdraw from here
-                if (c.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-                    this.offerIds.push(c.id as Id<Structure | Resource>);
-                }
-                // Request only when no Storage (pre-RCL 4): haulers dump energy here
+                // Requester only (NOT an offer) — prevents transporter oscillation.
+                // Workers/fillers find this container by proximity when filling extensions.
                 if (!this.colony.room?.storage) {
                     const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
                     if (free > 50) {

@@ -108,9 +108,25 @@ export class TransporterOverlord extends Overlord {
         }
 
         // Current CARRY capacity across all transporters
-        const currentCarry = this.transporters.reduce(
-            (sum, z) => sum + (z.creep?.getActiveBodyparts(CARRY) ?? 0), 0
-        );
+        // Discount dying transporters (TTL ≤ spawnTime + travelTime)
+        // so replacements are queued before the gap opens
+        const avgDistance = activeSites.length > 0
+            ? Math.round(activeSites.reduce((sum, s) => sum + (s.distance || 20), 0) / activeSites.length)
+            : 20;
+
+        let currentCarry = 0;
+        for (const t of this.transporters) {
+            const carryParts = t.creep?.getActiveBodyparts(CARRY) ?? 0;
+            const ttl = t.creep?.ticksToLive ?? Infinity;
+            const bodySize = t.creep?.body?.length ?? 6;
+            const preSpawnThreshold = (bodySize * 3) + avgDistance;
+
+            if (ttl <= preSpawnThreshold) {
+                // This transporter is dying — don't count its capacity
+                continue;
+            }
+            currentCarry += carryParts;
+        }
 
         if (currentCarry >= totalCarryNeeded) return; // Fully staffed
 

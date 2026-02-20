@@ -8,7 +8,9 @@ import { MiningSite } from "../colony/MiningSite";
 import { Miner } from "../zerg/Miner";
 import { HarvestTask } from "../tasks/HarvestTask";
 import { RepairTask } from "../tasks/RepairTask";
+import { Logger } from "../../utils/Logger";
 
+const log = new Logger("MiningOverlord");
 
 
 export class MiningOverlord extends Overlord {
@@ -57,7 +59,28 @@ export class MiningOverlord extends Overlord {
         if (!site.container && !site.link && !room.storage) return;
 
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
-        if (siteMiners.length < 1) {
+
+        // ── Pre-Spawn TTL Replacement ──
+        // If a miner exists but its TTL is running low, enqueue replacement early
+        // so the new miner arrives exactly when the old one expires.
+        // Formula: TTL ≤ SpawnTime + TravelDistance
+        let needsSpawn = siteMiners.length < 1;
+
+        if (!needsSpawn && siteMiners.length === 1) {
+            const miner = siteMiners[0];
+            const ttl = miner.creep?.ticksToLive ?? Infinity;
+            const bodySize = miner.creep?.body?.length ?? 6;
+            const spawnTime = bodySize * 3; // 3 ticks per body part
+            const travelTime = site.distance || 20; // fallback 20 if distance unknown
+            const preSpawnThreshold = spawnTime + travelTime;
+
+            if (ttl <= preSpawnThreshold) {
+                needsSpawn = true;
+                log.debug(() => `Pre-spawn: Miner at ${site.sourceId.slice(-4)} TTL=${ttl}, threshold=${preSpawnThreshold}`);
+            }
+        }
+
+        if (needsSpawn) {
             // Bootstrap cap: if NO miners alive at all, cap to spawn-only energy (300)
             // so the Hatchery doesn't wait for unfilled extensions.
             const isBootstrap = this.miners.length === 0;
