@@ -184,6 +184,15 @@ export class ConstructionOverlord extends Overlord {
         // Anchor crosshair
         visual.circle(anchor.x, anchor.y, { radius: 0.6, fill: '', stroke: '#ffffff', strokeWidth: 0.15, opacity: 0.6 });
         visual.text('⚓', anchor.x, anchor.y + 0.15, { font: 0.5, opacity: 0.7 });
+
+        // Obsolete structures — red ✕ markers
+        const obsoleteIds = ((this.colony.memory as any).obsoleteStructures || []) as string[];
+        for (const id of obsoleteIds) {
+            const s = Game.getObjectById(id as Id<Structure>);
+            if (!s) continue;
+            visual.circle(s.pos.x, s.pos.y, { radius: 0.5, fill: '#ff0000', opacity: 0.3, stroke: '#ff0000', strokeWidth: 0.15 });
+            visual.text('✕', s.pos.x, s.pos.y + 0.15, { font: 0.5, color: '#ff0000', opacity: 0.9 });
+        }
     }
 
     // ========================================================================
