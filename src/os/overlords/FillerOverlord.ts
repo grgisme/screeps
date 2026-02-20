@@ -149,7 +149,20 @@ export class FillerOverlord extends Overlord {
         const rcl = room.controller?.level ?? 0;
         const maxFillers = rcl >= 6 ? 2 : 1;
 
-        if (this.fillers.length >= maxFillers) return;
+        // Pre-spawn TTL replacement: if a filler is dying, don't count it
+        let activeFillers = 0;
+        for (const f of this.fillers) {
+            const ttl = f.creep?.ticksToLive ?? Infinity;
+            const bodySize = f.creep?.body?.length ?? 3;
+            const preSpawnThreshold = (bodySize * 3) + 15; // spawnTime + ~15 ticks to walk to tile
+            if (ttl > preSpawnThreshold) {
+                activeFillers++;
+            } else {
+                log.debug(() => `Pre-spawn: Filler TTL=${ttl}, threshold=${preSpawnThreshold}`);
+            }
+        }
+
+        if (activeFillers >= maxFillers) return;
 
         // Body: [CARRY, CARRY, MOVE] — MOVE only for initial positioning
         const template: BodyPartConstant[] = [CARRY, CARRY, MOVE];
