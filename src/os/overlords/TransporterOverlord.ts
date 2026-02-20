@@ -99,7 +99,7 @@ export class TransporterOverlord extends Overlord {
                 memory: { role: "transporter" }
             });
 
-            log.info(`Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
+            log.debug(`Enqueued spawn request. Cap: ${transportPower}, Deficit: ${deficit}.`);
         }
     }
 

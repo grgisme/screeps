@@ -49,15 +49,12 @@ describe("TransporterOverlord", () => {
         // No transporters
         overlord.transporters = [];
 
-        // Hijack console.log
-        let lastLog = "";
-        const originalLog = console.log;
-        console.log = (msg: string) => { lastLog = msg; };
+        // Track enqueue call
+        let enqueued = false;
+        mockColony.hatchery.enqueue = (_req: any) => { enqueued = true; };
 
         (overlord as any).wishlistSpawns();
 
-        console.log = originalLog;
-
-        expect(lastLog).to.contain("Enqueued spawn request");
+        expect(enqueued).to.be.true;
     });
 });

@@ -91,7 +91,7 @@ export class ConstructionOverlord extends Overlord {
     // ========================================================================
 
     private getMaxStructures(type: StructureConstant, rcl: number): number {
-        if (type === STRUCTURE_ROAD) return 2500;
+        if (type === STRUCTURE_ROAD) return rcl >= 3 ? 2500 : 0;
 
         // Delay Ramparts & Walls until Storage Phase (RCL 4)
         if (type === STRUCTURE_WALL || type === STRUCTURE_RAMPART) {
