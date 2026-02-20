@@ -128,8 +128,19 @@ export class FillerOverlord extends Overlord {
 
                 if (target) {
                     filler.setTask(new TransferTask(target.id as Id<Structure>));
+                } else {
+                    // Fallback: mobile filling for sub-optimal layouts
+                    // Extensions may not be adjacent yet — walk to them
+                    const farTarget = filler.pos?.findClosestByRange(FIND_MY_STRUCTURES, {
+                        filter: (s: Structure) =>
+                            (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+                            (s as StructureSpawn | StructureExtension).store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    }) as StructureSpawn | StructureExtension | undefined;
+
+                    if (farTarget) {
+                        filler.setTask(new TransferTask(farTarget.id as Id<Structure>));
+                    }
                 }
-                // If no adjacent target needs energy — do nothing (stay parked)
             }
         }
     }
