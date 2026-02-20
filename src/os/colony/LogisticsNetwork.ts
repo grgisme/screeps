@@ -125,8 +125,8 @@ export class LogisticsNetwork {
             }) as StructureContainer[];
 
             for (const c of hatchContainers) {
-                // Requester only (NOT an offer) — prevents transporter oscillation.
-                // Workers/fillers find this container by proximity when filling extensions.
+                // Requester only (NOT an offer) — only the Filler draws from it directly.
+                // Haulers deliver here; Filler distributes to extensions/spawns.
                 if (!this.colony.room?.storage) {
                     const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
                     if (free > 50) {
@@ -136,18 +136,25 @@ export class LogisticsNetwork {
             }
         }
 
-        // ── Fix 1: Hatchery Integration (Individual Registration) ──
-        for (const spawn of this.colony.hatchery.spawns) {
-            const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);
-            if (free > 0) {
-                this.requestInput(spawn.id as Id<Structure | Resource>, { amount: free, priority: 10 });
-            }
-        }
+        // ── Hatchery Integration (Individual Registration) ──
+        // Only register spawns/extensions as requesters when NO filler exists.
+        // When a filler is active, it fills extensions directly from the hub —
+        // haulers should focus on containers (hatchery + controller), not extensions.
+        const hasFillers = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
 
-        for (const ext of this.colony.hatchery.extensions) {
-            const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
-            if (free > 0) {
-                this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
+        if (!hasFillers) {
+            for (const spawn of this.colony.hatchery.spawns) {
+                const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 0) {
+                    this.requestInput(spawn.id as Id<Structure | Resource>, { amount: free, priority: 10 });
+                }
+            }
+
+            for (const ext of this.colony.hatchery.extensions) {
+                const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 0) {
+                    this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
+                }
             }
         }
 
