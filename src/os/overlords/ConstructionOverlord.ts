@@ -61,7 +61,18 @@ export class ConstructionOverlord extends Overlord {
             this.checkControllerContainer(budget);
         }
 
-        // 6. Reset the RCL changed flag
+        // 6. Hatchery Container (RCL 2+, pre-Storage only)
+        if (rcl >= 2 && budget.count > 0 && !this.colony.room?.storage) {
+            this.checkHatcheryContainer(budget);
+        }
+
+        // 7. Hatchery Container Cleanup (RCL 4+ when Storage built)
+        //    Destroy hatchery containers so they don't block BunkerLayout structures
+        if (this.colony.room?.storage) {
+            this.cleanupHatcheryContainer();
+        }
+
+        // 8. Reset the RCL changed flag
         this.colony.state.rclChanged = false;
     }
 
@@ -409,6 +420,106 @@ export class ConstructionOverlord extends Overlord {
                     return;
                 }
             }
+        }
+    }
+
+    /**
+     * Place a Hatchery Container within 2 tiles of the spawn.
+     * Acts as a central energy buffer for workers refilling extensions.
+     * Skipped if Storage exists (RCL 4+ makes this redundant).
+     */
+    private checkHatcheryContainer(budget: { count: number }): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        const spawns = room.find(FIND_MY_SPAWNS);
+        if (spawns.length === 0) return;
+        const spawn = spawns[0];
+
+        // Check if a non-source, non-controller container already exists near spawn
+        const controller = room.controller;
+        const nearbyContainers = spawn.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        }).filter(c => {
+            // Exclude source containers (within 2 of a source)
+            const nearSource = c.pos.findInRange(FIND_SOURCES, 2).length > 0;
+            // Exclude controller containers (within 3 of controller)
+            const nearCtrl = controller && c.pos.getRangeTo(controller) <= 3;
+            return !nearSource && !nearCtrl;
+        });
+        if (nearbyContainers.length > 0) return;
+
+        // Also skip if construction site already exists
+        const nearbySites = spawn.pos.findInRange(FIND_MY_CONSTRUCTION_SITES, 3, {
+            filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
+        });
+        if (nearbySites.length > 0) return;
+
+        // Find optimal position: on path from spawn toward nearest source
+        const sources = room.find(FIND_SOURCES);
+        if (sources.length === 0) return;
+
+        const nearest = spawn.pos.findClosestByRange(sources);
+        if (!nearest) return;
+
+        const path = PathFinder.search(spawn.pos, { pos: nearest.pos, range: 2 }, {
+            plainCost: 2,
+            swampCost: 10,
+            roomCallback: (roomName) => {
+                const r = Game.rooms[roomName];
+                if (!r) return false;
+                const cm = new PathFinder.CostMatrix();
+                r.find(FIND_STRUCTURES).forEach(s => {
+                    if (s.structureType === STRUCTURE_WALL) cm.set(s.pos.x, s.pos.y, 255);
+                });
+                return cm;
+            }
+        });
+
+        // Pick a tile within 2 of spawn that isn't blocked
+        for (const pos of path.path) {
+            if (pos.getRangeTo(spawn.pos) <= 2 && pos.getRangeTo(spawn.pos) >= 1) {
+                const terrain = Game.map.getRoomTerrain(room.name).get(pos.x, pos.y);
+                if (terrain === TERRAIN_MASK_WALL) continue;
+
+                const blocked = pos.lookFor(LOOK_STRUCTURES)
+                    .some((s: Structure) => s.structureType !== STRUCTURE_ROAD && s.structureType !== STRUCTURE_RAMPART);
+                if (blocked) continue;
+
+                const result = pos.createConstructionSite(STRUCTURE_CONTAINER);
+                if (result === OK) {
+                    log.info(`Architect: Placed Hatchery Container at ${pos.x},${pos.y}`);
+                    budget.count--;
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
+     * Destroy hatchery containers once Storage is built (RCL 4+).
+     * They are redundant and may block BunkerLayout structure placement.
+     */
+    private cleanupHatcheryContainer(): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        const spawns = room.find(FIND_MY_SPAWNS);
+        if (spawns.length === 0) return;
+        const spawn = spawns[0];
+        const controller = room.controller;
+
+        const hatchContainers = spawn.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        }).filter(c => {
+            const nearSource = c.pos.findInRange(FIND_SOURCES, 2).length > 0;
+            const nearCtrl = controller && c.pos.getRangeTo(controller) <= 3;
+            return !nearSource && !nearCtrl;
+        });
+
+        for (const c of hatchContainers) {
+            log.info(`Architect: Destroying obsolete Hatchery Container at ${c.pos.x},${c.pos.y} (Storage built)`);
+            c.destroy();
         }
     }
 }

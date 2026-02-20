@@ -110,6 +110,35 @@ export class LogisticsNetwork {
             }
         }
 
+        // ── Hatchery Container — central energy buffer near spawn ──
+        const spawns = this.colony.room?.find(FIND_MY_SPAWNS) ?? [];
+        if (spawns.length > 0) {
+            const spawn = spawns[0];
+            const hatchContainers = spawn.pos.findInRange(FIND_STRUCTURES, 3, {
+                filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+            }).filter(c => {
+                // Exclude source containers (within 2 of a source)
+                const nearSource = c.pos.findInRange(FIND_SOURCES, 2).length > 0;
+                // Exclude controller containers (within 3 of controller)
+                const nearCtrl = controller && c.pos.getRangeTo(controller) <= 3;
+                return !nearSource && !nearCtrl;
+            }) as StructureContainer[];
+
+            for (const c of hatchContainers) {
+                // Always offer: workers/fillers can withdraw from here
+                if (c.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+                    this.offerIds.push(c.id as Id<Structure | Resource>);
+                }
+                // Request only when no Storage (pre-RCL 4): haulers dump energy here
+                if (!this.colony.room?.storage) {
+                    const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
+                    if (free > 50) {
+                        this.requestInput(c.id as Id<Structure | Resource>, { amount: free, priority: 5 });
+                    }
+                }
+            }
+        }
+
         // ── Fix 1: Hatchery Integration (Individual Registration) ──
         for (const spawn of this.colony.hatchery.spawns) {
             const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);

@@ -69,6 +69,13 @@ export class TransporterOverlord extends Overlord {
                     transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
                 } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
                     mem.collecting = true; // Nothing to deliver, go collect more
+                } else {
+                    // Full but nowhere to deliver — rally toward controller
+                    // where upgraders are requesting energy (improves match distance next tick)
+                    const ctrl = this.colony.room?.controller;
+                    if (ctrl && transporter.pos && transporter.pos.getRangeTo(ctrl) > 5) {
+                        transporter.travelTo(ctrl, 4);
+                    }
                 }
             }
         }
