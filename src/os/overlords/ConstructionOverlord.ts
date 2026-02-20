@@ -86,26 +86,45 @@ export class ConstructionOverlord extends Overlord {
     // ========================================================================
 
     private planRoom(): void {
+        const room = this.colony.room;
+        if (!room) return;
+
         const dt = distanceTransform(this.colony.name);
 
-        let maxDist = 0;
+        // Find the existing spawn for proximity weighting
+        const spawns = room.find(FIND_MY_SPAWNS);
+        const spawnPos = spawns.length > 0 ? spawns[0].pos : null;
+
+        let maxScore = 0;
         let bestPos: { x: number; y: number } | null = null;
 
         // Scan x:8..41, y:8..41 to ensure the bunker leaves a 2-tile border near exits
         for (let x = 8; x < 42; x++) {
             for (let y = 8; y < 42; y++) {
-                if (dt.get(x, y) > maxDist) {
-                    maxDist = dt.get(x, y);
+                const dist = dt.get(x, y);
+                if (dist < 6) continue; // Must fit a 13x13 bunker
+
+                // Proximity bonus: prefer positions near the existing spawn
+                // Max bonus of 3 points if within range 5; decays linearly
+                let proximityBonus = 0;
+                if (spawnPos) {
+                    const range = Math.max(Math.abs(x - spawnPos.x), Math.abs(y - spawnPos.y));
+                    proximityBonus = Math.max(0, 3 - (range * 0.3));
+                }
+
+                const score = dist + proximityBonus;
+                if (score > maxScore) {
+                    maxScore = score;
                     bestPos = { x, y };
                 }
             }
         }
 
-        if (bestPos && maxDist >= 6) {
-            log.info(`Anchor found at ${bestPos.x},${bestPos.y} (dist=${maxDist})`);
+        if (bestPos && maxScore >= 6) {
+            log.info(`Anchor found at ${bestPos.x},${bestPos.y} (score=${maxScore.toFixed(1)}${spawnPos ? `, spawn at ${spawnPos.x},${spawnPos.y}` : ''})`);
             this.colony.memory.anchor = { x: bestPos.x, y: bestPos.y };
         } else {
-            log.warning(`No valid anchor in ${this.colony.name} (maxDist=${maxDist})`);
+            log.warning(`No valid anchor in ${this.colony.name} (maxScore=${maxScore.toFixed(1)})`);
             if (bestPos) {
                 this.colony.memory.anchor = { x: bestPos.x, y: bestPos.y };
             }
