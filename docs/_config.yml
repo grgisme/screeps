@@ -1,0 +1,18 @@
+title: "Screeps OS"
+description: "Architecture documentation for a fully autonomous Screeps bot"
+theme: jekyll-theme-cayman
+baseurl: "/screeps"
+url: ""
+
+# Markdown settings
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+# Exclude from build
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor

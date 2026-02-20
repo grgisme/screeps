@@ -1,209 +1,91 @@
-# Screeps OS Architecture
+---
+layout: default
+title: Architecture Overview
+---
 
-This document describes the internal architecture of the Screeps bot's Operating System.
+# Architecture Overview
 
-## Overview
+[← Home](index)
 
-```
-┌─────────────────────────────────────────────────┐
-│                   main.ts loop                  │
-│  1. Clean dead Memory.creeps                    │
-│  2. Detect global reset → rehydrate Kernel      │
-│  3. Ensure ProfilerProcess exists               │
-│  4. kernel.run()  (priority scheduler)          │
-│  5. kernel.serialize() → Memory.kernel          │
-└─────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────┐
-│                    Kernel                        │
-│  ProcessTable: Map<PID, Process>                │
-└─────────────────────────────────────────────────┘
-         │
-         ├───────────────────────────┐
-         ▼                           ▼
-┌───────────────────┐  ┌──────────────────────────┐
-│  ColonyProcess    │  │  Kernel Processes         │
-│  (1 per Room)     │  │  (Mining/Upgrade/Profiler)│
-└───────────────────┘  └──────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────┐
-│                    Colony                        │
-│  Hub for Overlords & State                      │
-└─────────────────────────────────────────────────┘
-         │
-         ├──────────────────┬──────────────────┐
-         ▼                  ▼                  ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│ MiningOverlord   │ │ ConstructOverlord│ │TransportOverlord │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-         │                  │                  │
-         ▼                  ▼                  ▼
-┌─────────────────────────────────────────────────┐
-│                    Zerg                          │
-│  Creep wrapper with task execution & pathing    │
-└─────────────────────────────────────────────────┘
-```
+The bot is structured as a **three-layer operating system** running inside the Screeps game loop. Each layer has a single responsibility and communicates with the layers above and below through well-defined interfaces.
 
-## Diagnostics Layer
+---
 
-### ErrorMapper (source-map)
+## Layer Diagram
 
-Uses `source-map` v0.6.x to parse the inline source map embedded in the Rollup bundle. On any uncaught error:
+```mermaid
+graph TD
+    subgraph "Main Loop (main.ts)"
+        ML[ErrorMapper.wrapLoop]
+    end
 
-1. Lazily initializes a `SourceMapConsumer` from the base64 inline map
-2. Rewrites stack frames from `main.js:XXX` to `src/kernel/Kernel.ts:42`
-3. Outputs color-coded HTML to the Screeps console
-4. The Kernel also uses `ErrorMapper.mapTrace()` for per-process crash traces
+    subgraph "Kernel Layer"
+        K[Kernel — Scheduler]
+        P[Process Table]
+        GC[GlobalCache — Heap Manager]
+        GM[GlobalManager — Colony Bootstrap]
+    end
 
-### Logger
+    subgraph "OS Layer"
+        CP[ColonyProcess]
+        C[Colony]
+        H[Hatchery]
+        LN[LogisticsNetwork]
+        LK[LinkNetwork]
+        O[Overlords x12]
+        D[Directives]
+        Z[Zerg — Creep Wrappers]
+        T[Tasks x9]
+    end
 
-Structured logging with 4 levels:
+    subgraph "Infrastructure Layer"
+        BL[BunkerLayout]
+        TM[TrafficManager]
+    end
 
-| Level | Value | Color | Use |
-|---|---|---|---|
-| DEBUG | 0 | Grey | Detailed trace output |
-| INFO | 1 | Green | Normal operational messages |
-| WARNING | 2 | Orange | Issues that need attention |
-| ERROR | 3 | Red | Critical failures |
-
-- Default level: **INFO**
-- Persisted in `Memory.logLevel` (survives resets)
-- Change at runtime: `setLogLevel('debug')` in Screeps console
-
-### ProfilerProcess (Priority 0)
-
-- Runs **before** all other processes every tick
-- Reads CPU deltas recorded by the Kernel scheduler
-- Accumulates per-process CPU usage over a rolling 20-tick window
-- Outputs a formatted report: "Top CPU Consumers: [name] - [X]ms"
-- Heap-only state (not serialized to Memory)
-
-## Kernel Lifecycle
-
-### Global Reset Detection
-
-1. `GlobalCache.isGlobalReset()` checks `_heap._initialized`
-2. Records `Memory.kernel.lastGlobalReset = Game.time`  
-3. If reset → `rehydrateKernel()` deserializes from Memory + caches on heap
-4. Otherwise → loads cached kernel from heap
-
-### Scheduler with CPU Profiling
-
-```
-sorted = processTable sorted by priority (ascending)
-cpuProfile = new Map()
-for each process in sorted:
-    if CPU ≥ limit * 0.9 → break
-    if bucket < 500 → break
-    if process.isAlive():
-        cpuBefore = getUsed()
-        try: process.run()
-        catch: mapTrace(error), process.terminate()
-        cpuAfter = getUsed()
-        cpuProfile[processName] += (cpuAfter - cpuBefore)
-sweep dead processes
+    ML --> K
+    ML --> GM
+    K --> P
+    K --> GC
+    GM --> CP
+    CP --> C
+    C --> H
+    C --> LN
+    C --> LK
+    C --> O
+    C --> D
+    O --> Z
+    Z --> T
+    Z --> TM
+    C --> BL
 ```
 
-## Memory Contract
+---
 
-| Data | Storage | Reason |
-|---|---|---|
-| Process instances | `_heap` | Avoid serialization every tick |
-| Path cache | `_heap._pathCache` | Paths are transient |
-| Process descriptors | `Memory.kernel` | Survive global resets |
-| Creep role + PID | `Memory.creeps` | Survive global resets |
-| Log level | `Memory.logLevel` | Persist across resets |
-| Last reset tick | `Memory.kernel.lastGlobalReset` | Diagnostics |
-| IDs 0-99 | `RawMemory.segments` | Managed by SegmentManager |
+## Design Philosophy
 
-## Infrastructure Layer
+| Principle | Implementation |
+|---|---|
+| **Process-centric execution** | All work runs as Kernel `Process` instances, subject to scheduling and CPU budgets |
+| **Inversion of Control** | Overlords declare *what* they need; the Hatchery and Logistics Network fulfill it |
+| **Heap-safe getters** | Never cache live `Creep`/`Room`/`Structure` objects — store IDs, resolve via getters each tick |
+| **Serialization everywhere** | Processes, tasks, and cache all survive global resets via `Memory` persistence |
+| **3-tier load shedding** | NORMAL → SAFE → EMERGENCY modes based on CPU bucket, preventing death spirals |
 
-### Raw Memory Management (`SegmentManager`)
--   Manages access to the 100 available raw memory segments.
--   Enforces the 10-active-segment limit per tick.
--   Provides an interface to Request, Read, and Save segments.
+---
 
-### Traffic Management (`TrafficManager`)
-*(Experimental)*
--   Implements a priority-based movement resolution system.
--   Resolves conflicts when multiple creeps try to move to the same square or swap positions.
--   **Shove Logic**: Higher priority creeps can "shove" lower priority or idle creeps out of the way.
--   *Note: Currently separate from the main `Zerg.travelTo` logic.*
+## Data Flow (One Tick)
 
-## Build Configuration
+1. **Boot** — `main.ts` detects global resets, restores Kernel from heap/Memory
+2. **Bootstrap** — `GlobalManager` ensures every owned room has a `ColonyProcess`
+3. **Schedule** — Kernel runs processes by priority bucket with CPU budgets
+4. **Colony tick** — Each `ColonyProcess` calls `colony.refresh()` then `colony.run()`
+5. **Overlord init** — Overlords adopt creeps via subreaper logic, enqueue spawn requests
+6. **Overlord run** — Overlords assign tasks to their Zergs
+7. **Zerg execution** — Each Zerg runs its current task (move + action)
+8. **Traffic resolution** — `TrafficManager` resolves all movement intents
+9. **Commit** — `GlobalCache.commit()` persists dirty state to Memory
 
-### TypeScript Strictness (tsconfig.json + tsconfig.build.json)
+---
 
-| Flag | Value | Purpose |
-|---|---|---|
-| `strict` | `true` | Enables all strict checks |
-| `noUnusedLocals` | `true` | Catch dead code |
-| `noUnusedParameters` | `true` | Catch forgotten params |
-| `noFallthroughCasesInSwitch` | `true` | Prevent switch bugs |
-| `forceConsistentCasingInFileNames` | `true` | Cross-platform safety |
-
-### Rollup (rollup.config.mjs)
-
-- **Source map**: Inline (`sourcemap: 'inline'`) — embedded in `main.js` for ErrorMapper
-- **Tree-shaking**: Aggressive (`moduleSideEffects: false`, `propertyReadSideEffects: false`)
-- **External**: `lodash` excluded from bundle
-
-## File Structure
-
-```
-src/
-├── main.ts                    # Loop entry point + console commands
-├── version.ts                 # Auto-managed version
-├── types.d.ts                 # Global type declarations
-├── kernel/
-│   ├── Kernel.ts              # Scheduler + profiling + process table
-│   ├── Process.ts             # Abstract process base
-│   ├── ProcessStatus.ts       # Runtime status constants
-│   ├── ErrorMapper.ts         # Source-map stack trace resolution
-│   ├── GlobalCache.ts         # Heap-first state + reset detection
-│   ├── GlobalManager.ts       # Warm start / Colony rehydration
-│   └── memory/
-│       └── SegmentManager.ts  # RawMemory segment management
-├── os/
-│   ├── colony/
-│   │   ├── Colony.ts          # Per-room hub for Overlords & State
-│   │   ├── Hatchery.ts        # Spawn manager with priority queue
-│   │   ├── MiningSite.ts      # Source mining site data
-│   │   └── LogisticsNetwork.ts # Centralized resource broker
-│   ├── directives/
-│   │   ├── Directive.ts       # Abstract base: Flag → Overlord(s)
-│   │   └── resource/
-│   │       └── HarvestDirective.ts # Remote mining orchestration
-│   ├── overlords/
-│   │   ├── Overlord.ts        # Abstract overlord base class
-│   │   ├── MiningOverlord.ts  # Colony-level mine management
-│   │   ├── ConstructionOverlord.ts # Base building automation
-│   │   ├── TransporterOverlord.ts  # Logistics fleet manager
-│   │   └── colonization/
-│   │       ├── ScoutOverlord.ts        # Invisible room exploration
-│   │       ├── ReserverOverlord.ts     # Buffer cycling reservation
-│   │       └── RemoteMiningOverlord.ts # Remote source management
-│   ├── zerg/
-│   │   ├── Zerg.ts            # Creep wrapper with task execution & pathing
-│   │   ├── Miner.ts           # Specialized miner creep
-│   │   └── Transporter.ts     # Logistics worker creep
-│   ├── infrastructure/
-│   │   ├── BunkerLayout.ts    # Base layout templates
-│   │   └── TrafficManager.ts  # Priority-based movement resolution
-│   ├── tasks/
-│   │   ├── ITask.ts           # Task interface
-│   │   └── HarvestTask.ts     # Harvest task implementation
-│   └── processes/
-│       ├── ColonyProcess.ts   # Kernel adapter for Colony lifecycle
-│       ├── MiningProcess.ts   # Standalone source harvesting process
-│       ├── UpgradeProcess.ts  # Standalone controller upgrader
-│       ├── ProfilerProcess.ts # CPU usage monitor (priority 0)
-│       └── RoomPlannerProcess.ts # Room planning automation
-└── utils/
-    ├── Algorithms.ts          # Distance Transform & geometries
-    ├── CreepBody.ts           # Body part scaling utilities
-    ├── Logger.ts              # Structured logging with levels
-    └── RoomPosition.ts        # RoomPosition prototype extensions
-```
+**Related:** [Main Loop](main-loop) · [Kernel](kernel) · [Colony](colony) · [Design Patterns](design-patterns)
