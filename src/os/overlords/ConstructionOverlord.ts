@@ -151,10 +151,24 @@ export class ConstructionOverlord extends Overlord {
             (BUILD_PRIORITY[a] ?? 99) - (BUILD_PRIORITY[b] ?? 99)
         );
 
+        // Pre-count existing structures + sites by type (room-wide, not position-specific)
+        // This catches structures placed outside the bunker layout (e.g., starting spawn)
+        const structureCount = new Map<string, number>();
+        for (const s of room.find(FIND_STRUCTURES)) {
+            structureCount.set(s.structureType, (structureCount.get(s.structureType) || 0) + 1);
+        }
+        for (const s of room.find(FIND_MY_CONSTRUCTION_SITES)) {
+            structureCount.set(s.structureType, (structureCount.get(s.structureType) || 0) + 1);
+        }
+
         for (const typeStr of sortedTypes) {
             const type = typeStr as BuildableStructureConstant;
             const maxAllowed = this.getMaxStructures(type, rcl);
             if (maxAllowed === 0) continue;
+
+            // Room-wide cap check: skip if we already have enough of this type
+            const currentCount = structureCount.get(type) || 0;
+            if (currentCount >= maxAllowed) continue;
 
             const positions = layoutStructures[typeStr as StructureConstant] || [];
             // Slice to respect the exact RCL limit
