@@ -97,11 +97,11 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
             if (val === 0) continue;
 
             const min = Math.min(
-                bits[idx + 1] + 1,   // Bottom      (x, y+1)
-                bits[idx + 50] + 1,  // Right       (x+1, y)
-                bits[idx + 51] + 1,  // Bottom-Right(x+1, y+1)
-                bits[idx - 49] + 1   // Bottom-Left (x-1, y+1)
-            );
+                bits[idx + 1],       // Bottom      (x, y+1)
+                bits[idx + 50],      // Right       (x+1, y)
+                bits[idx + 51],      // Bottom-Right(x+1, y+1)
+                bits[idx - 49]       // Bottom-Left (x-1, y+1)
+            ) + 1;                   // Add once (algebraically identical)
 
             if (min < val) {
                 bits[idx] = min;
@@ -160,7 +160,7 @@ export function floodFill(
 
     while (head < tail) {
         const idx = queue[head++];
-        const cx = Math.trunc(idx / 50);
+        const cx = (idx / 50) | 0; // Bitwise truncation (faster than Math.trunc)
         const cy = idx % 50;
         const cd = bits[idx];
         const nd = cd + 1;
@@ -298,23 +298,25 @@ export function minCutRamparts(
     const parent = new Int32Array(NODE_COUNT);
     const parentEdge = new Int32Array(NODE_COUNT);
 
+    const bfsQueue = new Int32Array(NODE_COUNT);
+
     // Edmonds-Karp: BFS augmenting paths
     function bfs(): number[] | null {
         parent.fill(-1);
         parentEdge.fill(-1);
         parent[SOURCE] = SOURCE;
-        const queue = [SOURCE];
+        bfsQueue[0] = SOURCE;
         let head = 0;
+        let tail = 1;
 
-        while (head < queue.length) {
-            const u = queue[head++];
+        while (head < tail) {
+            const u = bfsQueue[head++];
             for (let i = 0; i < graph[u].length; i++) {
                 const e = graph[u][i];
                 if (parent[e.to] === -1 && e.cap - e.flow > 0) {
                     parent[e.to] = u;
                     parentEdge[e.to] = i;
                     if (e.to === SINK) {
-                        // Reconstruct path as [node, edgeIdx, node, edgeIdx, ...]
                         const path: number[] = [];
                         let cur = SINK;
                         while (cur !== SOURCE) {
@@ -323,7 +325,7 @@ export function minCutRamparts(
                         }
                         return path;
                     }
-                    queue.push(e.to);
+                    bfsQueue[tail++] = e.to;
                 }
             }
         }
