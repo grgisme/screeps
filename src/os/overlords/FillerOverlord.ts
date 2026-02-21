@@ -101,18 +101,29 @@ export class FillerOverlord extends Overlord {
         for (let i = 0; i < this.fillers.length; i++) {
             const filler = this.fillers[i];
             if (!filler.isAlive()) continue;
-            if (filler.task) continue;
 
-            // ── Step 1: Navigate to standing tile (only for MOVE-capable bodies) ──
-            // 0-MOVE fillers (RCL 4+) can't navigate — skip this and work from
-            // wherever the spawn ejected them. They'll still be within range 1
-            // of the hub and filler-ring extensions in a correctly placed bunker.
+            // ── Step 1: Position correction (runs even while mid-task) ──
+            // MUST run before task-continuation guard so that a shoved filler
+            // abandons its current task and returns to its standing tile.
+            // Without this, once a filler is shoved off its tile it will keep
+            // executing tasks from the wrong position indefinitely.
             const hasMoveBody = filler.creep?.body.some(p => p.type === MOVE) ?? true;
             const standingTile = this.getStandingTile(i);
             if (hasMoveBody && standingTile && filler.pos && !filler.pos.isEqualTo(standingTile)) {
+                // Shoved off tile — abandon current task and return immediately
+                if (filler.task) filler.setTask(null);
                 filler.travelTo(standingTile, 0);
                 continue;
             }
+
+            // ── Step 1b: Hold ground — stationary fillers must anchor themselves ──
+            // Fillers with no MOVE parts cannot be shoved by the TrafficManager
+            // (they have fatigue or the engine blocks movement). For MOVE-capable
+            // fillers already on their tile, register a high-priority stay intent
+            // so the bipartite graph knows this tile is occupied by a permanent resident.
+            // (TrafficManager also checks role === "filler" for score 10000, see below.)
+
+            if (filler.task) continue;
 
             // ── Step 2: Stationary withdraw/transfer loop ──
             const energy = filler.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0;

@@ -101,10 +101,26 @@ export class ConstructionOverlord extends Overlord {
         const room = this.colony.room;
         if (!room) return;
 
+        const spawns = room.find(FIND_MY_SPAWNS);
+
+        // ── REVERSE-ANCHOR (first-room bootstrap) ──────────────────────────
+        // When exactly one spawn exists empire-wide this is the starting room.
+        // Derive the anchor by reversing each blueprint spawn offset instead of
+        // running a full Distance Transform scan.
+        if (spawns.length === 1 && Object.keys(Game.spawns).length === 1) {
+            const anchor = this.reverseAnchorFromSpawn(room, spawns[0]);
+            if (anchor) {
+                log.info(`Reverse-anchor: ${this.colony.name} → ${anchor.x},${anchor.y} (from spawn at ${spawns[0].pos.x},${spawns[0].pos.y})`);
+                this.colony.memory.anchor = { x: anchor.x, y: anchor.y };
+                return;
+            }
+            log.warning(`Reverse-anchor: no valid fit in ${this.colony.name}, falling through to DT scan`);
+        }
+
+        // ── NORMAL DT SCAN (all future rooms) ──────────────────────────────
         const dt = distanceTransform(this.colony.name);
 
         // Find the existing spawn for proximity weighting
-        const spawns = room.find(FIND_MY_SPAWNS);
         const spawnPos = spawns.length > 0 ? spawns[0].pos : null;
 
         let maxScore = 0;
@@ -141,6 +157,52 @@ export class ConstructionOverlord extends Overlord {
                 this.colony.memory.anchor = { x: bestPos.x, y: bestPos.y };
             }
         }
+    }
+
+    /**
+     * Reverse-anchor: derive the bunker anchor from an existing spawn position.
+     *
+     * For each blueprint spawn offset, compute `anchor = spawn − offset` and
+     * test whether the full 13×13 footprint fits without hitting walls or the
+     * room border.  Returns the first valid anchor, or the first-offset fallback
+     * if none pass the fit check.
+     */
+    private reverseAnchorFromSpawn(room: Room, spawn: StructureSpawn): RoomPosition | null {
+        const spawnOffsets = BunkerLayout.structures[STRUCTURE_SPAWN] ?? [];
+
+        for (const offset of spawnOffsets) {
+            const ax = spawn.pos.x - offset.x;
+            const ay = spawn.pos.y - offset.y;
+            if (this.canBlueprintFit(room.name, ax, ay)) {
+                return new RoomPosition(ax, ay, room.name);
+            }
+        }
+
+        // Fallback: use first offset even if the fit check failed, so the
+        // planner at least produces some anchor rather than looping forever.
+        if (spawnOffsets.length > 0) {
+            const off = spawnOffsets[0];
+            log.warning(`Reverse-anchor fallback: using offset (${off.x},${off.y}) without fit validation`);
+            return new RoomPosition(spawn.pos.x - off.x, spawn.pos.y - off.y, room.name);
+        }
+        return null;
+    }
+
+    /**
+     * Returns true when a 13×13 bunker centered at (ax, ay) fits within the
+     * safe playfield (7-tile border) and the footprint contains no wall tiles.
+     */
+    private canBlueprintFit(roomName: string, ax: number, ay: number): boolean {
+        // Require a 7-tile margin from all room edges (radius 6 + 1 buffer)
+        if (ax < 7 || ax > 42 || ay < 7 || ay > 42) return false;
+
+        const terrain = Game.map.getRoomTerrain(roomName);
+        for (let dx = -6; dx <= 6; dx++) {
+            for (let dy = -6; dy <= 6; dy++) {
+                if (terrain.get(ax + dx, ay + dy) === TERRAIN_MASK_WALL) return false;
+            }
+        }
+        return true;
     }
 
     // ========================================================================

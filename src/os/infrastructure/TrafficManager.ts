@@ -132,16 +132,21 @@ export class TrafficManager {
                             // Only truly stationary creeps (no move intent) get the parking score.
                             if (!intent || (intent.direction as number) === 0) {
                                 const taskName = (creep.memory as any).task?.name;
+                                const role = (creep.memory as any).role;
                                 if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
-                                    (creep.memory as any).role === "miner") {
+                                    role === "miner" || role === "filler") {
 
                                     // FIX 3: Scope isParked correctly.
                                     let isParked = false;
                                     if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) {
                                         isParked = true;
-                                    } else if (taskName === "Harvest" || (creep.memory as any).role === "miner") {
+                                    } else if (taskName === "Harvest" || role === "miner") {
                                         if (room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s))) isParked = true;
                                         if (!isParked && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m))) isParked = true;
+                                    } else if (role === "filler") {
+                                        // Fillers always hold their standing tile — they are permanent residents
+                                        // of the bunker center and must never be displaced by passing traffic.
+                                        isParked = true;
                                     }
 
                                     if (isParked) return 10000;
