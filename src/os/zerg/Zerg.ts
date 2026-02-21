@@ -523,7 +523,11 @@ export class Zerg {
                     if (!dynamicCached || dynamicCached.tick !== Game.time) {
                         const costs = staticCached.matrix.clone();
                         room.find(FIND_MY_CREEPS).forEach(c => {
-                            if (c.memory.role === 'miner') {
+                            // Only mark OTHER miners as obstacles, never self.
+                            // A miner marking its own current tile as cost-255 makes
+                            // PathFinder see the start tile as impassable → empty path
+                            // → "⛔ Blocked" → miner stuck near spawn forever.
+                            if (c.memory.role === 'miner' && c.name !== this.creepName) {
                                 costs.set(c.pos.x, c.pos.y, 255);
                             }
                         });
