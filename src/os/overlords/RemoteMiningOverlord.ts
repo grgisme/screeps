@@ -152,8 +152,23 @@ export class RemoteMiningOverlord extends Overlord {
         for (const hauler of this.haulers) {
             if (!hauler.isAlive()) continue;
 
-            if (isDangerous && fallbackPos) {
-                hauler.travelTo(fallbackPos, 3);
+            if (isDangerous) {
+                // Fix 2: Scavenger Idle — haulers hold at the room EXIT, not the colony core.
+                // Flooding the base with retreating haulers gridlocks storage/spawn.
+                // Haulers wait at the border and re-enter the moment danger clears.
+                if (hauler.room?.name === this.targetRoom) {
+                    // Still inside the dangerous room — exit toward home
+                    hauler.travelTo(new RoomPosition(25, 25, this.colony.name), 20);
+                } else if (hauler.room?.name === this.colony.name) {
+                    // Back in the safe room — park at the room exit tile toward target
+                    const exitDir = Game.map.findExit(this.colony.name, this.targetRoom) as ExitConstant;
+                    const exits = hauler.room.find(exitDir);
+                    const nearestExit = exits.sort((a, b) => hauler.pos!.getRangeTo(a) - hauler.pos!.getRangeTo(b))[0];
+                    if (nearestExit && hauler.pos && hauler.pos.getRangeTo(nearestExit) > 3) {
+                        hauler.travelTo(nearestExit, 3);
+                    }
+                    // Within 3 of exit — hold position and wait for danger to clear
+                }
                 continue;
             }
 

@@ -122,10 +122,26 @@ export class WorkerOverlord extends Overlord {
                     if (container) {
                         worker.setTask(new WithdrawTask(container.id as Id<Structure>));
                     } else {
-                        // Last resort: share a mined source rather than idle
-                        const anySource = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
-                        if (anySource) {
-                            worker.setTask(new HarvestTask(anySource.id));
+                        // Fix 4: Static Sink — anchor to the nearest container and wait
+                        // instead of wandering. Haulers delivering energy can path to a
+                        // stationary target (deep path cache, near-zero CPU per tick).
+                        // Only wander if no container exists at all.
+                        const anyContainer = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
+                            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+                        }) as StructureContainer | undefined;
+
+                        if (anyContainer) {
+                            // Anchor to container position — do NOT issue travelTo; just hold still
+                            if (worker.pos && !worker.pos.inRangeTo(anyContainer, 1)) {
+                                worker.travelTo(anyContainer, 1);
+                            }
+                            // else: already adjacent — stay put, remain a static sink
+                        } else {
+                            // Last resort: share a mined source rather than idle
+                            const anySource = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
+                            if (anySource) {
+                                worker.setTask(new HarvestTask(anySource.id));
+                            }
                         }
                     }
                 }
@@ -194,10 +210,30 @@ export class WorkerOverlord extends Overlord {
                 if (!hasUpgraders && controller) {
                     worker.setTask(new UpgradeTask(controller.id));
                 } else {
-                    // Dedicated upgraders handle this — rally near spawn, don't crowd controller
+                    // Fix: Flee spawn rather than crowding it.
+                    // Targeting spawn with range 4 funnels all idle workers into
+                    // the most congested tile. Instead, aim for Storage or flee
+                    // outward if still too close to spawn.
                     const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                    if (spawn && worker.pos && worker.pos.getRangeTo(spawn) > 5) {
-                        worker.travelTo(spawn, 4);
+                    const storage = this.colony.room?.storage;
+                    if (storage) {
+                        // Idle near storage — haulers and workers share the hub naturally
+                        if (worker.pos && worker.pos.getRangeTo(storage) > 3) {
+                            worker.travelTo(storage, 3);
+                        }
+                    } else if (spawn && worker.pos) {
+                        const range = worker.pos.getRangeTo(spawn);
+                        if (range <= 4) {
+                            // Too close — flee outward (same math as transporter failsafe)
+                            const dx = worker.pos.x - spawn.pos.x;
+                            const dy = worker.pos.y - spawn.pos.y;
+                            const mx = dx === 0 ? 1 : Math.sign(dx);
+                            const my = dy === 0 ? 1 : Math.sign(dy);
+                            const tx = Math.min(48, Math.max(1, worker.pos.x + mx * 5));
+                            const ty = Math.min(48, Math.max(1, worker.pos.y + my * 5));
+                            worker.travelTo(new RoomPosition(tx, ty, spawn.pos.roomName), 1);
+                        }
+                        // If already far enough, hold position — no travelTo needed
                     }
                 }
             }

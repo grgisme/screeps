@@ -129,16 +129,13 @@ export class TrafficManager {
 
                         // 2. Proposing to the CURRENT (stay-still) tile.
                         if (creep.pos.x === pos.x && creep.pos.y === pos.y && creep.pos.roomName === pos.roomName) {
-                            // Only truly stationary creeps (no move intent) get the +10000 unshovable bonus.
+                            // Only truly stationary creeps (no move intent) get the parking score.
                             if (!intent || (intent.direction as number) === 0) {
                                 const taskName = (creep.memory as any).task?.name;
                                 if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
                                     (creep.memory as any).role === "miner") {
 
                                     // FIX 3: Scope isParked correctly.
-                                    // Upgraders only park near controller. Harvesters/Miners
-                                    // park near sources. Builders/Workers walking past sources
-                                    // must NOT accidentally become immovable bricks.
                                     let isParked = false;
                                     if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) {
                                         isParked = true;
@@ -149,7 +146,14 @@ export class TrafficManager {
 
                                     if (isParked) return 10000;
                                 }
-                                return 0.5; // Idle/misplaced creep — resist lightly but yield to movers
+
+                                // Fix 5: Priority-Based Yielding.
+                                // Truly idle creeps (no task at all) are the lowest-priority
+                                // occupants in the room — they must yield to everything.
+                                // Active movers score 1.0, shoves score 0.2; 0.01 guarantees
+                                // any active creep can displace an idle one.
+                                const hasTask = !!(creep.memory as any).task;
+                                return hasTask ? 0.5 : 0.01;
                             } else {
                                 // Creep is trying to move but falling back — weak hold so traffic flows
                                 return 0.1;
