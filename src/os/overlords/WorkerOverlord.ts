@@ -37,6 +37,21 @@ export class WorkerOverlord extends Overlord {
     init(): void {
         // adoptOrphans() removed — base Overlord getter handles adoption via _overlord tag
         this.workers = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "worker") as Worker[];
+
+        // Register workers as energy sinks so TransporterOverlord dispatches
+        // haulers to them directly. Priority 5 = served after spawns/extensions (10)
+        // but before upgraders (4). TransferTask.isValid() handles Creep targets
+        // natively via the `store` property check — no task-layer changes needed.
+        for (const worker of this.workers) {
+            const creep = worker.creep;
+            if (creep) {
+                const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 0) {
+                    this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 5 });
+                }
+            }
+        }
+
         this.handleSpawning();
     }
 
