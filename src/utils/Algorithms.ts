@@ -42,81 +42,66 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
     const bits = (cm as any)._bits as Uint8Array;
 
     // --- 1. Initialization ---
-    // Walls → 0, walkable → 255.
-    // Room exits (border tiles) are forced to 0 to prevent structural
-    // placement on exits.
+    // Fast-fill walkable space to 255 if no custom matrix provided.
     if (!initialMatrix) {
+        bits.fill(255);
+    }
+
+    // Always enforce terrain walls — even on custom matrices.
+    // Without this, passing an initialMatrix skips wall mapping and
+    // the algorithm calculates distances through solid rock.
+    for (let x = 0; x < 50; x++) {
         for (let y = 0; y < 50; y++) {
-            for (let x = 0; x < 50; x++) {
-                const idx = x * 50 + y;
-                if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) {
-                    bits[idx] = 0;
-                } else {
-                    bits[idx] = 255;
-                }
+            if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) {
+                bits[x * 50 + y] = 0;
             }
         }
     }
 
-    // Fix #4: Unconditionally mask room exits to 0 — even when an
-    // initialMatrix is provided. Without this, passing a blank CostMatrix
-    // skips exit masking and the planner can stamp structures on exits.
+    // Unconditionally mask room exits to 0 — prevents the planner
+    // from stamping structures on exits. (idx = x * 50 + y)
     for (let i = 0; i < 50; i++) {
-        bits[i * 50] = 0; // Left   (x=i, y=0)  — column 0
-        bits[i * 50 + 49] = 0; // Right  (x=i, y=49) — column 49
-        bits[i] = 0; // Top    (x=0, y=i)  — row 0
-        bits[49 * 50 + i] = 0; // Bottom (x=49, y=i) — row 49
+        bits[i * 50] = 0; // Top row    (y=0, varying x)
+        bits[i * 50 + 49] = 0; // Bottom row (y=49, varying x)
+        bits[i] = 0; // Left col   (x=0, varying y)
+        bits[49 * 50 + i] = 0; // Right col  (x=49, varying y)
     }
 
     // --- 2. Forward Pass (Top-Left → Bottom-Right) ---
-    // Outer = y, Inner = x. Checks 4 previously-visited Chebyshev neighbors:
-    //   TL  T  TR     (row y-1, fully processed)
-    //   L   C         (row y, columns < x already processed)
-    for (let y = 0; y < 50; y++) {
-        for (let x = 0; x < 50; x++) {
+    // Loops 1-48: the 0-border acts as a safe zero-buffer, eliminating
+    // all bounds checks (~20,000 branches removed per call).
+    for (let y = 1; y < 49; y++) {
+        for (let x = 1; x < 49; x++) {
             const idx = x * 50 + y;
             const val = bits[idx];
-            if (val === 0) continue; // Wall — distance is already 0
+            if (val === 0) continue;
 
-            let min = 255;
-
-            // Top (x, y-1)
-            if (y > 0) min = Math.min(min, bits[idx - 1]);
-            // Left (x-1, y)
-            if (x > 0) min = Math.min(min, bits[idx - 50]);
-            // Top-Left (x-1, y-1)
-            if (x > 0 && y > 0) min = Math.min(min, bits[idx - 51]);
-            // Top-Right (x+1, y-1) — safe because row y-1 is fully processed
-            if (x < 49 && y > 0) min = Math.min(min, bits[idx + 49]);
+            const min = Math.min(
+                bits[idx - 1],   // Top      (x, y-1)
+                bits[idx - 50],  // Left     (x-1, y)
+                bits[idx - 51],  // Top-Left (x-1, y-1)
+                bits[idx + 49]   // Top-Right(x+1, y-1)
+            );
 
             if (min < 255) {
-                // Fix #3: Respect the cell's current value — don't overwrite
-                // a lower pre-seeded distance with a larger computed one.
                 bits[idx] = Math.min(val, min + 1);
             }
         }
     }
 
     // --- 3. Backward Pass (Bottom-Right → Top-Left) ---
-    // Checks 4 previously-visited neighbors in the reverse direction:
-    //         C  R     (row y, columns > x already processed)
-    //   BL  B  BR     (row y+1, fully processed)
-    for (let y = 49; y >= 0; y--) {
-        for (let x = 49; x >= 0; x--) {
+    for (let y = 48; y >= 1; y--) {
+        for (let x = 48; x >= 1; x--) {
             const idx = x * 50 + y;
-            let val = bits[idx];
+            const val = bits[idx];
             if (val === 0) continue;
 
-            let min = val;
-
-            // Bottom (x, y+1)
-            if (y < 49) min = Math.min(min, bits[idx + 1] + 1);
-            // Right (x+1, y)
-            if (x < 49) min = Math.min(min, bits[idx + 50] + 1);
-            // Bottom-Right (x+1, y+1)
-            if (x < 49 && y < 49) min = Math.min(min, bits[idx + 51] + 1);
-            // Bottom-Left (x-1, y+1)
-            if (x > 0 && y < 49) min = Math.min(min, bits[idx - 49] + 1);
+            const min = Math.min(
+                bits[idx + 1] + 1,   // Bottom      (x, y+1)
+                bits[idx + 50] + 1,  // Right       (x+1, y)
+                bits[idx + 51] + 1,  // Bottom-Right(x+1, y+1)
+                bits[idx - 49] + 1   // Bottom-Left (x-1, y+1)
+            );
 
             if (min < val) {
                 bits[idx] = min;
@@ -151,15 +136,19 @@ export function floodFill(
     // Initialize all tiles to 255 (unreachable)
     bits.fill(255);
 
-    // BFS queue: [x, y, distance]
-    const queue: Array<[number, number, number]> = [];
+    // Zero-allocation flat queue — avoids thousands of 3-element Array
+    // allocations that cause V8 GC stuttering. Distance is stored in bits[].
+    const queue = new Uint16Array(2500);
+    let head = 0;
+    let tail = 0;
 
     for (const o of origins) {
         if (o.x < 1 || o.x > 48 || o.y < 1 || o.y > 48) continue;
         if ((terrain.get(o.x, o.y) & TERRAIN_MASK_WALL) !== 0) continue;
         const idx = o.x * 50 + o.y;
+        if (bits[idx] === 0) continue; // Prevent duplicate origins
         bits[idx] = 0;
-        queue.push([o.x, o.y, 0]);
+        queue[tail++] = idx;
     }
 
     // Chebyshev BFS (8-directional)
@@ -169,9 +158,11 @@ export function floodFill(
         [-1, 1], [0, 1], [1, 1],
     ];
 
-    let head = 0;
-    while (head < queue.length) {
-        const [cx, cy, cd] = queue[head++];
+    while (head < tail) {
+        const idx = queue[head++];
+        const cx = Math.trunc(idx / 50);
+        const cy = idx % 50;
+        const cd = bits[idx];
         const nd = cd + 1;
         if (nd >= 255) continue;
 
@@ -182,9 +173,9 @@ export function floodFill(
             if ((terrain.get(nx, ny) & TERRAIN_MASK_WALL) !== 0) continue;
 
             const nIdx = nx * 50 + ny;
-            if (bits[nIdx] <= nd) continue; // Already visited with shorter distance
+            if (bits[nIdx] <= nd) continue;
             bits[nIdx] = nd;
-            queue.push([nx, ny, nd]);
+            queue[tail++] = nIdx;
         }
     }
 
@@ -444,10 +435,11 @@ export function stableMatch(
         receiverMap.set(r.id, r);
     }
 
-    // Track state
-    const proposalIndex = new Map<string, number>();       // proposer → next preference to try
-    const matches = new Map<string, string>();             // proposer → receiver
-    const receiverSlots = new Map<string, string[]>();     // receiver → list of matched proposers
+    // Track state — scores cached alongside IDs to avoid redundant
+    // recalculations when receiver capacity is high (e.g., Storage).
+    const proposalIndex = new Map<string, number>();
+    const matches = new Map<string, string>();
+    const receiverSlots = new Map<string, Array<{ id: string; score: number }>>();
 
     // Initialize
     const free: string[] = [];
@@ -489,30 +481,29 @@ export function stableMatch(
         const slots = receiverSlots.get(rId)!;
 
         if (slots.length < receiver.capacity) {
-            // Receiver has room — accept
-            slots.push(pId);
+            // Receiver has room — accept (cache score alongside ID)
+            slots.push({ id: pId, score: receiver.score(pId) });
             matches.set(pId, rId);
         } else {
             // Receiver is full — check if this proposer is preferred over the worst match
             const pScore = receiver.score(pId);
             let worstIdx = 0;
-            let worstScore = receiver.score(slots[0]);
+            let worstScore = slots[0].score; // Cached — no recalculation
 
             for (let i = 1; i < slots.length; i++) {
-                const s = receiver.score(slots[i]);
-                if (s < worstScore) {
-                    worstScore = s;
+                if (slots[i].score < worstScore) {
+                    worstScore = slots[i].score;
                     worstIdx = i;
                 }
             }
 
             if (pScore > worstScore) {
                 // Reject worst, accept new proposer
-                const rejected = slots[worstIdx];
-                slots[worstIdx] = pId;
+                const rejected = slots[worstIdx].id;
+                slots[worstIdx] = { id: pId, score: pScore };
                 matches.set(pId, rId);
                 matches.delete(rejected);
-                free.push(rejected); // Rejected proposer becomes free again
+                free.push(rejected);
             } else {
                 // Rejected — proposer tries next preference
                 free.push(pId);
