@@ -117,6 +117,268 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
 }
 
 // ============================================================================
+// Flood Fill — BFS Distance Map
+// ============================================================================
+//
+// BFS from one or more origin positions. Returns a CostMatrix where each
+// tile's value = Chebyshev distance from the nearest origin (capped at 255).
+// Walls and border tiles are left at 255 (unreachable).
+//
+// Used by ConstructionOverlord to order extension placement: lowest distance
+// from Storage/Terminal = built first.
+// ============================================================================
+
+export function floodFill(
+    roomName: string,
+    origins: Array<{ x: number; y: number }>,
+    costMatrix?: CostMatrix
+): CostMatrix {
+    const terrain = Game.map.getRoomTerrain(roomName);
+    const cm = costMatrix || new PathFinder.CostMatrix();
+    const bits = (cm as any)._bits as Uint8Array;
+
+    // Initialize all tiles to 255 (unreachable)
+    bits.fill(255);
+
+    // BFS queue: [x, y, distance]
+    const queue: Array<[number, number, number]> = [];
+
+    for (const o of origins) {
+        if (o.x < 1 || o.x > 48 || o.y < 1 || o.y > 48) continue;
+        if (terrain.get(o.x, o.y) === TERRAIN_MASK_WALL) continue;
+        const idx = o.x * 50 + o.y;
+        bits[idx] = 0;
+        queue.push([o.x, o.y, 0]);
+    }
+
+    // Chebyshev BFS (8-directional)
+    const DIRS = [
+        [-1, -1], [0, -1], [1, -1],
+        [-1, 0], [1, 0],
+        [-1, 1], [0, 1], [1, 1],
+    ];
+
+    let head = 0;
+    while (head < queue.length) {
+        const [cx, cy, cd] = queue[head++];
+        const nd = cd + 1;
+        if (nd >= 255) continue;
+
+        for (const [dx, dy] of DIRS) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 1 || nx > 48 || ny < 1 || ny > 48) continue;
+            if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+
+            const nIdx = nx * 50 + ny;
+            if (bits[nIdx] <= nd) continue; // Already visited with shorter distance
+            bits[nIdx] = nd;
+            queue.push([nx, ny, nd]);
+        }
+    }
+
+    return cm;
+}
+
+// ============================================================================
+// Min-Cut Ramparts — Edmonds-Karp Max-Flow / Min-Cut
+// ============================================================================
+//
+// Finds the minimum set of rampart positions needed to isolate the bunker
+// from all room exits. Uses BFS-based max-flow (Edmonds-Karp variant).
+//
+// The graph is built from the room grid:
+//   - Source = virtual node connected to all exit tiles
+//   - Sink = virtual node connected to all protected interior tiles
+//   - Each walkable tile is split into two nodes (in/out) with capacity 1
+//     (cutting a tile = placing a rampart there)
+//   - Edges between adjacent tiles have infinite capacity
+//
+// After computing max-flow, the min-cut is extracted by finding tiles whose
+// in→out edge is saturated and reachable from source in the residual graph.
+//
+// Buffer enforcement: protected tiles are expanded by `bufferSize` tiles
+// so ramparts are placed at least `bufferSize` away from structures.
+// ============================================================================
+
+export interface MinCutResult {
+    ramparts: Array<{ x: number; y: number }>;
+}
+
+export function minCutRamparts(
+    roomName: string,
+    protectedPositions: Array<{ x: number; y: number }>,
+    bufferSize: number = 3
+): MinCutResult {
+    const terrain = Game.map.getRoomTerrain(roomName);
+
+    // Node splitting: each tile (x,y) becomes two nodes:
+    //   IN  node = tileIndex * 2
+    //   OUT node = tileIndex * 2 + 1
+    // Plus: SOURCE = 5000, SINK = 5001
+    const SOURCE = 5000;
+    const SINK = 5001;
+    const NODE_COUNT = 5002;
+    const INF = 999999;
+
+    function tileIdx(x: number, y: number): number { return x * 50 + y; }
+    function inNode(x: number, y: number): number { return tileIdx(x, y) * 2; }
+    function outNode(x: number, y: number): number { return tileIdx(x, y) * 2 + 1; }
+
+    // Adjacency list with capacity/flow
+    interface Edge { to: number; cap: number; flow: number; rev: number; }
+    const graph: Edge[][] = Array.from({ length: NODE_COUNT }, () => []);
+
+    function addEdge(from: number, to: number, cap: number): void {
+        graph[from].push({ to, cap, flow: 0, rev: graph[to].length });
+        graph[to].push({ to: from, cap: 0, flow: 0, rev: graph[from].length - 1 });
+    }
+
+    // Mark protected positions (expanded by buffer)
+    const isProtected = new Uint8Array(2500);
+    for (const p of protectedPositions) {
+        for (let dy = -bufferSize; dy <= bufferSize; dy++) {
+            for (let dx = -bufferSize; dx <= bufferSize; dx++) {
+                const nx = p.x + dx;
+                const ny = p.y + dy;
+                if (nx >= 1 && nx <= 48 && ny >= 1 && ny <= 48) {
+                    isProtected[tileIdx(nx, ny)] = 1;
+                }
+            }
+        }
+    }
+
+    // Build graph
+    const DIRS = [
+        [-1, -1], [0, -1], [1, -1],
+        [-1, 0], [1, 0],
+        [-1, 1], [0, 1], [1, 1],
+    ];
+
+    for (let x = 0; x < 50; x++) {
+        for (let y = 0; y < 50; y++) {
+            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+
+            const tIdx = tileIdx(x, y);
+            const isExit = (x === 0 || x === 49 || y === 0 || y === 49);
+
+            if (isExit) {
+                // Exit tiles: SOURCE → OUT(tile) with INF capacity
+                addEdge(SOURCE, outNode(x, y), INF);
+                // IN→OUT capacity for exit tiles is INF (can't place ramparts on exits)
+                addEdge(inNode(x, y), outNode(x, y), INF);
+            } else if (isProtected[tIdx]) {
+                // Protected tiles: IN(tile) → SINK with INF capacity
+                addEdge(inNode(x, y), SINK, INF);
+                // IN→OUT capacity INF (don't cut protected tiles)
+                addEdge(inNode(x, y), outNode(x, y), INF);
+            } else {
+                // Normal tiles: IN→OUT with capacity 1 (cuttable = rampart placement)
+                addEdge(inNode(x, y), outNode(x, y), 1);
+            }
+
+            // Edges to neighbors: OUT(this) → IN(neighbor) with INF capacity
+            for (const [dx, dy] of DIRS) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx < 0 || nx > 49 || ny < 0 || ny > 49) continue;
+                if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+                addEdge(outNode(x, y), inNode(nx, ny), INF);
+            }
+        }
+    }
+
+    // Edmonds-Karp: BFS augmenting paths
+    function bfs(): number[] | null {
+        const parent = new Array<number>(NODE_COUNT).fill(-1);
+        const parentEdge = new Array<number>(NODE_COUNT).fill(-1);
+        parent[SOURCE] = SOURCE;
+        const queue = [SOURCE];
+        let head = 0;
+
+        while (head < queue.length) {
+            const u = queue[head++];
+            for (let i = 0; i < graph[u].length; i++) {
+                const e = graph[u][i];
+                if (parent[e.to] === -1 && e.cap - e.flow > 0) {
+                    parent[e.to] = u;
+                    parentEdge[e.to] = i;
+                    if (e.to === SINK) {
+                        // Reconstruct path as [node, edgeIdx, node, edgeIdx, ...]
+                        const path: number[] = [];
+                        let cur = SINK;
+                        while (cur !== SOURCE) {
+                            path.push(cur, parentEdge[cur]);
+                            cur = parent[cur];
+                        }
+                        return path;
+                    }
+                    queue.push(e.to);
+                }
+            }
+        }
+        return null;
+    }
+
+    // Run max-flow
+    let maxIter = 10000; // Safety limit
+    while (maxIter-- > 0) {
+        const path = bfs();
+        if (!path) break;
+
+        // Find bottleneck along augmenting path
+        // Path format: [SINK, edgeIdx, prev_node, edgeIdx, ..., first_child, edgeIdx]
+        // Each (node, edgeIdx) pair: graph[parent][edgeIdx] is the edge parent→node
+        let bn = INF;
+        for (let i = 0; i < path.length; i += 2) {
+            const eIdx = path[i + 1];
+            const p = i + 2 < path.length ? path[i + 2] : SOURCE;
+            const e = graph[p][eIdx];
+            bn = Math.min(bn, e.cap - e.flow);
+        }
+
+        // Augment
+        for (let i = 0; i < path.length; i += 2) {
+            const node = path[i];
+            const eIdx = path[i + 1];
+            const p = i + 2 < path.length ? path[i + 2] : SOURCE;
+            graph[p][eIdx].flow += bn;
+            graph[node][graph[p][eIdx].rev].flow -= bn;
+        }
+    }
+
+    // Extract min-cut: find nodes reachable from SOURCE in residual graph
+    const visited = new Uint8Array(NODE_COUNT);
+    const stack = [SOURCE];
+    visited[SOURCE] = 1;
+    while (stack.length > 0) {
+        const u = stack.pop()!;
+        for (const e of graph[u]) {
+            if (!visited[e.to] && e.cap - e.flow > 0) {
+                visited[e.to] = 1;
+                stack.push(e.to);
+            }
+        }
+    }
+
+    // Min-cut = tiles where IN is reachable but OUT is not (their in→out edge is saturated)
+    const ramparts: Array<{ x: number; y: number }> = [];
+    for (let x = 1; x < 49; x++) {
+        for (let y = 1; y < 49; y++) {
+            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+            if (isProtected[tileIdx(x, y)]) continue;
+            const iN = inNode(x, y);
+            const oN = outNode(x, y);
+            if (visited[iN] && !visited[oN]) {
+                ramparts.push({ x, y });
+            }
+        }
+    }
+
+    return { ramparts };
+}
+
+// ============================================================================
 // Gale-Shapley Stable Matching Algorithm
 // ============================================================================
 //

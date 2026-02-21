@@ -6,7 +6,7 @@
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
-import { distanceTransform } from "../../utils/Algorithms";
+import { distanceTransform, minCutRamparts } from "../../utils/Algorithms";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("ConstructionOverlord");
@@ -58,28 +58,38 @@ export class ConstructionOverlord extends Overlord {
             this.checkControllerContainer(budget);
         }
 
-        // 6. Hatchery Container (RCL 2+, pre-Storage only)
-        if (rcl >= 2 && budget.count > 0 && !this.colony.room?.storage) {
-            this.checkHatcheryContainer(budget);
+        // 6. Hub Container (RCL 2+, pre-Link) — at BunkerLayout.hubPos
+        if (rcl >= 2 && rcl < 5 && budget.count > 0) {
+            this.checkHubContainer(budget);
         }
 
-        // 7. Roads (RCL 2+ — after core infrastructure is placed)
+        // 7. Hub Container → Link swap at RCL 5+
+        if (rcl >= 5) {
+            this.cleanupHubContainer();
+        }
+
+        // 8. Roads (RCL 2+ — after core infrastructure is placed)
         if (rcl >= 2 && budget.count > 0) {
             this.checkRoads(anchorPos, rcl, budget);
         }
 
-        // 8. Hatchery Container Cleanup (RCL 4+ when Storage built)
-        //    Destroy hatchery containers so they don't block BunkerLayout structures
+        // 9. Hatchery Container Cleanup (RCL 4+ when Storage built)
+        //    Destroy legacy hatchery containers so they don't block BunkerLayout structures
         if (this.colony.room?.storage) {
             this.cleanupHatcheryContainer();
         }
 
-        // 8. Obsolete Structure Sweep (on RCL change or every 1000 ticks)
+        // 10. Min-Cut Ramparts (RCL 4+, compute once and cache)
+        if (rcl >= 4 && this.colony.state.rclChanged) {
+            this.computeMinCutRamparts(anchorPos);
+        }
+
+        // 11. Obsolete Structure Sweep (on RCL change or every 1000 ticks)
         if (this.colony.state.rclChanged || Game.time % 1000 === 0) {
             this.sweepObsoleteStructures(anchorPos, rcl);
         }
 
-        // 9. Reset the RCL changed flag
+        // 12. Reset the RCL changed flag
         this.colony.state.rclChanged = false;
     }
 
@@ -302,20 +312,10 @@ export class ConstructionOverlord extends Overlord {
 
             const positions = layoutStructures[typeStr as StructureConstant] || [];
 
-            // For extensions: sort by proximity to nearest filler standing tile
-            // so that early RCL extensions cluster around active fillers
+            // Extensions are pre-sorted in BunkerLayout: filler ring first,
+            // then by Chebyshev distance from Storage (floodfill ordering).
+            // No additional sorting needed.
             let sortedPositions = positions;
-            if (type === STRUCTURE_EXTENSION) {
-                sortedPositions = [...positions].sort((a: any, b: any) => {
-                    const distA = Math.min(...BunkerLayout.fillerTiles.map(f =>
-                        Math.max(Math.abs(a.x - f.x), Math.abs(a.y - f.y))
-                    ));
-                    const distB = Math.min(...BunkerLayout.fillerTiles.map(f =>
-                        Math.max(Math.abs(b.x - f.x), Math.abs(b.y - f.y))
-                    ));
-                    return distA - distB;
-                });
-            }
 
             // Slice to respect the exact RCL limit
             const allowedPositions = sortedPositions.slice(0, maxAllowed);
@@ -475,20 +475,26 @@ export class ConstructionOverlord extends Overlord {
     }
 
     /**
- * Place a Hatchery Container at the bunker's future Storage position (0,-1).
- * Acts as the Fast Filler's energy hub until Storage is built at RCL 4.
- * Filler at standing tile (-1,-1) is adjacent to this position within range 1.
- * Skipped if Storage exists (RCL 4+ makes this redundant).
- */
-    private checkHatcheryContainer(budget: { count: number }): void {
+     * Place a Hub Container at BunkerLayout.hubPos (0,1).
+     * Acts as the Fast Filler's energy hub until the Hub Link is built at RCL 5.
+     * Filler at standing tile (0,0) is adjacent to this position within range 1.
+     * Skipped once Link exists at this position.
+     */
+    private checkHubContainer(budget: { count: number }): void {
         const room = this.colony.room;
         if (!room) return;
 
         const anchor = this.colony.memory.anchor;
         if (!anchor) return;
 
-        // Target position: future Storage tile (anchor offset 0,-1)
-        const hubPos = new RoomPosition(anchor.x, anchor.y - 1, room.name);
+        // Target position: hub tile (BunkerLayout.hubPos offset from anchor)
+        const hubCoord = BunkerLayout.hubPos;
+        const hubPos = new RoomPosition(anchor.x + hubCoord.x, anchor.y + hubCoord.y, room.name);
+
+        // Skip if a Link already exists here (RCL 5+ upgrade complete)
+        const hasLink = hubPos.lookFor(LOOK_STRUCTURES)
+            .some(s => s.structureType === STRUCTURE_LINK);
+        if (hasLink) return;
 
         // Check if container already exists at this position
         const existingContainer = hubPos.lookFor(LOOK_STRUCTURES)
@@ -503,7 +509,7 @@ export class ConstructionOverlord extends Overlord {
         // Check terrain is walkable
         const terrain = Game.map.getRoomTerrain(room.name).get(hubPos.x, hubPos.y);
         if (terrain === TERRAIN_MASK_WALL) {
-            log.warn(`Cannot place Hatchery Container at ${hubPos.x},${hubPos.y} — wall tile!`);
+            log.warn(`Cannot place Hub Container at ${hubPos.x},${hubPos.y} — wall tile!`);
             return;
         }
 
@@ -514,8 +520,35 @@ export class ConstructionOverlord extends Overlord {
 
         const result = hubPos.createConstructionSite(STRUCTURE_CONTAINER);
         if (result === OK) {
-            log.info(`Architect: Placed Hatchery Container at ${hubPos.x},${hubPos.y} (future Storage position)`);
+            log.info(`Architect: Placed Hub Container at ${hubPos.x},${hubPos.y}`);
             budget.count--;
+        }
+    }
+
+    /**
+     * Destroy the Hub Container once the Hub Link is built (RCL 5+).
+     * The container at hubPos becomes redundant when the link takes its place.
+     */
+    private cleanupHubContainer(): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        const anchor = this.colony.memory.anchor;
+        if (!anchor) return;
+
+        const hubCoord = BunkerLayout.hubPos;
+        const hubPos = new RoomPosition(anchor.x + hubCoord.x, anchor.y + hubCoord.y, room.name);
+
+        // Only cleanup if the link is actually built
+        const hasLink = hubPos.lookFor(LOOK_STRUCTURES)
+            .some(s => s.structureType === STRUCTURE_LINK);
+        if (!hasLink) return;
+
+        const containers = hubPos.lookFor(LOOK_STRUCTURES)
+            .filter(s => s.structureType === STRUCTURE_CONTAINER) as StructureContainer[];
+        for (const c of containers) {
+            log.info(`Architect: Destroying Hub Container at ${c.pos.x},${c.pos.y} (Link built)`);
+            c.destroy();
         }
     }
 
@@ -579,6 +612,15 @@ export class ConstructionOverlord extends Overlord {
             }
         }
 
+        // Hub container is expected at hubPos for RCL 2-4
+        {
+            const hubCoord = BunkerLayout.hubPos;
+            const hubAbsPos = BunkerLayout.getPos(anchor, hubCoord);
+            const hubKey = `${hubAbsPos.x},${hubAbsPos.y}`;
+            if (!expectedAt.has(hubKey)) expectedAt.set(hubKey, new Set());
+            expectedAt.get(hubKey)!.add(STRUCTURE_CONTAINER);
+        }
+
         // Scan all structures in the room
         for (const s of room.find(FIND_STRUCTURES)) {
             // Skip structures we don't manage
@@ -613,5 +655,47 @@ export class ConstructionOverlord extends Overlord {
         if (obsoleteIds.length > 0) {
             log.info(`Blueprint sweep: ${obsoleteIds.length} obsolete structure(s) flagged for dismantling`);
         }
+    }
+
+    // ========================================================================
+    // Min-Cut Rampart Computation — cached in colony memory
+    // ========================================================================
+
+    /**
+     * Compute the min-cut rampart positions using Edmonds-Karp.
+     * Result is cached in colony memory and only recomputed on RCL change.
+     * Updates BunkerLayout.structures[STRUCTURE_RAMPART] with the result,
+     * keeping core protection ramparts and adding the perimeter cut.
+     */
+    private computeMinCutRamparts(anchor: RoomPosition): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        // Collect all protected positions (absolute coordinates)
+        const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
+        const protectedPositions: Array<{ x: number; y: number }> = [];
+
+        for (const [typeStr, positions] of Object.entries(layoutStructures)) {
+            if (typeStr === STRUCTURE_RAMPART || typeStr === STRUCTURE_ROAD) continue;
+            for (const rel of positions as Array<{ x: number; y: number }>) {
+                const pos = BunkerLayout.getPos(anchor, rel);
+                protectedPositions.push({ x: pos.x, y: pos.y });
+            }
+        }
+
+        // Add center standing tile
+        const centerPos = BunkerLayout.getPos(anchor, BunkerLayout.centerTile);
+        protectedPositions.push({ x: centerPos.x, y: centerPos.y });
+
+        const result = minCutRamparts(this.colony.name, protectedPositions, 3);
+
+        // Cache as relative coordinates in colony memory
+        const relativeRamparts = result.ramparts.map(r => ({
+            x: r.x - anchor.x,
+            y: r.y - anchor.y
+        }));
+
+        (this.colony.memory as any).minCutRamparts = relativeRamparts;
+        log.info(`Min-Cut: Computed ${relativeRamparts.length} rampart positions`);
     }
 }

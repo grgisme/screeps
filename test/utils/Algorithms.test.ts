@@ -1,6 +1,6 @@
 import "../mock.setup";
 import { expect } from "chai";
-import { distanceTransform, stableMatch, MatchProposer, MatchReceiver } from "../../src/utils/Algorithms";
+import { distanceTransform, floodFill, stableMatch, MatchProposer, MatchReceiver } from "../../src/utils/Algorithms";
 
 describe("Algorithms", () => {
     beforeEach(() => {
@@ -145,6 +145,38 @@ describe("Algorithms", () => {
 
             const result = stableMatch(proposers, receivers);
             expect(result.has("p1")).to.be.false;
+        });
+    });
+
+    describe("floodFill", () => {
+        it("should set origin tiles to distance 0", () => {
+            const origins = [{ x: 25, y: 25 }];
+            const cm = floodFill("W1N1", origins);
+            expect(cm.get(25, 25)).to.equal(0);
+        });
+
+        it("should calculate correct Chebyshev distances", () => {
+            const origins = [{ x: 25, y: 25 }];
+            const cm = floodFill("W1N1", origins);
+            // Adjacent tiles = distance 1
+            expect(cm.get(24, 25)).to.equal(1);
+            expect(cm.get(26, 26)).to.equal(1); // diagonal
+            // Distance 2
+            expect(cm.get(23, 25)).to.equal(2);
+        });
+
+        it("should handle multiple origins", () => {
+            const origins = [{ x: 10, y: 10 }, { x: 40, y: 40 }];
+            const cm = floodFill("W1N1", origins);
+            expect(cm.get(10, 10)).to.equal(0);
+            expect(cm.get(40, 40)).to.equal(0);
+            expect(cm.get(11, 10)).to.equal(1);
+        });
+
+        it("should leave border tiles unreachable", () => {
+            const origins = [{ x: 25, y: 25 }];
+            const cm = floodFill("W1N1", origins);
+            expect(cm.get(0, 0)).to.equal(255);
         });
     });
 });

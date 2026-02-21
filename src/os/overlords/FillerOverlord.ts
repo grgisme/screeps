@@ -49,7 +49,8 @@ export class FillerOverlord extends Overlord {
         const anchor = this.colony.memory.anchor;
         if (!anchor) return null;
 
-        const hubPos = new RoomPosition(anchor.x, anchor.y - 1, room.name); // (0,-1) offset = Storage position
+        const hubCoord = BunkerLayout.hubPos;
+        const hubPos = new RoomPosition(anchor.x + hubCoord.x, anchor.y + hubCoord.y, room.name); // Hub position = BunkerLayout.hubPos
         const containers = hubPos.lookFor(LOOK_STRUCTURES)
             .filter(s => s.structureType === STRUCTURE_CONTAINER) as StructureContainer[];
 
