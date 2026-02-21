@@ -52,9 +52,6 @@ export class ConstructionOverlord extends Overlord {
 
         // 4. Place structures
         this.checkBunker(anchorPos, rcl, budget);
-        if (rcl >= 2 && budget.count > 0) {
-            this.checkRoads(anchorPos, rcl, budget);
-        }
 
         // 5. Controller Container (RCL 2+)
         if (rcl >= 2 && budget.count > 0) {
@@ -66,7 +63,12 @@ export class ConstructionOverlord extends Overlord {
             this.checkHatcheryContainer(budget);
         }
 
-        // 7. Hatchery Container Cleanup (RCL 4+ when Storage built)
+        // 7. Roads (RCL 2+ — after core infrastructure is placed)
+        if (rcl >= 2 && budget.count > 0) {
+            this.checkRoads(anchorPos, rcl, budget);
+        }
+
+        // 8. Hatchery Container Cleanup (RCL 4+ when Storage built)
         //    Destroy hatchery containers so they don't block BunkerLayout structures
         if (this.colony.room?.storage) {
             this.cleanupHatcheryContainer();
