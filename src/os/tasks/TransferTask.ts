@@ -76,7 +76,7 @@ export class TransferTask implements ITask {
             return false;
         } else {
             // ── DIAGNOSTIC LOG (remove after debugging) ──
-            if (Game.time % 5 === 0) {
+            if (Game.time % 5 === 0 && zerg.pos) {
                 console.log(`[DIAG:Transfer] ${zerg.name} NOT IN RANGE (range=${zerg.pos.getRangeTo(target)}) → travelTo. pos=${zerg.pos}`);
             }
             zerg.travelTo(target, this.settings.targetRange);

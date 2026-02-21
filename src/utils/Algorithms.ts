@@ -49,14 +49,23 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
         for (let y = 0; y < 50; y++) {
             for (let x = 0; x < 50; x++) {
                 const idx = x * 50 + y;
-                if (x === 0 || x === 49 || y === 0 || y === 49 ||
-                    terrain.get(x, y) === TERRAIN_MASK_WALL) {
+                if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) {
                     bits[idx] = 0;
                 } else {
                     bits[idx] = 255;
                 }
             }
         }
+    }
+
+    // Fix #4: Unconditionally mask room exits to 0 — even when an
+    // initialMatrix is provided. Without this, passing a blank CostMatrix
+    // skips exit masking and the planner can stamp structures on exits.
+    for (let i = 0; i < 50; i++) {
+        bits[i * 50] = 0; // Left   (x=i, y=0)  — column 0
+        bits[i * 50 + 49] = 0; // Right  (x=i, y=49) — column 49
+        bits[i] = 0; // Top    (x=0, y=i)  — row 0
+        bits[49 * 50 + i] = 0; // Bottom (x=49, y=i) — row 49
     }
 
     // --- 2. Forward Pass (Top-Left → Bottom-Right) ---
@@ -81,7 +90,9 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
             if (x < 49 && y > 0) min = Math.min(min, bits[idx + 49]);
 
             if (min < 255) {
-                bits[idx] = min + 1;
+                // Fix #3: Respect the cell's current value — don't overwrite
+                // a lower pre-seeded distance with a larger computed one.
+                bits[idx] = Math.min(val, min + 1);
             }
         }
     }
@@ -145,7 +156,7 @@ export function floodFill(
 
     for (const o of origins) {
         if (o.x < 1 || o.x > 48 || o.y < 1 || o.y > 48) continue;
-        if (terrain.get(o.x, o.y) === TERRAIN_MASK_WALL) continue;
+        if ((terrain.get(o.x, o.y) & TERRAIN_MASK_WALL) !== 0) continue;
         const idx = o.x * 50 + o.y;
         bits[idx] = 0;
         queue.push([o.x, o.y, 0]);
@@ -168,7 +179,7 @@ export function floodFill(
             const nx = cx + dx;
             const ny = cy + dy;
             if (nx < 1 || nx > 48 || ny < 1 || ny > 48) continue;
-            if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+            if ((terrain.get(nx, ny) & TERRAIN_MASK_WALL) !== 0) continue;
 
             const nIdx = nx * 50 + ny;
             if (bits[nIdx] <= nd) continue; // Already visited with shorter distance
@@ -241,7 +252,10 @@ export function minCutRamparts(
             for (let dx = -bufferSize; dx <= bufferSize; dx++) {
                 const nx = p.x + dx;
                 const ny = p.y + dy;
-                if (nx >= 1 && nx <= 48 && ny >= 1 && ny <= 48) {
+                // Fix #2: Clamp buffer to >= 2 to ensure at least a 1-tile
+                // gap between protected area and exits. Without this, a protected
+                // tile at x=1 adjacent to exit x=0 creates uncuttable INF paths.
+                if (nx >= 2 && nx <= 47 && ny >= 2 && ny <= 47) {
                     isProtected[tileIdx(nx, ny)] = 1;
                 }
             }
@@ -257,7 +271,7 @@ export function minCutRamparts(
 
     for (let x = 0; x < 50; x++) {
         for (let y = 0; y < 50; y++) {
-            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+            if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) continue;
 
             const tIdx = tileIdx(x, y);
             const isExit = (x === 0 || x === 49 || y === 0 || y === 49);
@@ -282,16 +296,21 @@ export function minCutRamparts(
                 const nx = x + dx;
                 const ny = y + dy;
                 if (nx < 0 || nx > 49 || ny < 0 || ny > 49) continue;
-                if (terrain.get(nx, ny) === TERRAIN_MASK_WALL) continue;
+                if ((terrain.get(nx, ny) & TERRAIN_MASK_WALL) !== 0) continue;
                 addEdge(outNode(x, y), inNode(nx, ny), INF);
             }
         }
     }
 
+    // Fix #5: Pre-allocate BFS arrays outside the function scope to avoid
+    // creating millions of array elements in a tight loop (V8 GC pressure).
+    const parent = new Int32Array(NODE_COUNT);
+    const parentEdge = new Int32Array(NODE_COUNT);
+
     // Edmonds-Karp: BFS augmenting paths
     function bfs(): number[] | null {
-        const parent = new Array<number>(NODE_COUNT).fill(-1);
-        const parentEdge = new Array<number>(NODE_COUNT).fill(-1);
+        parent.fill(-1);
+        parentEdge.fill(-1);
         parent[SOURCE] = SOURCE;
         const queue = [SOURCE];
         let head = 0;
@@ -365,7 +384,7 @@ export function minCutRamparts(
     const ramparts: Array<{ x: number; y: number }> = [];
     for (let x = 1; x < 49; x++) {
         for (let y = 1; y < 49; y++) {
-            if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+            if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) continue;
             if (isProtected[tileIdx(x, y)]) continue;
             const iN = inNode(x, y);
             const oN = outNode(x, y);
@@ -459,8 +478,10 @@ export function stableMatch(
         proposalIndex.set(pId, idx + 1);
 
         const receiver = receiverMap.get(rId);
-        if (!receiver) {
-            // Receiver doesn't exist — try next preference
+        if (!receiver || receiver.capacity <= 0) {
+            // Fix #1: Receiver doesn't exist or has no capacity — try next preference.
+            // Without this guard, capacity 0 causes slots[0] to be undefined,
+            // crashing the score() call with a TypeError.
             free.push(pId);
             continue;
         }

@@ -115,7 +115,7 @@ export class ColonizeDirective extends Directive {
                     const x = controller.pos.x + dx;
                     const y = controller.pos.y + dy;
                     if (x < 2 || x > 47 || y < 2 || y > 47) continue;
-                    if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+                    if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) continue;
 
                     // Check no structures at this position
                     const pos = new RoomPosition(x, y, room.name);

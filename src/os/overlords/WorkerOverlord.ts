@@ -250,7 +250,7 @@ export class WorkerOverlord extends Overlord {
                     const x = source.pos.x + dx;
                     const y = source.pos.y + dy;
                     if (x < 0 || x > 49 || y < 0 || y > 49) continue;
-                    if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
+                    if ((terrain.get(x, y) & TERRAIN_MASK_WALL) === 0) {
                         spots++;
                     }
                 }
