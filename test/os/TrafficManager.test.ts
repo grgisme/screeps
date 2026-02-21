@@ -1,9 +1,9 @@
 // ============================================================================
-// TrafficManager.test.ts — Unit tests for Movement Optimization
+// TrafficManager.test.ts — Unit tests for Bipartite Graph Traffic Resolution
 // ============================================================================
 
 import "../mock.setup";
-import { resetMocks } from "../mock.setup";
+import { resetMocks, MockRoom } from "../mock.setup";
 import { expect } from "chai";
 import { Zerg } from "../../src/os/zerg/Zerg";
 import { TrafficManager } from "../../src/os/infrastructure/TrafficManager";
@@ -15,20 +15,33 @@ describe("Movement Optimization", () => {
 
     beforeEach(() => {
         resetMocks();
+
+        // Create room with find() support
+        const room = new MockRoom("W1N1") as any;
+        room.controller = { owner: { username: "Player" }, my: true };
+        (globalThis as any).Game.rooms["W1N1"] = room;
+
         creep = new Creep("scout1" as Id<Creep>);
         creep.pos = new RoomPosition(10, 10, "W1N1");
-        // Ensure move method exists (MockCreep should have it, but just in case)
+        (creep as any).my = true;
+        (creep as any).fatigue = 0;
         creep.move = (() => OK) as any;
-
-        // Mock Room
-        const room = {
-            name: "W1N1",
-            controller: { owner: { username: "Player" }, my: true }
-        } as any;
         (creep as any).room = room;
 
         (globalThis as any).Game.creeps["scout1"] = creep;
         zerg = new Zerg(creep.name);
+
+        // Override room.find to return creeps from Game.creeps for this room
+        room.find = (type: number) => {
+            if (type === FIND_MY_CREEPS) {
+                return Object.values(Game.creeps).filter((c: any) => c.pos?.roomName === "W1N1");
+            }
+            if (type === FIND_CREEPS) {
+                return Object.values(Game.creeps).filter((c: any) => c.pos?.roomName === "W1N1");
+            }
+            if (type === FIND_STRUCTURES) return [];
+            return [];
+        };
     });
 
     describe("Zerg.travelTo (Path Caching)", () => {
@@ -40,7 +53,6 @@ describe("Movement Optimization", () => {
 
             expect(zerg._path).to.not.be.null;
             expect(zerg._path?.target).to.equal(target.toString());
-            // Step deferred — TTL stays at full path length on first call.
             expect(zerg._path?.ticksToLive).to.equal(zerg._path?.path.length);
         });
 
@@ -56,7 +68,7 @@ describe("Movement Optimization", () => {
             // Second call
             zerg.travelTo(target, 0);
             expect(zerg._path).to.equal(pathRef); // Should be same object
-            expect(zerg._path?.step).to.equal(1); // Step validated and advanced at start of 2nd call
+            expect(zerg._path?.step).to.equal(1);
         });
 
         it("should repath if stuck", () => {
@@ -71,19 +83,16 @@ describe("Movement Optimization", () => {
             zerg.travelTo(target, 0); // stuckCount = 2
             zerg.travelTo(target, 0); // stuckCount = 3, triggers repath
 
-            // After repath: stuckCount is NOT reset — it accumulates across
-            // repaths until deep-stuck fallback triggers at > 5.
             expect(zerg._stuckCount).to.equal(3);
             expect(zerg._path).to.not.be.null;
             expect(zerg._path).to.not.equal(initialPath);
         });
     });
 
-    describe("TrafficManager", () => {
-        it("should execute move intent", () => {
+    describe("TrafficManager (Bipartite Graph Matching)", () => {
+        it("should execute move intent via Gale-Shapley", () => {
             const target = new RoomPosition(11, 10, "W1N1");
 
-            // Mock move
             let moveDir: DirectionConstant | null = null;
             creep.move = ((target: DirectionConstant | Creep) => {
                 if (typeof target === "number") {
@@ -92,47 +101,70 @@ describe("Movement Optimization", () => {
                 return OK;
             }) as any;
 
-            zerg.travelTo(target, 0); // Registers intent
-
+            zerg.travelTo(target, 0);
             TrafficManager.run();
 
             expect(moveDir).to.equal(RIGHT);
         });
 
-        it("should shove idle blocker", () => {
-            // ... existing test content ...
-            // (Re-implementing the existing test to ensure context is correct, plus adding new ones)
-            // Actually, I'll just append the new tests after the existing one if I can match the end.
-            // The existing test ends at line 138.
+        it("should resolve traffic when no intents are registered", () => {
+            // Just run with no intents — should not crash
+            TrafficManager.run();
         });
 
-        it("should not shove if blocker is fatigued", () => {
-            const blocker = new Creep("blocker" as Id<Creep>);
-            blocker.pos = new RoomPosition(11, 10, "W1N1");
-            (blocker as any).owner = { username: "Player" };
-            (blocker as any).fatigue = 2; // Fatigued
-            (globalThis as any).Game.creeps["blocker"] = blocker;
+        it("should handle multiple creeps wanting different tiles", () => {
+            // Create a second creep
+            const creep2 = new Creep("hauler1" as Id<Creep>);
+            creep2.pos = new RoomPosition(12, 10, "W1N1");
+            (creep2 as any).my = true;
+            (creep2 as any).fatigue = 0;
+            creep2.move = (() => OK) as any;
+            (globalThis as any).Game.creeps["hauler1"] = creep2;
+            const zerg2 = new Zerg(creep2.name);
 
-            // Mock map terrain (all plain)
-            (Game.map as any).getRoomTerrain = () => ({
-                get: () => 0
-            });
+            let moveDir1: DirectionConstant | null = null;
+            let moveDir2: DirectionConstant | null = null;
+            creep.move = ((t: DirectionConstant | Creep) => {
+                if (typeof t === "number") moveDir1 = t;
+                return OK;
+            }) as any;
+            creep2.move = ((t: DirectionConstant | Creep) => {
+                if (typeof t === "number") moveDir2 = t;
+                return OK;
+            }) as any;
 
-            // Mover
-            const target = new RoomPosition(11, 10, "W1N1");
-            // Mock mover move
-            creep.move = (() => OK) as any;
-
-            zerg.travelTo(target, 0, 0); // Priority 0
+            // Both want different targets — no conflict
+            zerg.travelTo(new RoomPosition(11, 10, "W1N1"), 0);
+            zerg2.travelTo(new RoomPosition(13, 10, "W1N1"), 0);
             TrafficManager.run();
 
-            // Blocker should NOT have moved (no mock for move attached, would throw if called? or just we check result)
-            // Actually we need to spy on blocker.move.
-            let blockerMoved = false;
-            blocker.move = (() => { blockerMoved = true; return OK; }) as any;
+            expect(moveDir1).to.equal(RIGHT);  // scout1 moves right
+            expect(moveDir2).to.equal(RIGHT);  // hauler1 moves right
+        });
 
+        it("should not shove stationary miners", () => {
+            // Place a miner at the target
+            const miner = new Creep("miner1" as Id<Creep>);
+            miner.pos = new RoomPosition(11, 10, "W1N1");
+            (miner as any).my = true;
+            (miner as any).fatigue = 0;
+            miner.memory = { role: "miner" } as any;
+            miner.move = (() => OK) as any;
+            (globalThis as any).Game.creeps["miner1"] = miner;
+
+            // Track whether miner was told to move
+            let minerMoveDir: DirectionConstant | null = null;
+            miner.move = ((t: DirectionConstant | Creep) => {
+                if (typeof t === "number") minerMoveDir = t;
+                return OK;
+            }) as any;
+
+            zerg.travelTo(new RoomPosition(11, 10, "W1N1"), 0);
             TrafficManager.run();
-            expect(blockerMoved).to.be.false;
+
+            // Miner should not have been moved by graph matching
+            // (The tile's score function gives miners +10000 on their current tile)
+            expect(minerMoveDir).to.be.null;
         });
     });
 });

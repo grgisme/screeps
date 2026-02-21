@@ -1,11 +1,20 @@
 // ============================================================================
-// TrafficManager — Priority-based movement resolution
+// TrafficManager — Level 3 Bipartite Graph Matching (Gale-Shapley)
+// ============================================================================
+//
+// Instead of sequential priority queues and heuristic shoving, this hands
+// the entire room to Gale-Shapley stable matching. Every allied creep
+// proposes to tiles in preference order (target → current → adjacent).
+// Tiles accept the highest-priority proposer. The result is a globally
+// optimal 1:1 mapping of N creeps to M tiles, resolving swaps, cascading
+// shoves, and deadlocks in a single mathematical pass.
 // ============================================================================
 
 import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
 import { getPositionAtDirection } from "../../utils/RoomPosition";
 import { GlobalCache } from "../../kernel/GlobalCache";
+import { stableMatch, MatchProposer, MatchReceiver } from "../../utils/Algorithms";
 
 const log = new Logger("TrafficManager");
 
@@ -17,172 +26,176 @@ export interface MoveIntent {
 
 export class TrafficManager {
     private static intents: MoveIntent[] = [];
-    private static movesThisTick = 0;
-    private static shovesThisTick = 0;
 
     static register(zerg: Zerg, direction: DirectionConstant, priority: number): void {
         this.intents.push({ zerg, direction, priority });
     }
 
-    /**
-     * Build a per-tick creep occupancy map for a room.
-     * Returns a Uint8Array[2500] where 1 = tile has a creep.
-     * Cached per-tick via GlobalCache to avoid redundant find() calls.
-     */
-    private static getOccupancy(roomName: string): Uint8Array {
-        const key = `occupancy:${roomName}`;
-        let cached = GlobalCache.get<{ tick: number, map: Uint8Array }>(key);
-        if (cached && cached.tick === Game.time) return cached.map;
-
-        const occ = new Uint8Array(2500);
-        const room = Game.rooms[roomName];
-        if (room) {
-            const creeps = room.find(FIND_CREEPS);
-            for (const c of creeps) {
-                occ[c.pos.x * 50 + c.pos.y] = 1;
-            }
-        }
-        cached = { tick: Game.time, map: occ };
-        GlobalCache.set(key, cached);
-        return occ;
-    }
-
     static run(): void {
         try {
-            this.intents.sort((a, b) => a.priority - b.priority);
+            // Traffic is inherently localized per-room. Group intents.
+            const intentsByRoom = new Map<string, MoveIntent[]>();
+            const activeRooms = new Set<string>();
 
             for (const intent of this.intents) {
-                if ((intent.direction as number) === 0) continue;
-
-                const zerg = intent.zerg;
-                if (!zerg.pos) continue;
-
-                const targetPos = getPositionAtDirection(zerg.pos, intent.direction);
-
-                if (!targetPos) {
-                    // Border transition
-                    zerg.creep!.move(intent.direction);
-                    this.movesThisTick++;
-                    continue;
-                }
-
-                const creepsAtTarget = targetPos.lookFor(LOOK_CREEPS);
-                const blocker = creepsAtTarget.length > 0 ? creepsAtTarget[0] : null;
-
-                if (blocker && blocker.my) {
-                    const blockerIntentIndex = this.intents.findIndex(i => i.zerg.name === blocker.name && (i.direction as number) !== 0);
-                    const blockerIntent = blockerIntentIndex > -1 ? this.intents[blockerIntentIndex] : null;
-
-                    if (!blockerIntent) {
-                        // Blocker is stationary — shove it out of the way
-                        const shoved = this.shove(blocker, zerg);
-                        if (shoved) this.shovesThisTick++;
-                    } else if (intent.priority < blockerIntent.priority) {
-                        // Only force swap on true head-to-head deadlocks
-                        const isHeadToHead = blockerIntent.direction === blocker.pos.getDirectionTo(zerg.pos);
-
-                        if (isHeadToHead) {
-                            const swapDir = blocker.pos.getDirectionTo(zerg.pos);
-                            blocker.move(swapDir);
-                            blocker.say("🔄");
-                            this.shovesThisTick++;
-                            this.intents[blockerIntentIndex].direction = 0 as DirectionConstant;
-                        }
-                    }
-                }
-
-                zerg.creep!.move(intent.direction);
-                this.movesThisTick++;
+                if (!intent.zerg.pos || (intent.direction as number) === 0) continue;
+                const rn = intent.zerg.pos.roomName;
+                if (!intentsByRoom.has(rn)) intentsByRoom.set(rn, []);
+                intentsByRoom.get(rn)!.push(intent);
+                activeRooms.add(rn);
             }
 
-            if (this.shovesThisTick > 0 && Game.time % 5 === 0) {
-                log.debug(`Traffic: ${this.movesThisTick} moves, ${this.shovesThisTick} shoves/swaps.`);
+            for (const roomName of activeRooms) {
+                this.resolveBipartiteTraffic(roomName, intentsByRoom.get(roomName) || []);
             }
         } finally {
             this.intents = [];
-            this.movesThisTick = 0;
-            this.shovesThisTick = 0;
         }
     }
 
-    // ── Recursive Shoving with Cycle Detection ──
-    private static shove(creep: Creep, initiator: Zerg, depth = 0, locked = new Set<string>()): boolean {
-        if (depth > 3) return false; // Max recursion depth to protect CPU
-        if (locked.has(creep.name)) return false; // Prevent circular pushing loops
-        locked.add(creep.name);
+    private static resolveBipartiteTraffic(roomName: string, roomIntents: MoveIntent[]): void {
+        const room = Game.rooms[roomName];
+        if (!room) return;
 
-        if ((creep.memory as any).role === "miner") return false;
+        // ── GRAPH SETUP ──
+        // Include ALL allied creeps — even idle ones — so they can be
+        // mathematically relocated when blocking active movers.
+        const myCreeps = room.find(FIND_MY_CREEPS);
+        if (myCreeps.length === 0) return;
 
-        // Protect stationary workers AND active train pullers
-        const taskName = (creep.memory as any).task?.name;
-        if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull") {
-            return false;
-        }
+        const staticKey = `matrix_static:${roomName}`;
+        const staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix }>(staticKey);
+        const matrix = staticCached ? staticCached.matrix : new PathFinder.CostMatrix();
+        const terrain = Game.map.getRoomTerrain(roomName);
 
-        // ── Pull Mechanic: bypass fatigue by pulling ──
-        if (creep.fatigue > 0) {
-            if (initiator.creep && initiator.pos) {
-                initiator.creep.pull(creep);
-                creep.move(initiator.creep);
-                creep.say("🔄");
-                return true;
+        const proposers: MatchProposer[] = [];
+        const receiversMap = new Map<string, MatchReceiver>();
+        const tileMap = new Map<string, RoomPosition>();
+
+        // Map intents for O(1) lookup
+        const intentMap = new Map<string, MoveIntent>();
+        for (const i of roomIntents) intentMap.set(i.zerg.name, i);
+
+        // Helper: Register a tile as a Receiver
+        const addReceiver = (pos: RoomPosition): string => {
+            const id = `${pos.x},${pos.y}`;
+            if (!receiversMap.has(id)) {
+                receiversMap.set(id, {
+                    id: id,
+                    capacity: 1, // Only 1 creep per tile permitted
+                    score: (proposerId: string) => {
+                        const creep = Game.creeps[proposerId];
+                        const intent = intentMap.get(proposerId);
+                        let score = intent ? intent.priority : 0;
+
+                        // Massive priority boost for immovable creeps on their CURRENT tile
+                        if (creep && creep.pos.x === pos.x && creep.pos.y === pos.y) {
+                            const taskName = (creep.memory as any).task?.name;
+                            if (creep.fatigue > 0 || taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
+                                (creep.memory as any).role === "miner") {
+                                score += 10000;
+                            } else {
+                                // Tie-breaker: Creeps naturally resist being shoved
+                                score += 0.1;
+                            }
+                        }
+                        return score;
+                    }
+                });
+                tileMap.set(id, pos);
             }
-            return false;
-        }
+            return id;
+        };
 
-        const directions: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
-        for (let i = directions.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [directions[i], directions[j]] = [directions[j], directions[i]];
-        }
+        const DIRS: DirectionConstant[] = [TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT];
 
-        const occupancy = this.getOccupancy(creep.pos.roomName);
-        const terrain = Game.map.getRoomTerrain(creep.pos.roomName);
-        const matrixKey = `matrix_static:${creep.pos.roomName}`;
-        const matrixCached = GlobalCache.get<{ tick: number, matrix: CostMatrix }>(matrixKey);
+        // ── 1. BUILD PROPOSERS & PREFERENCES ──
+        for (const creep of myCreeps) {
+            const intent = intentMap.get(creep.name);
+            const currentPos = creep.pos;
+            const prefs: string[] = [];
 
-        for (const dir of directions) {
-            const pos = getPositionAtDirection(creep.pos, dir);
-            if (!pos) continue;
-
-            // Prevent Exit Bouncing
-            if (pos.x === 0 || pos.x === 49 || pos.y === 0 || pos.y === 49) continue;
-
-            // Wall check (terrain)
-            if ((terrain.get(pos.x, pos.y) & TERRAIN_MASK_WALL) !== 0) continue;
-
-            // Structure obstacle check via CostMatrix
-            if (matrixCached && matrixCached.matrix.get(pos.x, pos.y) === 255) continue;
-
-            // Creep occupancy check — recursively shove if occupied
-            if (occupancy[pos.x * 50 + pos.y] !== 0) {
-                const blockers = pos.lookFor(LOOK_CREEPS);
-                if (blockers.length > 0 && blockers[0].my) {
-                    const chainShoved = this.shove(blockers[0], initiator, depth + 1, locked);
-                    if (!chainShoved) continue;
-                } else {
-                    continue; // Enemy creep or empty (stale occupancy)
+            // Preference 1: The desired target tile
+            if (intent && (intent.direction as number) !== 0) {
+                const targetPos = getPositionAtDirection(currentPos, intent.direction);
+                if (targetPos && targetPos.roomName === roomName) {
+                    prefs.push(addReceiver(targetPos));
                 }
             }
 
-            // Tile is empty (or was just vacated by recursive shove)
-            // Update occupancy so the chain sees the new state
-            occupancy[creep.pos.x * 50 + creep.pos.y] = 0;
-            occupancy[pos.x * 50 + pos.y] = 1;
+            // Preference 2: The current tile (yield / stay still)
+            prefs.push(addReceiver(currentPos));
 
-            creep.move(dir);
-            creep.say(depth > 0 ? "⛓️" : "🚶");
-            return true;
+            // Preference 3-N: Adjacent tiles (allow self to be shoved)
+            // Shuffle so shoves don't constantly bias toward TOP
+            const shuffledDirs = [...DIRS].sort(() => Math.random() - 0.5);
+            for (const dir of shuffledDirs) {
+                const adjPos = getPositionAtDirection(currentPos, dir);
+                if (!adjPos || adjPos.roomName !== roomName) continue;
+
+                // Reject exits, walls, and impassable structures
+                if (adjPos.x === 0 || adjPos.x === 49 || adjPos.y === 0 || adjPos.y === 49) continue;
+                if ((terrain.get(adjPos.x, adjPos.y) & TERRAIN_MASK_WALL) !== 0) continue;
+                if (matrix.get(adjPos.x, adjPos.y) >= 255) continue;
+
+                prefs.push(addReceiver(adjPos));
+            }
+
+            proposers.push({ id: creep.name, preferences: prefs });
         }
 
-        // Swap Fallback
-        if (initiator.pos) {
-            const swapDir = creep.pos.getDirectionTo(initiator.pos);
-            creep.move(swapDir);
-            creep.say("🔄");
-            return true;
+        // ── 2. EXECUTE GALE-SHAPLEY STABLE MATCHING ──
+        const receivers = Array.from(receiversMap.values());
+        const matches = stableMatch(proposers, receivers);
+
+        // ── 3. TRANSLATE MATHEMATICAL MATCHES INTO NATIVE MOVES ──
+        let movesThisTick = 0;
+        let shovesThisTick = 0;
+
+        for (const creep of myCreeps) {
+            const matchedTileId = matches.get(creep.name);
+            if (!matchedTileId) continue;
+
+            const matchedPos = tileMap.get(matchedTileId)!;
+
+            // The algorithm decided this creep should stay still
+            if (matchedPos.isEqualTo(creep.pos)) continue;
+
+            const moveDir = creep.pos.getDirectionTo(matchedPos);
+
+            // ── Native Engine Swap & Pull detection ──
+            const creepsAtTarget = matchedPos.lookFor(LOOK_CREEPS);
+            const blocker = creepsAtTarget.length > 0 ? creepsAtTarget[0] : null;
+
+            if (blocker && blocker.my) {
+                const blockerAssignedTile = matches.get(blocker.name);
+                const myCurrentTile = `${creep.pos.x},${creep.pos.y}`;
+
+                // If the blocker is mathematically moving to OUR tile, it's a mutual swap
+                if (blockerAssignedTile === myCurrentTile) {
+                    if (blocker.fatigue > 0) {
+                        // Fatigued blockers CAN move if pulled
+                        creep.pull(blocker);
+                        blocker.move(creep);
+                        creep.say("🔗");
+                        continue;
+                    }
+                }
+            }
+
+            creep.move(moveDir);
+
+            // Was it a normal move, or a mathematical shove?
+            if (intentMap.has(creep.name) && intentMap.get(creep.name)!.direction === moveDir) {
+                movesThisTick++;
+            } else {
+                creep.say("🔀");
+                shovesThisTick++;
+            }
         }
 
-        return false;
+        if ((movesThisTick > 0 || shovesThisTick > 0) && Game.time % 5 === 0) {
+            log.debug(`[${roomName}] Bipartite: ${movesThisTick} moved, ${shovesThisTick} shoved.`);
+        }
     }
 }
