@@ -416,11 +416,24 @@ export class Zerg {
                 this._path.step >= this._path.path.length) {
 
                 this._path = null;
-                this._stuckCount = 0;
+                // Don't reset _stuckCount here — we need it for the
+                // deep-stuck fallback below.
             } else if (currentPos.getRangeTo(targetPos) <= range) {
                 this._path = null;
                 return;
             }
+        }
+
+        // ── Deep-Stuck Fallback ──
+        // If stuck > 5 ticks, our cached path keeps deadlocking against
+        // other creeps converging on the same bottleneck. Fall back to
+        // the native moveTo() which does single-step per-tick pathfinding
+        // and handles circular collision resolution better.
+        if (this._stuckCount > 5) {
+            this._path = null;
+            this._stuckCount = 0;
+            creep.moveTo(targetPos, { range, reusePath: 0 });
+            return;
         }
 
         if (currentPos.inRangeTo(targetPos, range)) return;

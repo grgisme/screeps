@@ -69,10 +69,11 @@ describe("Movement Optimization", () => {
             // Stuck for 3 ticks (position doesn't change)
             zerg.travelTo(target, 0); // stuckCount = 1
             zerg.travelTo(target, 0); // stuckCount = 2
-            zerg.travelTo(target, 0); // stuckCount = 3, triggers repath + resets to 0
+            zerg.travelTo(target, 0); // stuckCount = 3, triggers repath
 
-            // After repath: stuckCount is reset, path is regenerated (new object)
-            expect(zerg._stuckCount).to.equal(0);
+            // After repath: stuckCount is NOT reset — it accumulates across
+            // repaths until deep-stuck fallback triggers at > 5.
+            expect(zerg._stuckCount).to.equal(3);
             expect(zerg._path).to.not.be.null;
             expect(zerg._path).to.not.equal(initialPath);
         });
