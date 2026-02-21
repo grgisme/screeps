@@ -18,6 +18,7 @@ import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { DismantleTask } from "../tasks/DismantleTask";
+import { getParkingZones, pickParkingZone } from "../../utils/ParkingZones";
 
 
 
@@ -210,30 +211,33 @@ export class WorkerOverlord extends Overlord {
                 if (!hasUpgraders && controller) {
                     worker.setTask(new UpgradeTask(controller.id));
                 } else {
-                    // Fix: Flee spawn rather than crowding it.
-                    // Targeting spawn with range 4 funnels all idle workers into
-                    // the most congested tile. Instead, aim for Storage or flee
-                    // outward if still too close to spawn.
-                    const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                    const storage = this.colony.room?.storage;
-                    if (storage) {
-                        // Idle near storage — haulers and workers share the hub naturally
-                        if (worker.pos && worker.pos.getRangeTo(storage) > 3) {
+                    // Fix 1 + 4: DT-based parking — idle workers park in spacious
+                    // dead-end tiles outside the BunkerLayout footprint, picked
+                    // randomly from the 3 nearest to prevent clumping.
+                    const room = this.colony.room;
+                    const anchor = (this.colony.memory as any).anchor as { x: number; y: number } | undefined;
+                    if (room && anchor && worker.pos) {
+                        const zones = getParkingZones(room, anchor.x, anchor.y);
+                        const target = pickParkingZone(worker.pos, zones);
+                        if (target) worker.travelTo(target, 0);
+                    } else if (room && worker.pos) {
+                        // Bootstrap fallback — no anchor yet
+                        const spawn = room.find(FIND_MY_SPAWNS)?.[0];
+                        const storage = room.storage;
+                        if (storage && worker.pos.getRangeTo(storage) > 3) {
                             worker.travelTo(storage, 3);
+                        } else if (spawn) {
+                            const range = worker.pos.getRangeTo(spawn);
+                            if (range <= 4) {
+                                const dx = worker.pos.x - spawn.pos.x;
+                                const dy = worker.pos.y - spawn.pos.y;
+                                const mx = dx === 0 ? 1 : Math.sign(dx);
+                                const my = dy === 0 ? 1 : Math.sign(dy);
+                                const tx = Math.min(48, Math.max(1, worker.pos.x + mx * 5));
+                                const ty = Math.min(48, Math.max(1, worker.pos.y + my * 5));
+                                worker.travelTo(new RoomPosition(tx, ty, spawn.pos.roomName), 1);
+                            }
                         }
-                    } else if (spawn && worker.pos) {
-                        const range = worker.pos.getRangeTo(spawn);
-                        if (range <= 4) {
-                            // Too close — flee outward (same math as transporter failsafe)
-                            const dx = worker.pos.x - spawn.pos.x;
-                            const dy = worker.pos.y - spawn.pos.y;
-                            const mx = dx === 0 ? 1 : Math.sign(dx);
-                            const my = dy === 0 ? 1 : Math.sign(dy);
-                            const tx = Math.min(48, Math.max(1, worker.pos.x + mx * 5));
-                            const ty = Math.min(48, Math.max(1, worker.pos.y + my * 5));
-                            worker.travelTo(new RoomPosition(tx, ty, spawn.pos.roomName), 1);
-                        }
-                        // If already far enough, hold position — no travelTo needed
                     }
                 }
             }

@@ -103,9 +103,13 @@ export class FillerOverlord extends Overlord {
             if (!filler.isAlive()) continue;
             if (filler.task) continue;
 
-            // ── Step 1: Navigate to standing tile (only until positioned) ──
+            // ── Step 1: Navigate to standing tile (only for MOVE-capable bodies) ──
+            // 0-MOVE fillers (RCL 4+) can't navigate — skip this and work from
+            // wherever the spawn ejected them. They'll still be within range 1
+            // of the hub and filler-ring extensions in a correctly placed bunker.
+            const hasMoveBody = filler.creep?.body.some(p => p.type === MOVE) ?? true;
             const standingTile = this.getStandingTile(i);
-            if (standingTile && filler.pos && !filler.pos.isEqualTo(standingTile)) {
+            if (hasMoveBody && standingTile && filler.pos && !filler.pos.isEqualTo(standingTile)) {
                 filler.travelTo(standingTile, 0);
                 continue;
             }
@@ -176,8 +180,19 @@ export class FillerOverlord extends Overlord {
 
         if (activeFillers >= maxFillers) return;
 
-        // Body: [CARRY, CARRY, MOVE] — MOVE only for initial positioning
-        const template: BodyPartConstant[] = [CARRY, CARRY, MOVE];
+        // Body selection:
+        //   RCL 4+ with Storage → [CARRY×4] zero-MOVE stationary manager.
+        //     Spawns directly into the bunker core (all eject tiles are within
+        //     range 1 of the hub + filler-ring extensions). Pure withdraw/transfer
+        //     loop — zero pathfinding CPU for the lifetime of the creep.
+        //   RCL 2-3 or no Storage → [CARRY, CARRY, MOVE] — needs MOVE to reach
+        //     the standing tile which may be far from the early spawn location.
+        const hasStorage = !!room.storage;
+        const useStationary = hasStorage && rcl >= 4; // rcl already declared above
+
+        const template: BodyPartConstant[] = useStationary
+            ? [CARRY, CARRY, CARRY, CARRY]   // 0-MOVE: ~200e, 4× carry throughput
+            : [CARRY, CARRY, MOVE];           // Mobile: navigates to standing tile
 
         this.colony.hatchery.enqueue({
             priority: 85,

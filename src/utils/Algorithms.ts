@@ -34,26 +34,24 @@
  */
 export function distanceTransform(roomName: string, initialMatrix?: CostMatrix): CostMatrix {
     const terrain = Game.map.getRoomTerrain(roomName);
-    const cm = initialMatrix || new PathFinder.CostMatrix();
 
-    // Direct access to the internal Uint8Array — bypasses bounds checking.
-    // In Screeps, CostMatrix stores values in a 2500-element Uint8Array
-    // indexed by (x * 50 + y).
+    // Always allocate a fresh output matrix — we must NOT mutate the caller's
+    // initialMatrix (it could be a cached static CostMatrix shared by the whole room).
+    const cm = new PathFinder.CostMatrix();
     const bits = (cm as any)._bits as Uint8Array;
 
     // --- 1. Initialization ---
-    // Fast-fill walkable space to 255 if no custom matrix provided.
-    if (!initialMatrix) {
-        bits.fill(255);
-    }
+    // Start all tiles at 255 (maximum possible distance from any wall).
+    bits.fill(255);
 
-    // Always enforce terrain walls — even on custom matrices.
-    // Without this, passing an initialMatrix skips wall mapping and
-    // the algorithm calculates distances through solid rock.
+    // Enforce terrain walls.
     for (let x = 0; x < 50; x++) {
         for (let y = 0; y < 50; y++) {
+            const idx = x * 50 + y;
             if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) {
-                bits[x * 50 + y] = 0;
+                bits[idx] = 0; // Hard terrain wall
+            } else if (initialMatrix && initialMatrix.get(x, y) >= 255) {
+                bits[idx] = 0; // Structure obstacle — treat as wall for DT purposes
             }
         }
     }
@@ -61,10 +59,10 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
     // Unconditionally mask room exits to 0 — prevents the planner
     // from stamping structures on exits. (idx = x * 50 + y)
     for (let i = 0; i < 50; i++) {
-        bits[i * 50] = 0; // Top row    (y=0, varying x)
-        bits[i * 50 + 49] = 0; // Bottom row (y=49, varying x)
-        bits[i] = 0; // Left col   (x=0, varying y)
-        bits[49 * 50 + i] = 0; // Right col  (x=49, varying y)
+        bits[i * 50] = 0;       // Top row    (y=0, varying x)
+        bits[i * 50 + 49] = 0;  // Bottom row (y=49, varying x)
+        bits[i] = 0;             // Left col   (x=0, varying y)
+        bits[49 * 50 + i] = 0;  // Right col  (x=49, varying y)
     }
 
     // --- 2. Forward Pass (Top-Left → Bottom-Right) ---

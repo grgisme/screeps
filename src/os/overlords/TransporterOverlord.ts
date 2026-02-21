@@ -10,6 +10,7 @@ import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
+import { getParkingZones, pickParkingZone } from "../../utils/ParkingZones";
 
 const log = new Logger("TransporterOverlord");
 
@@ -105,19 +106,28 @@ export class TransporterOverlord extends Overlord {
             // Has a persisted task in memory (will be deserialized by zerg.run())? Skip.
             if ((nativeCreep.memory as any).task) continue;
 
-            const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-            if (spawn && transporter.pos) {
-                const range = transporter.pos.getRangeTo(spawn);
-                if (range <= 4) {
-                    const dx = transporter.pos.x - spawn.pos.x;
-                    const dy = transporter.pos.y - spawn.pos.y;
-                    // Math.sign(0) === 0, which would anchor the target to the creep.
-                    // Default to +1 so there is always a real escape direction.
-                    const mx = dx === 0 ? 1 : Math.sign(dx);
-                    const my = dy === 0 ? 1 : Math.sign(dy);
-                    const targetX = Math.min(49, Math.max(1, transporter.pos.x + mx * 5));
-                    const targetY = Math.min(49, Math.max(1, transporter.pos.y + my * 5));
-                    transporter.travelTo(new RoomPosition(targetX, targetY, spawn.pos.roomName), 1);
+            const room = this.colony.room;
+            if (room && transporter.pos) {
+                const anchor = (this.colony.memory as any).anchor as { x: number; y: number } | undefined;
+                if (anchor) {
+                    // DT-based parking: pick a spacious dead-end outside the bunker.
+                    // Random top-3 selection prevents all idle transporters clumping
+                    // onto the single nearest tile.
+                    const zones = getParkingZones(room, anchor.x, anchor.y);
+                    const target = pickParkingZone(transporter.pos, zones);
+                    if (target) transporter.travelTo(target, 0);
+                } else {
+                    // Bootstrap fallback (no anchor yet): flee spawn outward
+                    const spawn = room.find(FIND_MY_SPAWNS)?.[0];
+                    if (spawn) {
+                        const dx = transporter.pos.x - spawn.pos.x;
+                        const dy = transporter.pos.y - spawn.pos.y;
+                        const mx = dx === 0 ? 1 : Math.sign(dx);
+                        const my = dy === 0 ? 1 : Math.sign(dy);
+                        const tx = Math.min(49, Math.max(1, transporter.pos.x + mx * 5));
+                        const ty = Math.min(49, Math.max(1, transporter.pos.y + my * 5));
+                        transporter.travelTo(new RoomPosition(tx, ty, spawn.pos.roomName), 1);
+                    }
                 }
             }
         }
