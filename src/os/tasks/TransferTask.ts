@@ -75,15 +75,11 @@ export class TransferTask implements ITask {
             if (result === OK) return true;
             return false;
         } else {
-            // ── DIAGNOSTIC: Bypass travelTo, use raw moveTo to test movement ──
+            // ── DIAGNOSTIC LOG (remove after debugging) ──
             if (Game.time % 5 === 0 && zerg.pos) {
-                console.log(`[DIAG:Transfer] ${zerg.name} NOT IN RANGE (range=${zerg.pos.getRangeTo(target)}) → moveTo DIRECT. pos=${zerg.pos}`);
+                console.log(`[DIAG:Transfer] ${zerg.name} NOT IN RANGE (range=${zerg.pos.getRangeTo(target)}) → travelTo. pos=${zerg.pos}`);
             }
-            const moveResult = zerg.creep?.moveTo(target);
-            if (Game.time % 5 === 0) {
-                console.log(`[DIAG:Transfer] ${zerg.name} moveTo result=${moveResult}`);
-            }
-            // zerg.travelTo(target, this.settings.targetRange);  // BYPASSED for debugging
+            zerg.travelTo(target, this.settings.targetRange);
             return false;
         }
     }
