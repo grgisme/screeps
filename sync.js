@@ -19,6 +19,11 @@ const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 
 const versionParts = pkg.version.split('.').map(Number);
 versionParts[1]++; // Bump minor
+// Fingers-and-toes rule: minor wraps at 20, major increments
+if (versionParts[1] >= 20) {
+    versionParts[0]++;
+    versionParts[1] = 0;
+}
 const newVersion = versionParts.join('.');
 pkg.version = newVersion;
 
