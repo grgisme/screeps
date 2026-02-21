@@ -84,22 +84,30 @@ export class TransporterOverlord extends Overlord {
                 transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
             } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
                 (transporter.memory as any).collecting = true;
-            } else {
-                // Full but nowhere to deliver — clear the area around spawn
-                // to prevent traffic jams blocking active haulers.
-                const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                if (spawn && transporter.pos) {
-                    const range = transporter.pos.getRangeTo(spawn);
-                    if (range <= 4) {
-                        // Too close to spawn — actively move away to clear paths
-                        // Find a direction AWAY from spawn
-                        const dx = transporter.pos.x - spawn.pos.x;
-                        const dy = transporter.pos.y - spawn.pos.y;
-                        const targetX = Math.min(49, Math.max(1, transporter.pos.x + Math.sign(dx) * 5));
-                        const targetY = Math.min(49, Math.max(1, transporter.pos.y + Math.sign(dy) * 5));
-                        transporter.travelTo(new RoomPosition(targetX, targetY, spawn.pos.roomName), 1);
-                    }
-                    // If far enough away (range > 4), just idle
+            }
+            // Empty + no transfer target: falls through to the failsafe below.
+        }
+
+        // ── Failsafe idle dispatch ──
+        // Catches any transporter that finished all its work this tick but received
+        // no new task (e.g. completely emptied into extensions with nothing left to
+        // withdraw). Without this they park next to the spawn and block all traffic.
+        for (const transporter of this.transporters) {
+            if (!transporter.isAlive() || transporter.task) continue;
+
+            const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
+            if (spawn && transporter.pos) {
+                const range = transporter.pos.getRangeTo(spawn);
+                if (range <= 4) {
+                    const dx = transporter.pos.x - spawn.pos.x;
+                    const dy = transporter.pos.y - spawn.pos.y;
+                    // Math.sign(0) === 0, which would anchor the target to the creep.
+                    // Default to +1 so there is always a real escape direction.
+                    const mx = dx === 0 ? 1 : Math.sign(dx);
+                    const my = dy === 0 ? 1 : Math.sign(dy);
+                    const targetX = Math.min(49, Math.max(1, transporter.pos.x + mx * 5));
+                    const targetY = Math.min(49, Math.max(1, transporter.pos.y + my * 5));
+                    transporter.travelTo(new RoomPosition(targetX, targetY, spawn.pos.roomName), 1);
                 }
             }
         }

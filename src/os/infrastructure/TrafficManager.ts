@@ -79,13 +79,15 @@ export class TrafficManager {
                     (s.structureType === STRUCTURE_RAMPART && !s.my)) {
                     matrix.set(s.pos.x, s.pos.y, 255);
                 } else if (s.structureType === STRUCTURE_ROAD) {
-                    // FIX 5: Sync roads so Zerg.ts inherits a road-aware matrix.
-                    // Without this, every matrix rebuild wiped all roads from the cache.
                     if (matrix.get(s.pos.x, s.pos.y) !== 255) {
                         matrix.set(s.pos.x, s.pos.y, 1);
                     }
                 }
             });
+            // FIX 2: Sync Sources/Minerals as solid rock (mirrors Zerg.ts static cache).
+            room.find(FIND_SOURCES).forEach((s: Source) => matrix.set(s.pos.x, s.pos.y, 255));
+            room.find(FIND_MINERALS).forEach((m: Mineral) => matrix.set(m.pos.x, m.pos.y, 255));
+
             GlobalCache.set(staticKey, { tick: Game.time, matrix, count: structCount });
         }
         const terrain = Game.map.getRoomTerrain(roomName);
@@ -193,7 +195,13 @@ export class TrafficManager {
             if (intent && (intent.direction as number) !== 0) {
                 const targetPos = getPositionAtDirection(currentPos, intent.direction);
                 if (targetPos && targetPos.roomName === roomName) {
-                    prefs.push(addReceiver(targetPos));
+                    // FIX 3: Solid Target Sabotage guard.
+                    // If a stale path points into a newly built extension (cost 255),
+                    // skip the proposal entirely — the native engine would reject the
+                    // move anyway, causing a silent stall every tick.
+                    if (matrix.get(targetPos.x, targetPos.y) < 255) {
+                        prefs.push(addReceiver(targetPos));
+                    }
                 }
             }
 

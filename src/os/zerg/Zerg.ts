@@ -430,16 +430,19 @@ export class Zerg {
         this._lastPos = currentPos;
 
         // ── Deep-Stuck Repath ──
-        // FIX: Must run BEFORE cache validation clears _path, otherwise the
-        // blocked direction is unreadable and we accidentally penalize currentPos.
-        // PathFinder ignores start-tile cost, so penalizing self is a no-op that
-        // causes infinite re-pathing through the same blocked route.
-        if (this._stuckCount > 5) {
+        // Fires at stuckCount > 2 (after 3 consecutive no-move ticks).
+        // Must run BEFORE any cache validation that could wipe _path.
+        if (this._stuckCount > 2) {
             if (this._path && this._path.step < this._path.path.length) {
                 const blockedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
                 const blockedTarget = getPositionAtDirection(currentPos, blockedDir);
-                // Never penalize our own standing tile — it's meaningless to PathFinder
-                if (blockedTarget && !blockedTarget.isEqualTo(currentPos)) {
+
+                // Never penalize the destination tile.
+                // If we are queued behind another miner at the workstation, penalizing
+                // their tile causes PathFinder to return a 0-length path, dropping all intents.
+                const isFinalStep = this._path.step >= this._path.path.length - 1;
+
+                if (blockedTarget && !blockedTarget.isEqualTo(currentPos) && !isFinalStep) {
                     this._blockedPos = blockedTarget;
                 } else {
                     this._blockedPos = null;
@@ -453,14 +456,14 @@ export class Zerg {
 
         // Validate remaining cache
         if (this._path) {
-            if (this._stuckCount > 2 ||
-                this._path.ticksToLive <= 0 ||
+            // FIX 1b: Remove `this._stuckCount > 2` early wipe (Path Cache Amnesia).
+            // Wiping the path at tick 3 means the deep-stuck block (tick 6) can no
+            // longer read the blocked direction and incorrectly penalizes currentPos.
+            if (this._path.ticksToLive <= 0 ||
                 this._path.target !== targetPos.toString() ||
                 this._path.step >= this._path.path.length) {
 
                 this._path = null;
-                // Don't reset _stuckCount here — we need it for the
-                // deep-stuck fallback below.
             } else if (currentPos.getRangeTo(targetPos) <= range) {
                 this._path = null;
                 return;
@@ -507,7 +510,7 @@ export class Zerg {
                     let staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix, count: number }>(staticKey);
                     const structCount = room.find(FIND_STRUCTURES).length;
 
-                    // FIX 2: Invalidate instantly if structure count changed (e.g. extension just finished)
+                    // Invalidate instantly if structure count changed (e.g. extension just finished)
                     if (!staticCached || Game.time - staticCached.tick > 100 || staticCached.count !== structCount) {
                         const costs = new PathFinder.CostMatrix();
                         room.find(FIND_STRUCTURES).forEach(s => {
@@ -521,6 +524,11 @@ export class Zerg {
                                 }
                             }
                         });
+                        // FIX 2: Sources and Minerals are solid rock but aren't structures —
+                        // without this PathFinder generates paths straight through them.
+                        room.find(FIND_SOURCES).forEach(s => costs.set(s.pos.x, s.pos.y, 255));
+                        room.find(FIND_MINERALS).forEach(m => costs.set(m.pos.x, m.pos.y, 255));
+
                         staticCached = { tick: Game.time, matrix: costs, count: structCount };
                         GlobalCache.set(staticKey, staticCached);
                     }

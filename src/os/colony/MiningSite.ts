@@ -42,6 +42,8 @@ export class MiningSite {
 
     /** First scan flag — ensures container detection runs immediately after reset */
     private _scanned = false;
+    /** FIX 4: Cached structure count — invalidates containerPos instantly when structures change */
+    private _lastStructCount = -1;
 
     constructor(colony: Colony, sourceId: Id<Source>) {
         this.colony = colony;
@@ -80,11 +82,17 @@ export class MiningSite {
      * Throttled to once every 50 ticks to avoid CPU bombs from lookFor.
      */
     refreshStructureIds(): void {
-        // Always run first scan immediately; then throttle to every 50 ticks
-        if (this._scanned && Game.time % 50 !== 0) return;
-        this._scanned = true;
+        const room = this.colony.room;
+        const structCount = room ? room.find(FIND_STRUCTURES).length : 0;
 
-        // Recalculate container position every refresh — roads may have changed the path
+        // FIX 4: Instantly recalculate if a structure was built or destroyed.
+        // Without this, an extension built over a planned path sends the miner
+        // into a solid wall for up to 50 ticks before the throttle fires.
+        if (this._scanned && Game.time % 50 !== 0 && this._lastStructCount === structCount) return;
+        this._scanned = true;
+        this._lastStructCount = structCount;
+
+        // Recalculate container position every refresh — roads/structures may have changed
         this.calculateContainerPos();
 
         // 1. Validate existing container is at the optimal position
