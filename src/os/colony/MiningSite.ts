@@ -13,6 +13,10 @@ import { Logger } from "../../utils/Logger";
 
 const log = new Logger("MiningSite");
 
+// FIX 3: Full obstacle set so calculateContainerPos never picks a tile
+// occupied by an extension, tower, or other blocking structure.
+const OBSTACLE_SET = new Set<string>(OBSTACLE_OBJECT_TYPES as string[]);
+
 export class MiningSite {
     colony: Colony;
 
@@ -163,8 +167,12 @@ export class MiningSite {
                 const r = Game.rooms[roomName];
                 if (!r) return false;
                 const costMatrix = new PathFinder.CostMatrix();
-                r.find(FIND_STRUCTURES).forEach(s => {
-                    if (s.structureType === STRUCTURE_WALL) {
+                r.find(FIND_STRUCTURES).forEach((s: any) => {
+                    // FIX 3: Respect ALL obstacles (extensions, towers, spawns, etc.),
+                    // not just terrain walls. Without this, the container could be
+                    // placed inside a newly-built extension, making the site impassable.
+                    if (OBSTACLE_SET.has(s.structureType) ||
+                        (s.structureType === STRUCTURE_RAMPART && !s.my)) {
                         costMatrix.set(s.pos.x, s.pos.y, 255);
                     } else if (s.structureType === STRUCTURE_ROAD) {
                         costMatrix.set(s.pos.x, s.pos.y, 1);

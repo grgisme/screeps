@@ -65,9 +65,12 @@ export class TrafficManager {
         if (myCreeps.length === 0) return;
 
         const staticKey = `matrix_static:${roomName}`;
-        const staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix }>(staticKey);
+        const staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix, count: number }>(staticKey);
+        const structCount = room.find(FIND_STRUCTURES).length;
         let matrix: CostMatrix;
-        if (staticCached) {
+
+        // FIX 2: Invalidate instantly if structure count changed (mirrors Zerg.ts)
+        if (staticCached && staticCached.count === structCount) {
             matrix = staticCached.matrix;
         } else {
             matrix = new PathFinder.CostMatrix();
@@ -77,8 +80,7 @@ export class TrafficManager {
                     matrix.set(s.pos.x, s.pos.y, 255);
                 }
             });
-            // Cache it so we don't rebuild from FIND_STRUCTURES every tick
-            GlobalCache.set(staticKey, { tick: Game.time, matrix });
+            GlobalCache.set(staticKey, { tick: Game.time, matrix, count: structCount });
         }
         const terrain = Game.map.getRoomTerrain(roomName);
 
@@ -120,15 +122,22 @@ export class TrafficManager {
                         // 2. Proposing to the CURRENT (stay-still) tile.
                         if (creep.pos.x === pos.x && creep.pos.y === pos.y && creep.pos.roomName === pos.roomName) {
                             // Only truly stationary creeps (no move intent) get the +10000 unshovable bonus.
-                            // If the creep WANTS to move but can't (falling back to current tile),
-                            // give it only 0.1 so equal-priority creeps can push through.
                             if (!intent || (intent.direction as number) === 0) {
                                 const taskName = (creep.memory as any).task?.name;
                                 if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
                                     (creep.memory as any).role === "miner") {
-                                    return 10000; // Truly stationary worker — don't shove
+
+                                    // FIX 4: Only grant +10000 if actually parked at a work station.
+                                    // A blocked miner standing next to the spawn (not near any source)
+                                    // must NOT become an immovable brick that blocks all traffic.
+                                    let isParked = false;
+                                    if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) isParked = true;
+                                    if (!isParked && room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s))) isParked = true;
+                                    if (!isParked && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m))) isParked = true;
+
+                                    if (isParked) return 10000;
                                 }
-                                return 0.5; // Idle creep — resist lightly but yield to movers
+                                return 0.5; // Idle/misplaced creep — resist lightly but yield to movers
                             } else {
                                 // Creep is trying to move but falling back — weak hold so traffic flows
                                 return 0.1;
@@ -160,7 +169,8 @@ export class TrafficManager {
             // This frees the exit tile for other creeps in the same tick.
             if (intent && (intent.direction as number) !== 0) {
                 const targetPos = getPositionAtDirection(currentPos, intent.direction);
-                if (targetPos && targetPos.roomName !== roomName) {
+                // FIX 5: targetPos is null when stepping off grid (0-49 bounds)
+                if (!targetPos || targetPos.roomName !== roomName) {
                     creep.move(intent.direction);
                     exitedCreeps.add(creep.name);
                     continue; // Skip graph — tile is now freed

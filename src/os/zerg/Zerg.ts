@@ -500,11 +500,13 @@ export class Zerg {
                     const room = Game.rooms[roomName];
                     if (!room) return false;
 
-                    // --- Static layer: structures (cached 100 ticks) ---
+                    // --- Static layer: structures (cached 100 ticks, or instantly on struct change) ---
                     const staticKey = `matrix_static:${roomName}`;
-                    let staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix }>(staticKey);
+                    let staticCached = GlobalCache.get<{ tick: number, matrix: CostMatrix, count: number }>(staticKey);
+                    const structCount = room.find(FIND_STRUCTURES).length;
 
-                    if (!staticCached || Game.time - staticCached.tick > 100) {
+                    // FIX 2: Invalidate instantly if structure count changed (e.g. extension just finished)
+                    if (!staticCached || Game.time - staticCached.tick > 100 || staticCached.count !== structCount) {
                         const costs = new PathFinder.CostMatrix();
                         room.find(FIND_STRUCTURES).forEach(s => {
                             if (OBSTACLE_SET.has(s.structureType) ||
@@ -517,7 +519,7 @@ export class Zerg {
                                 }
                             }
                         });
-                        staticCached = { tick: Game.time, matrix: costs };
+                        staticCached = { tick: Game.time, matrix: costs, count: structCount };
                         GlobalCache.set(staticKey, staticCached);
                     }
 
@@ -528,12 +530,13 @@ export class Zerg {
                     if (!dynamicCached || dynamicCached.tick !== Game.time) {
                         const costs = staticCached.matrix.clone();
                         room.find(FIND_MY_CREEPS).forEach(c => {
-                            // FIX: Mark ALL miners unconditionally. PathFinder naturally
-                            // ignores the cost of the start tile, so a miner won't block
-                            // itself. Marking all miners keeps this shared GlobalCache
-                            // consistent for every caller this tick.
+                            // FIX 1: Use 254 instead of 255 for miners.
+                            // 255 = solid wall — if a bottleneck tile only has one access,
+                            // PathFinder returns an empty path for any creep trying to reach it.
+                            // 254 = heavily penalized but walkable — Transporters route around,
+                            // replacement Miners can still path to the occupied spot.
                             if (c.memory.role === 'miner') {
-                                costs.set(c.pos.x, c.pos.y, 255);
+                                costs.set(c.pos.x, c.pos.y, 254);
                             }
                         });
                         dynamicCached = { tick: Game.time, matrix: costs };
