@@ -92,8 +92,18 @@ export class TransporterOverlord extends Overlord {
         // Catches any transporter that finished all its work this tick but received
         // no new task (e.g. completely emptied into extensions with nothing left to
         // withdraw). Without this they park next to the spawn and block all traffic.
+        //
+        // IMPORTANT: Check creep.memory.task (persisted), NOT transporter.task (heap).
+        // transporter.task is always null here because zerg.run() (which deserializes it)
+        // fires AFTER the overlord's run(). Using the heap field would fire the failsafe
+        // for every creep with a task, causing a double travelTo conflict each tick.
         for (const transporter of this.transporters) {
-            if (!transporter.isAlive() || transporter.task) continue;
+            const nativeCreep = transporter.creep;
+            if (!nativeCreep || nativeCreep.spawning) continue;
+            // Already has an assigned task from THIS tick's overlord loop? Skip.
+            if (transporter.task) continue;
+            // Has a persisted task in memory (will be deserialized by zerg.run())? Skip.
+            if ((nativeCreep.memory as any).task) continue;
 
             const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
             if (spawn && transporter.pos) {
