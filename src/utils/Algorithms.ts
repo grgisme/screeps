@@ -133,16 +133,14 @@ export function floodFill(
     const cm = costMatrix || new PathFinder.CostMatrix();
     const bits = (cm as any)._bits as Uint8Array;
 
-    // Initialize walkable tiles to 255 (unreachable) while preserving
-    // any existing 255 values from a passed-in CostMatrix (which mark
-    // custom obstacles like planned structures). If no costMatrix was
-    // passed, this is equivalent to bits.fill(255).
+    // Initialize walkable tiles to 254 (unreached).
+    // Leave 255 values (custom obstacles from passed-in CostMatrix) untouched.
+    // This distinguishes "not yet reached" (254) from "permanent wall" (255).
     if (!costMatrix) {
-        bits.fill(255);
+        bits.fill(254);
     } else {
-        // Preserve obstacle data: only mark non-obstacle tiles as unreachable
         for (let i = 0; i < 2500; i++) {
-            if (bits[i] !== 255) bits[i] = 255;
+            if (bits[i] !== 255) bits[i] = 254;
         }
     }
 
@@ -157,6 +155,7 @@ export function floodFill(
         if ((terrain.get(o.x, o.y) & TERRAIN_MASK_WALL) !== 0) continue;
         const idx = o.x * 50 + o.y;
         if (bits[idx] === 0) continue; // Prevent duplicate origins
+        if (bits[idx] === 255) continue; // Don't start on custom obstacles
         bits[idx] = 0;
         queue[tail++] = idx;
     }
@@ -174,7 +173,7 @@ export function floodFill(
         const cy = idx % 50;
         const cd = bits[idx];
         const nd = cd + 1;
-        if (nd >= 255) continue;
+        if (nd >= 254) continue; // Cap at 253 to protect 254/255 sentinel values
 
         for (const [dx, dy] of DIRS) {
             const nx = cx + dx;
@@ -183,11 +182,8 @@ export function floodFill(
             if ((terrain.get(nx, ny) & TERRAIN_MASK_WALL) !== 0) continue;
 
             const nIdx = nx * 50 + ny;
-            // Check passed-in CostMatrix obstacles: if the original value
-            // was 255 (before our init), this tile was a custom obstacle.
-            // We preserved those 255s during init above, so they're still
-            // 255 and the `bits[nIdx] <= nd` check naturally skips them.
-            if (bits[nIdx] <= nd) continue;
+            // Skip hard obstacles (255) AND already-reached tiles (<= nd)
+            if (bits[nIdx] === 255 || bits[nIdx] <= nd) continue;
             bits[nIdx] = nd;
             queue[tail++] = nIdx;
         }

@@ -176,7 +176,8 @@ describe("Algorithms", () => {
         it("should leave border tiles unreachable", () => {
             const origins = [{ x: 25, y: 25 }];
             const cm = floodFill("W1N1", origins);
-            expect(cm.get(0, 0)).to.equal(255);
+            // Border tiles stay at 254 (unreached sentinel) since BFS skips x<1/y<1
+            expect(cm.get(0, 0)).to.equal(254);
         });
     });
 });

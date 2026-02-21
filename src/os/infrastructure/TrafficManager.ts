@@ -77,6 +77,8 @@ export class TrafficManager {
                     matrix.set(s.pos.x, s.pos.y, 255);
                 }
             });
+            // Cache it so we don't rebuild from FIND_STRUCTURES every tick
+            GlobalCache.set(staticKey, { tick: Game.time, matrix });
         }
         const terrain = Game.map.getRoomTerrain(roomName);
 
@@ -159,13 +161,27 @@ export class TrafficManager {
                 }
             }
 
-            // ── Fix #3: Fatigued creeps can only propose to current tile ──
-            // They physically cannot move (ERR_TIRED), so offering adjacent
-            // tiles would let the graph assign them somewhere unreachable.
+            // ── Fatigued creeps: can only swap with their evictors ──
+            // Without proposing to the evictor's tile, Gale-Shapley leaves
+            // the fatigued creep unmatched, breaking the mutual swap intent
+            // required by the pull() mechanic below.
             if (creep.fatigue > 0) {
+                // Preference 1: The tile of whoever is trying to take our spot
+                for (const otherIntent of roomIntents) {
+                    if (otherIntent.zerg.name === creep.name || (otherIntent.direction as number) === 0) continue;
+                    if (!otherIntent.zerg.pos) continue;
+
+                    const otherTarget = getPositionAtDirection(otherIntent.zerg.pos, otherIntent.direction);
+                    if (otherTarget && otherTarget.isEqualTo(currentPos)) {
+                        prefs.push(addReceiver(otherIntent.zerg.pos));
+                    }
+                }
+
+                // Preference 2: Stay still
                 prefs.push(addReceiver(currentPos));
+
                 proposers.push({ id: creep.name, preferences: prefs });
-                continue; // No adjacent proposals for fatigued creeps
+                continue;
             }
 
             // Preference 2: The current tile (yield / stay still)
