@@ -58,10 +58,7 @@ export class TransferTask implements ITask {
                 target as Structure | Creep,
                 RESOURCE_ENERGY
             );
-            // ── DIAGNOSTIC LOG (remove after debugging) ──
-            if (Game.time % 5 === 0) {
-                console.log(`[DIAG:Transfer] ${zerg.name} IN RANGE → transfer result=${result} energy=${zerg.store?.getUsedCapacity()} targetFree=${('store' in target) ? (target as any).store.getFreeCapacity(RESOURCE_ENERGY) : '?'}`);
-            }
+
             // Only abort on fatal errors
             if (
                 result === ERR_INVALID_TARGET ||
@@ -75,10 +72,6 @@ export class TransferTask implements ITask {
             if (result === OK) return true;
             return false;
         } else {
-            // ── DIAGNOSTIC LOG (remove after debugging) ──
-            if (Game.time % 5 === 0 && zerg.pos) {
-                console.log(`[DIAG:Transfer] ${zerg.name} NOT IN RANGE (range=${zerg.pos.getRangeTo(target)}) → travelTo. pos=${zerg.pos}`);
-            }
             zerg.travelTo(target, this.settings.targetRange);
             return false;
         }
