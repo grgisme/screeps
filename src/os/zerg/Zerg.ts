@@ -377,12 +377,14 @@ export class Zerg {
      * Move to a target using cached pathing and TrafficManager.
      * Path caching is heap-safe (serialized direction strings + primitives).
      */
-    travelTo(target: RoomPosition | { pos: RoomPosition }, range = 1, priority = 1): void {
+    travelTo(target: RoomPosition | { pos: RoomPosition } | undefined | null, range = 1, priority = 1): void {
+        if (!target) return; // FIX 1: Prevent fatal TypeError if Overlord passes undefined containerPos
+
         const creep = this.creep;
         const currentPos = this.pos;
         if (!creep || !currentPos) return;
 
-        // ── FIX 1: Fatigue Guard ──
+        // ── Fatigue Guard ──
         if ((this.fatigue ?? 0) > 0) return;
 
         const targetPos = "pos" in target ? target.pos : target;

@@ -78,6 +78,12 @@ export class TrafficManager {
                 if (OBSTACLE_SET.has(s.structureType) ||
                     (s.structureType === STRUCTURE_RAMPART && !s.my)) {
                     matrix.set(s.pos.x, s.pos.y, 255);
+                } else if (s.structureType === STRUCTURE_ROAD) {
+                    // FIX 5: Sync roads so Zerg.ts inherits a road-aware matrix.
+                    // Without this, every matrix rebuild wiped all roads from the cache.
+                    if (matrix.get(s.pos.x, s.pos.y) !== 255) {
+                        matrix.set(s.pos.x, s.pos.y, 1);
+                    }
                 }
             });
             GlobalCache.set(staticKey, { tick: Game.time, matrix, count: structCount });
@@ -127,13 +133,17 @@ export class TrafficManager {
                                 if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
                                     (creep.memory as any).role === "miner") {
 
-                                    // FIX 4: Only grant +10000 if actually parked at a work station.
-                                    // A blocked miner standing next to the spawn (not near any source)
-                                    // must NOT become an immovable brick that blocks all traffic.
+                                    // FIX 3: Scope isParked correctly.
+                                    // Upgraders only park near controller. Harvesters/Miners
+                                    // park near sources. Builders/Workers walking past sources
+                                    // must NOT accidentally become immovable bricks.
                                     let isParked = false;
-                                    if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) isParked = true;
-                                    if (!isParked && room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s))) isParked = true;
-                                    if (!isParked && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m))) isParked = true;
+                                    if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) {
+                                        isParked = true;
+                                    } else if (taskName === "Harvest" || (creep.memory as any).role === "miner") {
+                                        if (room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s))) isParked = true;
+                                        if (!isParked && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m))) isParked = true;
+                                    }
 
                                     if (isParked) return 10000;
                                 }
@@ -263,13 +273,18 @@ export class TrafficManager {
                 // If the blocker is mathematically moving to OUR tile, it's a mutual swap
                 if (blockerAssignedTile === myCurrentTile) {
                     if (blocker.fatigue > 0) {
-                        // Fatigued: pull mechanic requires pull + blocker.move + initiator.move
                         creep.pull(blocker);
                         blocker.move(creep);
                         creep.say("🔗");
-                        // DO NOT continue — fall through to creep.move(moveDir) below!
-                        // pull() requires the initiator to also issue a .move() command.
                     }
+                } else if (!blockerAssignedTile) {
+                    // FIX 4: The Unmatched Loser Swap.
+                    // The blocker was evicted but is so boxed in by walls/structures
+                    // that Gale-Shapley left it unmatched (no valid fallback tiles).
+                    // Force a swap so the miner doesn't bounce off it every tick.
+                    if (blocker.fatigue > 0) creep.pull(blocker);
+                    blocker.move(creep);
+                    creep.say("🔄");
                 }
             }
 

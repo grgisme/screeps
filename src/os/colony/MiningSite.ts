@@ -184,6 +184,10 @@ export class MiningSite {
 
         if (path.path.length > 0) {
             this.containerPos = path.path[0];
+        } else {
+            // FIX 2: Fallback to source's own position if the route is fully blocked.
+            // Ensures the Miner always has a valid travelTo target instead of undefined.
+            this.containerPos = source.pos;
         }
     }
 
