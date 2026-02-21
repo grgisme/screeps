@@ -299,8 +299,24 @@ export class ConstructionOverlord extends Overlord {
             if (currentCount >= maxAllowed) continue;
 
             const positions = layoutStructures[typeStr as StructureConstant] || [];
+
+            // For extensions: sort by proximity to nearest filler standing tile
+            // so that early RCL extensions cluster around active fillers
+            let sortedPositions = positions;
+            if (type === STRUCTURE_EXTENSION) {
+                sortedPositions = [...positions].sort((a: any, b: any) => {
+                    const distA = Math.min(...BunkerLayout.fillerTiles.map(f =>
+                        Math.max(Math.abs(a.x - f.x), Math.abs(a.y - f.y))
+                    ));
+                    const distB = Math.min(...BunkerLayout.fillerTiles.map(f =>
+                        Math.max(Math.abs(b.x - f.x), Math.abs(b.y - f.y))
+                    ));
+                    return distA - distB;
+                });
+            }
+
             // Slice to respect the exact RCL limit
-            const allowedPositions = positions.slice(0, maxAllowed);
+            const allowedPositions = sortedPositions.slice(0, maxAllowed);
 
             for (const rel of allowedPositions) {
                 const pos = BunkerLayout.getPos(anchor, rel);

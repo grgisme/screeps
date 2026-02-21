@@ -1,6 +1,6 @@
 import "../mock.setup";
 import { expect } from "chai";
-import { distanceTransform } from "../../src/utils/Algorithms";
+import { distanceTransform, stableMatch, MatchProposer, MatchReceiver } from "../../src/utils/Algorithms";
 
 describe("Algorithms", () => {
     beforeEach(() => {
@@ -70,6 +70,81 @@ describe("Algorithms", () => {
             // 0 1 2 3 4 3 2 1 0
             expect(dt.get(4, 4)).to.equal(4);
             expect(dt.get(1, 1)).to.equal(1);
+        });
+    });
+
+    describe("stableMatch", () => {
+        it("should match proposers to their preferred receivers", () => {
+            const proposers: MatchProposer[] = [
+                { id: "p1", preferences: ["r1", "r2"] },
+                { id: "p2", preferences: ["r2", "r1"] }
+            ];
+            const receivers: MatchReceiver[] = [
+                { id: "r1", capacity: 1, score: (pid) => pid === "p1" ? 10 : 5 },
+                { id: "r2", capacity: 1, score: (pid) => pid === "p2" ? 10 : 5 }
+            ];
+
+            const result = stableMatch(proposers, receivers);
+            expect(result.get("p1")).to.equal("r1");
+            expect(result.get("p2")).to.equal("r2");
+        });
+
+        it("should reject lower-scored proposer when receiver is full", () => {
+            // Both proposers want r1, but r1 has capacity 1
+            // r1 prefers p1 (score 10 vs 5)
+            const proposers: MatchProposer[] = [
+                { id: "p1", preferences: ["r1"] },
+                { id: "p2", preferences: ["r1", "r2"] }
+            ];
+            const receivers: MatchReceiver[] = [
+                { id: "r1", capacity: 1, score: (pid) => pid === "p1" ? 10 : 5 },
+                { id: "r2", capacity: 1, score: () => 1 }
+            ];
+
+            const result = stableMatch(proposers, receivers);
+            expect(result.get("p1")).to.equal("r1"); // p1 wins r1
+            expect(result.get("p2")).to.equal("r2"); // p2 falls back to r2
+        });
+
+        it("should support multi-capacity receivers", () => {
+            const proposers: MatchProposer[] = [
+                { id: "p1", preferences: ["r1"] },
+                { id: "p2", preferences: ["r1"] },
+                { id: "p3", preferences: ["r1"] }
+            ];
+            const receivers: MatchReceiver[] = [
+                {
+                    id: "r1", capacity: 2, score: (pid) => {
+                        if (pid === "p1") return 10;
+                        if (pid === "p2") return 8;
+                        return 3;
+                    }
+                }
+            ];
+
+            const result = stableMatch(proposers, receivers);
+            // p1 and p2 get in (higher scores), p3 rejected
+            expect(result.get("p1")).to.equal("r1");
+            expect(result.get("p2")).to.equal("r1");
+            expect(result.has("p3")).to.be.false;
+        });
+
+        it("should handle empty inputs gracefully", () => {
+            expect(stableMatch([], []).size).to.equal(0);
+            expect(stableMatch([{ id: "p1", preferences: [] }], []).size).to.equal(0);
+            expect(stableMatch([], [{ id: "r1", capacity: 1, score: () => 0 }]).size).to.equal(0);
+        });
+
+        it("should leave proposers unmatched when no receivers exist for their preferences", () => {
+            const proposers: MatchProposer[] = [
+                { id: "p1", preferences: ["nonexistent"] }
+            ];
+            const receivers: MatchReceiver[] = [
+                { id: "r1", capacity: 1, score: () => 1 }
+            ];
+
+            const result = stableMatch(proposers, receivers);
+            expect(result.has("p1")).to.be.false;
         });
     });
 });
