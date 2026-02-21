@@ -81,10 +81,10 @@ export class TrafficManager {
                 }
 
                 // ── DIAGNOSTIC LOG (remove after debugging) ──
+                const moveResult = zerg.creep!.move(intent.direction);
                 if (Game.time % 5 === 0) {
-                    console.log(`[DIAG:Traffic] MOVE ${zerg.name} dir=${intent.direction} creep=${!!zerg.creep}`);
+                    console.log(`[DIAG:Traffic] MOVE ${zerg.name} dir=${intent.direction} result=${moveResult} fatigue=${zerg.creep!.fatigue} pos=${zerg.pos}`);
                 }
-                zerg.creep!.move(intent.direction);
                 this.movesThisTick++;
             }
 
