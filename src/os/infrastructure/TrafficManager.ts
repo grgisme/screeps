@@ -106,21 +106,37 @@ export class TrafficManager {
                     score: (proposerId: string) => {
                         const creep = Game.creeps[proposerId];
                         const intent = intentMap.get(proposerId);
-                        let score = intent ? intent.priority : 0;
 
-                        if (creep && creep.pos.x === pos.x && creep.pos.y === pos.y && creep.pos.roomName === pos.roomName) {
-                            const taskName = (creep.memory as any).task?.name;
-                            // ── Fix #3: Only truly stationary roles get +10000 ──
-                            // Fatigued creeps get standard tie-break so high-priority
-                            // movers can evict them (using pull mechanic in phase 3).
-                            if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
-                                (creep.memory as any).role === "miner") {
-                                score += 10000;
-                            } else {
-                                score += 0.1; // Resist shoves, but yield to higher priority
+                        if (!creep) return 0;
+
+                        // 1. Proposing to the actual TARGET tile — use the intent priority directly.
+                        if (intent && (intent.direction as number) !== 0) {
+                            const targetPos = getPositionAtDirection(creep.pos, intent.direction);
+                            if (targetPos && targetPos.x === pos.x && targetPos.y === pos.y && targetPos.roomName === pos.roomName) {
+                                return intent.priority;
                             }
                         }
-                        return score;
+
+                        // 2. Proposing to the CURRENT (stay-still) tile.
+                        if (creep.pos.x === pos.x && creep.pos.y === pos.y && creep.pos.roomName === pos.roomName) {
+                            // Only truly stationary creeps (no move intent) get the +10000 unshovable bonus.
+                            // If the creep WANTS to move but can't (falling back to current tile),
+                            // give it only 0.1 so equal-priority creeps can push through.
+                            if (!intent || (intent.direction as number) === 0) {
+                                const taskName = (creep.memory as any).task?.name;
+                                if (taskName === "Harvest" || taskName === "Upgrade" || taskName === "Pull" ||
+                                    (creep.memory as any).role === "miner") {
+                                    return 10000; // Truly stationary worker — don't shove
+                                }
+                                return 0.5; // Idle creep — resist lightly but yield to movers
+                            } else {
+                                // Creep is trying to move but falling back — weak hold so traffic flows
+                                return 0.1;
+                            }
+                        }
+
+                        // 3. Proposing to an adjacent fallback/shove tile.
+                        return 0.2;
                     }
                 });
                 tileMap.set(id, pos);

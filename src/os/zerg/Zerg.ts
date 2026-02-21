@@ -427,6 +427,28 @@ export class Zerg {
 
         this._lastPos = currentPos;
 
+        // ── Deep-Stuck Repath ──
+        // FIX: Must run BEFORE cache validation clears _path, otherwise the
+        // blocked direction is unreadable and we accidentally penalize currentPos.
+        // PathFinder ignores start-tile cost, so penalizing self is a no-op that
+        // causes infinite re-pathing through the same blocked route.
+        if (this._stuckCount > 5) {
+            if (this._path && this._path.step < this._path.path.length) {
+                const blockedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
+                const blockedTarget = getPositionAtDirection(currentPos, blockedDir);
+                // Never penalize our own standing tile — it's meaningless to PathFinder
+                if (blockedTarget && !blockedTarget.isEqualTo(currentPos)) {
+                    this._blockedPos = blockedTarget;
+                } else {
+                    this._blockedPos = null;
+                }
+            } else {
+                this._blockedPos = null;
+            }
+            this._path = null;
+            this._stuckCount = 0;
+        }
+
         // Validate remaining cache
         if (this._path) {
             if (this._stuckCount > 2 ||
@@ -441,23 +463,6 @@ export class Zerg {
                 this._path = null;
                 return;
             }
-        }
-
-        // ── Deep-Stuck Repath ──
-        // If stuck > 5 ticks, penalize the SPECIFIC tile that's blocking us
-        // (the expected next step), not a uniform 3x3. This changes the
-        // relative cost landscape so PathFinder finds a different route.
-        if (this._stuckCount > 5) {
-            // Calculate the specific tile we keep failing to reach
-            if (this._path) {
-                const blockedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
-                const blockedTarget = getPositionAtDirection(currentPos, blockedDir);
-                this._blockedPos = blockedTarget || currentPos;
-            } else {
-                this._blockedPos = currentPos;
-            }
-            this._path = null;
-            this._stuckCount = 0;
         }
 
         if (currentPos.inRangeTo(targetPos, range)) return;
@@ -523,11 +528,11 @@ export class Zerg {
                     if (!dynamicCached || dynamicCached.tick !== Game.time) {
                         const costs = staticCached.matrix.clone();
                         room.find(FIND_MY_CREEPS).forEach(c => {
-                            // Only mark OTHER miners as obstacles, never self.
-                            // A miner marking its own current tile as cost-255 makes
-                            // PathFinder see the start tile as impassable → empty path
-                            // → "⛔ Blocked" → miner stuck near spawn forever.
-                            if (c.memory.role === 'miner' && c.name !== this.creepName) {
+                            // FIX: Mark ALL miners unconditionally. PathFinder naturally
+                            // ignores the cost of the start tile, so a miner won't block
+                            // itself. Marking all miners keeps this shared GlobalCache
+                            // consistent for every caller this tick.
+                            if (c.memory.role === 'miner') {
                                 costs.set(c.pos.x, c.pos.y, 255);
                             }
                         });
