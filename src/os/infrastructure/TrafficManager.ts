@@ -57,20 +57,26 @@ export class TrafficManager {
                     const blockerIntent = blockerIntentIndex > -1 ? this.intents[blockerIntentIndex] : null;
 
                     if (!blockerIntent) {
-                        // Blocker is stationary
-                        if (intent.priority < 10) {
-                            const shoved = this.shove(blocker, zerg); // Pass initiator for swapping
-                            if (shoved) this.shovesThisTick++;
-                        }
+                        // Blocker is stationary — shove it out of the way.
+                        // Fix #2: Removed priority < 10 gate. shove() already
+                        // protects miners and localized-task creeps.
+                        const shoved = this.shove(blocker, zerg);
+                        if (shoved) this.shovesThisTick++;
                     } else if (intent.priority < blockerIntent.priority) {
-                        // ── FIX 4: Head-to-Head Deadlock (Force Swap) ──
-                        const swapDir = blocker.pos.getDirectionTo(zerg.pos);
-                        blocker.move(swapDir);
-                        blocker.say("🔄");
-                        this.shovesThisTick++;
+                        // Fix #1: Only force swap on true head-to-head deadlocks.
+                        // Without this, a higher-priority creep behind a lower-priority
+                        // one walking the SAME direction yanks it backward ("conveyor belt").
+                        const isHeadToHead = blockerIntent.direction === blocker.pos.getDirectionTo(zerg.pos);
 
-                        // Cancel blocker's old intent so it doesn't overwrite our swap
-                        this.intents[blockerIntentIndex].direction = 0 as DirectionConstant;
+                        if (isHeadToHead) {
+                            const swapDir = blocker.pos.getDirectionTo(zerg.pos);
+                            blocker.move(swapDir);
+                            blocker.say("🔄");
+                            this.shovesThisTick++;
+
+                            // Cancel blocker's old intent so it doesn't overwrite our swap
+                            this.intents[blockerIntentIndex].direction = 0 as DirectionConstant;
+                        }
                     }
                 }
 
@@ -124,7 +130,7 @@ export class TrafficManager {
                 (s.structureType === STRUCTURE_RAMPART && !(s as OwnedStructure).my)
             );
 
-            const isWall = Game.map.getRoomTerrain(pos.roomName).get(pos.x, pos.y) === TERRAIN_MASK_WALL;
+            const isWall = (Game.map.getRoomTerrain(pos.roomName).get(pos.x, pos.y) & TERRAIN_MASK_WALL) !== 0;
 
             if (!isBlockedByCreep && !isBlockedByStructure && !isWall) {
                 creep.move(dir);
