@@ -187,7 +187,28 @@ export class TransporterOverlord extends Overlord {
      * - <75% (plains/swamp): [CARRY, MOVE] × N (1:1 ratio, no WORK)
      */
     private buildTransporterBody(room: Room): BodyPartConstant[] {
-        const capacity = room.energyCapacityAvailable;
+        // Bootstrap fix: if no transporters/fillers exist, extensions won't be filled
+        // passively. Use only the spawn's current energy + energy already in extensions,
+        // rather than the theoretical energyCapacityAvailable, to avoid a deadlock where
+        // the spawn waits for 400e that can never arrive.
+        const hasHaulers = this.colony.creeps.some(c => {
+            const role = (c.memory as any).role;
+            return role === 'transporter' || role === 'filler';
+        });
+
+        let capacity: number;
+        if (hasHaulers) {
+            capacity = room.energyCapacityAvailable;
+        } else {
+            // Sum: spawn energy + existing extension energy (only what's actually there)
+            const spawns = room.find(FIND_MY_SPAWNS);
+            const spawnEnergy = spawns.reduce((sum, s) => sum + s.store.getUsedCapacity(RESOURCE_ENERGY), 0);
+            const extensions = room.find(FIND_MY_STRUCTURES, {
+                filter: (s) => s.structureType === STRUCTURE_EXTENSION
+            }) as StructureExtension[];
+            const extEnergy = extensions.reduce((sum, e) => sum + e.store.getUsedCapacity(RESOURCE_ENERGY), 0);
+            capacity = spawnEnergy + extEnergy;
+        }
 
         // Read route terrain from MiningSite cache (0 CPU — heap data)
         const miningOverlord = this.colony.overlords
