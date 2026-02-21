@@ -228,8 +228,8 @@ export class UpgradingOverlord extends Overlord {
         if (this.upgraders.length < target) {
             // Controller container-aware body: WORK-heavy since upgraders pull
             // from adjacent container — no long-distance hauling needed.
-            // Base: [W,W,W,C,M] = 400e → grows to [W,W,W,W,C,M,M] = 550e at RCL 2
-            let template: BodyPartConstant[] = [WORK, WORK, WORK, CARRY, MOVE];
+            // Base: [W,W,C,M] = 300e → fits a single spawn at RCL 1
+            let template: BodyPartConstant[] = [WORK, WORK, CARRY, MOVE];
             let maxEnergy: number | undefined = undefined;
 
             if (isRCL8) {
