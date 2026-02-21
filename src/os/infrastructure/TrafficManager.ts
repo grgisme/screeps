@@ -25,12 +25,6 @@ export class TrafficManager {
 
     static run(): void {
         try {
-            // ── DIAGNOSTIC LOG (remove after debugging) ──
-            if (Game.time % 5 === 0) {
-                const names = this.intents.map(i => `${i.zerg.name}:dir${i.direction}`);
-                console.log(`[DIAG:Traffic] ${this.intents.length} intents: ${names.join(', ')}`);
-            }
-
             this.intents.sort((a, b) => a.priority - b.priority);
 
             for (const intent of this.intents) {
@@ -80,11 +74,7 @@ export class TrafficManager {
                     }
                 }
 
-                // ── DIAGNOSTIC LOG (remove after debugging) ──
-                const moveResult = zerg.creep!.move(intent.direction);
-                if (Game.time % 5 === 0) {
-                    console.log(`[DIAG:Traffic] MOVE ${zerg.name} dir=${intent.direction} result=${moveResult} fatigue=${zerg.creep!.fatigue} pos=${zerg.pos}`);
-                }
+                zerg.creep!.move(intent.direction);
                 this.movesThisTick++;
             }
 
