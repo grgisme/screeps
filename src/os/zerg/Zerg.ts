@@ -388,11 +388,12 @@ export class Zerg {
         const targetPos = "pos" in target ? target.pos : target;
 
         // ── Boundary Bounce Prevention ──
-        // If creep just entered a room and is standing on an exit portal,
-        // force one step toward the interior. The PathFinder frequently
-        // calculates the portal itself as the best node, causing infinite
-        // bouncing between rooms.
-        if (currentPos.x === 0 || currentPos.x === 49 || currentPos.y === 0 || currentPos.y === 49) {
+        // Only trigger when the creep JUST ENTERED this room (lastPos was in a
+        // different room). If the creep is trying to LEAVE (walking toward an
+        // exit from the interior), do NOT intercept — let the engine handle
+        // the room transition.
+        if ((currentPos.x === 0 || currentPos.x === 49 || currentPos.y === 0 || currentPos.y === 49) &&
+            this._lastPos && this._lastPos.roomName !== currentPos.roomName) {
             const dx = currentPos.x === 0 ? 1 : currentPos.x === 49 ? -1 : 0;
             const dy = currentPos.y === 0 ? 1 : currentPos.y === 49 ? -1 : 0;
             const stepIn = new RoomPosition(currentPos.x + dx, currentPos.y + dy, currentPos.roomName);
@@ -443,14 +444,20 @@ export class Zerg {
         }
 
         // ── Deep-Stuck Repath ──
-        // If stuck > 5 ticks, our cached path keeps deadlocking against
-        // other creeps converging on the same bottleneck. Repath with a
-        // 255 penalty on the blocking tile to force a different route.
-        // Stays inside TrafficManager (unlike moveTo which breaks it).
+        // If stuck > 5 ticks, penalize the SPECIFIC tile that's blocking us
+        // (the expected next step), not a uniform 3x3. This changes the
+        // relative cost landscape so PathFinder finds a different route.
         if (this._stuckCount > 5) {
+            // Calculate the specific tile we keep failing to reach
+            if (this._path) {
+                const blockedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
+                const blockedTarget = getPositionAtDirection(currentPos, blockedDir);
+                this._blockedPos = blockedTarget || currentPos;
+            } else {
+                this._blockedPos = currentPos;
+            }
             this._path = null;
             this._stuckCount = 0;
-            this._blockedPos = currentPos; // Remember where we're stuck
         }
 
         if (currentPos.inRangeTo(targetPos, range)) return;
@@ -495,11 +502,14 @@ export class Zerg {
                     if (!staticCached || Game.time - staticCached.tick > 100) {
                         const costs = new PathFinder.CostMatrix();
                         room.find(FIND_STRUCTURES).forEach(s => {
-                            if (s.structureType === STRUCTURE_ROAD) {
-                                costs.set(s.pos.x, s.pos.y, 1);
-                            } else if (OBSTACLE_SET.has(s.structureType) ||
+                            if (OBSTACLE_SET.has(s.structureType) ||
                                 (s.structureType === STRUCTURE_RAMPART && !(s as OwnedStructure).my)) {
                                 costs.set(s.pos.x, s.pos.y, 255);
+                            } else if (s.structureType === STRUCTURE_ROAD) {
+                                // Only set road cost if tile is NOT already an obstacle
+                                if (costs.get(s.pos.x, s.pos.y) !== 255) {
+                                    costs.set(s.pos.x, s.pos.y, 1);
+                                }
                             }
                         });
                         staticCached = { tick: Game.time, matrix: costs };
@@ -521,27 +531,26 @@ export class Zerg {
                         GlobalCache.set(dynamicKey, dynamicCached);
                     }
 
-                    // Deep-stuck repath: penalize the tile we're stuck at
+                    // Deep-stuck repath: penalize the specific blocking tile
                     if (this._blockedPos && roomName === this._blockedPos.roomName) {
                         const unstuckMatrix = dynamicCached.matrix.clone();
-                        // Penalize tiles adjacent to our stuck position
-                        for (let dx = -1; dx <= 1; dx++) {
-                            for (let dy = -1; dy <= 1; dy++) {
-                                const nx = this._blockedPos.x + dx;
-                                const ny = this._blockedPos.y + dy;
-                                if (nx >= 0 && nx <= 49 && ny >= 0 && ny <= 49) {
-                                    const cur = unstuckMatrix.get(nx, ny);
-                                    if (cur < 20) unstuckMatrix.set(nx, ny, 20);
-                                }
-                            }
+                        const bx = this._blockedPos.x;
+                        const by = this._blockedPos.y;
+                        if (bx >= 0 && bx <= 49 && by >= 0 && by <= 49) {
+                            unstuckMatrix.set(bx, by, 255); // Hard-block the specific tile
                         }
-                        this._blockedPos = null;
+                        // Clear OUTSIDE callback so incomplete paths don't lose the penalty
                         return unstuckMatrix;
                     }
 
                     return dynamicCached.matrix;
                 }
             });
+
+            // Clear _blockedPos AFTER search completes, not inside the callback.
+            // If PathFinder hit maxOps and returned incomplete, the callback already
+            // used the penalty. Clearing here ensures it's consumed exactly once.
+            this._blockedPos = null;
 
             if (ret.path.length === 0) {
                 creep.say("⛔ Blocked");

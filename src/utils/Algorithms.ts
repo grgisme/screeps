@@ -133,8 +133,18 @@ export function floodFill(
     const cm = costMatrix || new PathFinder.CostMatrix();
     const bits = (cm as any)._bits as Uint8Array;
 
-    // Initialize all tiles to 255 (unreachable)
-    bits.fill(255);
+    // Initialize walkable tiles to 255 (unreachable) while preserving
+    // any existing 255 values from a passed-in CostMatrix (which mark
+    // custom obstacles like planned structures). If no costMatrix was
+    // passed, this is equivalent to bits.fill(255).
+    if (!costMatrix) {
+        bits.fill(255);
+    } else {
+        // Preserve obstacle data: only mark non-obstacle tiles as unreachable
+        for (let i = 0; i < 2500; i++) {
+            if (bits[i] !== 255) bits[i] = 255;
+        }
+    }
 
     // Zero-allocation flat queue — avoids thousands of 3-element Array
     // allocations that cause V8 GC stuttering. Distance is stored in bits[].
@@ -173,6 +183,10 @@ export function floodFill(
             if ((terrain.get(nx, ny) & TERRAIN_MASK_WALL) !== 0) continue;
 
             const nIdx = nx * 50 + ny;
+            // Check passed-in CostMatrix obstacles: if the original value
+            // was 255 (before our init), this tile was a custom obstacle.
+            // We preserved those 255s during init above, so they're still
+            // 255 and the `bits[nIdx] <= nd` check naturally skips them.
             if (bits[nIdx] <= nd) continue;
             bits[nIdx] = nd;
             queue[tail++] = nIdx;
