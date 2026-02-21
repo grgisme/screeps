@@ -92,14 +92,21 @@ export class TransporterOverlord extends Overlord {
             } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
                 (transporter.memory as any).collecting = true;
             } else {
-                // Full but nowhere to deliver — rally near spawn (logistics hub)
-                // ── DIAGNOSTIC LOG (remove after debugging) ──
-                if (Game.time % 5 === 0) {
-                    log.info(`[DIAG] ${transporter.name} UNMATCHED (full, no target). pos=${transporter.pos}`);
-                }
+                // Full but nowhere to deliver — clear the area around spawn
+                // to prevent traffic jams blocking active haulers.
                 const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                if (spawn && transporter.pos && transporter.pos.getRangeTo(spawn) > 5) {
-                    transporter.travelTo(spawn, 4);
+                if (spawn && transporter.pos) {
+                    const range = transporter.pos.getRangeTo(spawn);
+                    if (range <= 4) {
+                        // Too close to spawn — actively move away to clear paths
+                        // Find a direction AWAY from spawn
+                        const dx = transporter.pos.x - spawn.pos.x;
+                        const dy = transporter.pos.y - spawn.pos.y;
+                        const targetX = Math.min(49, Math.max(1, transporter.pos.x + Math.sign(dx) * 5));
+                        const targetY = Math.min(49, Math.max(1, transporter.pos.y + Math.sign(dy) * 5));
+                        transporter.travelTo(new RoomPosition(targetX, targetY, spawn.pos.roomName), 1);
+                    }
+                    // If far enough away (range > 4), just idle
                 }
             }
         }
