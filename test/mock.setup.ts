@@ -92,6 +92,7 @@
 (globalThis as any).FIND_STRUCTURES = 107;
 (globalThis as any).FIND_MY_SPAWNS = 112;
 (globalThis as any).FIND_MY_CREEPS = 102;
+(globalThis as any).FIND_CREEPS = 101;
 (globalThis as any).FIND_MY_CONSTRUCTION_SITES = 113;
 
 (globalThis as any).STRUCTURE_SPAWN = "spawn";
@@ -116,6 +117,13 @@
 (globalThis as any).STRUCTURE_POWER_SPAWN = "powerSpawn";
 (globalThis as any).STRUCTURE_FACTORY = "factory";
 (globalThis as any).STRUCTURE_EXTRACTOR = "extractor";
+
+// Obstacle types — needed at import time by OBSTACLE_SET in Zerg.ts
+(globalThis as any).OBSTACLE_OBJECT_TYPES = [
+    "spawn", "extension", "link", "storage", "tower",
+    "observer", "powerSpawn", "nuker", "factory",
+    "invaderCore", "keeperLair"
+];
 
 // Mock Controller Structures Map
 (globalThis as any).CONTROLLER_STRUCTURES = {
@@ -194,8 +202,11 @@
     map: {
         getRoomTerrain: (_roomName: string) => {
             return {
-                get: (_x: number, _y: number) => 0 // Default to plain
+                get: (_x: number, _y: number) => 0
             };
+        },
+        findRoute: (_fromRoom: string, _toRoom: string) => {
+            return []; // Empty route = same room in mock
         }
     },
     getObjectById: (_id: string) => null,
@@ -357,7 +368,9 @@ export class MockCreep {
     }
 
     say(_msg: string): void { }
-    move(_direction: number): number { return 0; }
+    move(_direction: number | Creep): number { return 0; }
+    moveTo(_target: any, _opts?: any): number { return 0; }
+    pull(_target: any): number { return 0; }
     transfer(_target: any, _resource: string): number { return 0; }
     withdraw(_target: any, _resource: string): number { return 0; }
     harvest(_target: any): number { return 0; }
@@ -452,8 +465,11 @@ export function resetMocks(): void {
         map: {
             getRoomTerrain: (_roomName: string) => {
                 return {
-                    get: (_x: number, _y: number) => 0 // Default to plain
+                    get: (_x: number, _y: number) => 0
                 };
+            },
+            findRoute: (_fromRoom: string, _toRoom: string) => {
+                return [];
             }
         },
         getObjectById: (_id: string) => null,
