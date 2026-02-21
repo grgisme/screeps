@@ -58,6 +58,11 @@ export class TransporterOverlord extends Overlord {
             }
         }
 
+        // ── DIAGNOSTIC LOG (remove after debugging) ──
+        if (Game.time % 5 === 0) {
+            log.info(`[DIAG] transporters=${this.transporters.length} freeWithdraw=${freeWithdraw.length} freeTransfer=${freeTransfer.length} requesters=${this.colony.logistics.requesters.length} offers=${this.colony.logistics.offerIds.length}`);
+        }
+
         // ── Batch Gale-Shapley matching ──
         // Pass all free haulers at once for stable matching
         for (const transporter of freeWithdraw) {
@@ -80,10 +85,18 @@ export class TransporterOverlord extends Overlord {
             const targetId = this.colony.logistics.matchTransfer(transporter, freeTransfer);
             if (targetId) {
                 transporter.setTask(new TransferTask(targetId as Id<Structure | Creep>));
+                // ── DIAGNOSTIC LOG (remove after debugging) ──
+                if (Game.time % 5 === 0) {
+                    log.info(`[DIAG] ${transporter.name} matched to ${targetId}`);
+                }
             } else if ((transporter.store?.getFreeCapacity() ?? 0) > 0) {
                 (transporter.memory as any).collecting = true;
             } else {
                 // Full but nowhere to deliver — rally near spawn (logistics hub)
+                // ── DIAGNOSTIC LOG (remove after debugging) ──
+                if (Game.time % 5 === 0) {
+                    log.info(`[DIAG] ${transporter.name} UNMATCHED (full, no target). pos=${transporter.pos}`);
+                }
                 const spawn = this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
                 if (spawn && transporter.pos && transporter.pos.getRangeTo(spawn) > 5) {
                     transporter.travelTo(spawn, 4);
