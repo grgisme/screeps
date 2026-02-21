@@ -10,7 +10,7 @@ import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
-import { getParkingZones, pickParkingZone } from "../../utils/ParkingZones";
+import { getParkingZones, pickParkingZone, getRampartTarget } from "../../utils/ParkingZones";
 
 const log = new Logger("TransporterOverlord");
 
@@ -108,6 +108,15 @@ export class TransporterOverlord extends Overlord {
 
             const room = this.colony.room;
             if (room && transporter.pos) {
+                // Fix 3: DEFCON override — seek cover under nearest free rampart.
+                // Returns null when not dangerous or no ramparts (early RCL),
+                // falling through to normal DT parking below.
+                const rampartTarget = getRampartTarget(room, transporter.pos);
+                if (rampartTarget) {
+                    transporter.travelTo(rampartTarget, 0);
+                    continue;
+                }
+
                 const anchor = (this.colony.memory as any).anchor as { x: number; y: number } | undefined;
                 if (anchor) {
                     // DT-based parking: pick a spacious dead-end outside the bunker.

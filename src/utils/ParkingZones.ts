@@ -96,6 +96,44 @@ export function pickParkingZone(
     return pool[Math.floor(Math.random() * pool.length)].z;
 }
 
+/**
+ * Fix 3 — Rampart-Aware Defensive Idling.
+ *
+ * During a DEFCON state (isDangerous), domestic creeps should seek cover
+ * under the nearest unoccupied rampart instead of standing in open corridors
+ * where they absorb splash damage and block hatchery exits.
+ *
+ * Returns null if the room has no ramparts (early RCL), so the caller can
+ * fall through to normal DT-parking or bootstrap flee logic.
+ *
+ * @param room The room to check.
+ * @param pos  The creep's current position.
+ */
+export function getRampartTarget(room: Room, pos: RoomPosition): RoomPosition | null {
+    // Only relevant during an active threat
+    if (!(Memory.rooms as any)?.[room.name]?.isDangerous) return null;
+
+    const ramparts = room.find(FIND_MY_STRUCTURES, {
+        filter: (s: AnyOwnedStructure) => s.structureType === STRUCTURE_RAMPART,
+    }) as StructureRampart[];
+
+    if (ramparts.length === 0) return null;
+
+    // Filter to unoccupied ramparts (no friendly creep already on the tile)
+    const free = ramparts.filter(r => r.pos.lookFor(LOOK_CREEPS).length === 0);
+    const candidates = free.length > 0 ? free : ramparts; // fallback: allow sharing
+
+    // Pick the nearest (Chebyshev)
+    let best: StructureRampart | null = null;
+    let bestD = Infinity;
+    for (const r of candidates) {
+        const d = Math.max(Math.abs(r.pos.x - pos.x), Math.abs(r.pos.y - pos.y));
+        if (d < bestD) { best = r; bestD = d; }
+    }
+
+    return best ? best.pos : null;
+}
+
 // ── Internal helper ──
 function collectZones(
     dt: CostMatrix,
