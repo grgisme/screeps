@@ -121,6 +121,23 @@ export class MiningOverlord extends Overlord {
             const site = this.sites.find(s => s.sourceId === siteId);
             if (!site) continue;
 
+            // ── Container Positioning Check ──
+            // Miners must stand ON the container so harvested energy drops
+            // directly into it. If container exists and miner isn't on it, move there.
+            if (site.container && miner.pos) {
+                const onContainer = miner.pos.isEqualTo(site.container.pos);
+                if (!onContainer) {
+                    // Check no other miner is already on this container
+                    const occupied = this.miners.some(m =>
+                        m !== miner && m.isAlive() && m.pos?.isEqualTo(site.container!.pos)
+                    );
+                    if (!occupied) {
+                        miner.travelTo(site.container, 0);
+                        continue; // Don't harvest until on the container
+                    }
+                }
+            }
+
             // ── FIX 3: Static In-Place Container Repair ──
             const needsRepair = site.container && site.container.hits < site.container.hitsMax - 1000;
             const hasEnergy = (miner.store?.energy ?? 0) > 0;
