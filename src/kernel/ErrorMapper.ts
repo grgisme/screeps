@@ -42,6 +42,69 @@ function getConsumer(): SourceMapConsumer {
 
 const _traceCache: Record<string, string> = {};
 
+// ---------------------------------------------------------------------------
+// Persistent error log — survives global resets via Memory.errorLog
+// ---------------------------------------------------------------------------
+
+const ERROR_LOG_MAX_ENTRIES = 50;
+
+/**
+ * Compute a short djb2 hash of the first 500 chars of a stack string.
+ * Used as a stable Memory key so identical errors deduplicate across ticks.
+ */
+function stackFingerprint(stack: string): string {
+    let h = 5381;
+    const limit = Math.min(stack.length, 500);
+    for (let i = 0; i < limit; i++) {
+        h = ((h << 5) + h + stack.charCodeAt(i)) | 0;
+    }
+    return (h >>> 0).toString(36);
+}
+
+/**
+ * Upsert an error into the persistent Memory.errorLog.
+ * - If the same stack fingerprint already exists: increment count + update lastTick/bucket.
+ * - If new: map the stack trace (expensive once), store the full entry.
+ * - Evicts the oldest entry when the log exceeds ERROR_LOG_MAX_ENTRIES.
+ */
+function upsertErrorLog(rawStack: string, mappedStack: string, message: string): void {
+    if (!Memory.errorLog) {
+        Memory.errorLog = {};
+    }
+
+    const key = stackFingerprint(rawStack);
+    const existing = Memory.errorLog[key];
+
+    if (existing) {
+        existing.count++;
+        existing.lastTick = Game.time;
+        existing.bucket = Game.cpu.bucket;
+    } else {
+        // Evict the oldest entry if at capacity
+        const entries = Object.entries(Memory.errorLog);
+        if (entries.length >= ERROR_LOG_MAX_ENTRIES) {
+            let oldestKey = entries[0][0];
+            let oldestTick = entries[0][1].lastTick;
+            for (const [k, v] of entries) {
+                if (v.lastTick < oldestTick) {
+                    oldestTick = v.lastTick;
+                    oldestKey = k;
+                }
+            }
+            delete Memory.errorLog[oldestKey];
+        }
+
+        Memory.errorLog[key] = {
+            message,
+            mappedStack,
+            firstTick: Game.time,
+            lastTick: Game.time,
+            count: 1,
+            bucket: Game.cpu.bucket,
+        };
+    }
+}
+
 /**
  * Map a raw V8 stack trace back to original TypeScript source locations.
  *
@@ -122,7 +185,7 @@ export const ErrorMapper = {
 
     /**
      * Wraps the game loop so uncaught errors are caught, source-mapped,
-     * and logged to the console without crashing subsequent ticks.
+     * logged to the console, and persisted to Memory.errorLog.
      */
     wrapLoop(fn: () => void): () => void {
         return (): void => {
@@ -131,15 +194,53 @@ export const ErrorMapper = {
             } catch (e: unknown) {
                 if (e instanceof Error) {
                     if ("sim" in Game.rooms) {
-                        log.error(`Source maps unavailable in sim\n${sanitize(e.stack || e.message)}`);
+                        const raw = e.stack || e.message;
+                        log.error(`Source maps unavailable in sim\n${sanitize(raw)}`);
+                        upsertErrorLog(raw, raw, e.message);
                     } else {
-                        log.error(sanitize(sourceMappedStackTrace(e)));
+                        const mapped = sourceMappedStackTrace(e);
+                        log.error(sanitize(mapped));
+                        upsertErrorLog(e.stack ?? e.message, mapped, e.message);
                     }
                 } else {
-                    log.error(`Non-Error thrown: ${sanitize(String(e))}`);
+                    const msg = `Non-Error thrown: ${String(e)}`;
+                    log.error(sanitize(msg));
+                    upsertErrorLog(msg, msg, msg);
                 }
             }
         };
+    },
+
+    /**
+     * Persist an error to Memory.errorLog without re-throwing.
+     * Use this for non-fatal errors caught inline (e.g. TrafficManager crashes).
+     */
+    persistError(e: Error | string): void {
+        try {
+            const isError = e instanceof Error;
+            const message = isError ? e.message : String(e);
+            const rawStack = isError ? (e.stack ?? message) : message;
+            const mapped = "sim" in Game.rooms ? rawStack : sourceMappedStackTrace(isError ? e : rawStack);
+            upsertErrorLog(rawStack, mapped, message);
+        } catch {
+            // Never let the error logger itself throw
+        }
+    },
+
+    /**
+     * Returns all persisted error log entries sorted by lastTick descending
+     * (most recently seen first).
+     */
+    getErrorLog(): ErrorLogEntry[] {
+        if (!Memory.errorLog) return [];
+        return Object.values(Memory.errorLog).sort((a, b) => b.lastTick - a.lastTick);
+    },
+
+    /**
+     * Wipe the persistent error log.
+     */
+    clearErrorLog(): void {
+        Memory.errorLog = {};
     },
 
     /**

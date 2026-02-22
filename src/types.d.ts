@@ -63,6 +63,22 @@ interface RoomMemory {
     [key: string]: any;
 }
 
+/** A deduplicated, persistent entry in the error log */
+interface ErrorLogEntry {
+    /** Error message string */
+    message: string;
+    /** Source-mapped stack trace (resolved once on first occurrence) */
+    mappedStack: string;
+    /** Game.time when this error was first seen */
+    firstTick: number;
+    /** Game.time when this error was most recently seen */
+    lastTick: number;
+    /** Total number of occurrences */
+    count: number;
+    /** Game.cpu.bucket at the time of the most recent occurrence */
+    bucket: number;
+}
+
 interface Memory {
     kernel: KernelMemory;
     creeps: { [name: string]: CreepMemory };
@@ -70,6 +86,8 @@ interface Memory {
     logLevel?: number;
     /** Arbitrary heap-persistent data storage */
     heap?: Record<string, unknown>;
+    /** Persistent cross-tick error log — survives global resets */
+    errorLog?: Record<string, ErrorLogEntry>;
 }
 
 // ---------------------------------------------------------------------------
