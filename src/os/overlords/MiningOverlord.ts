@@ -50,13 +50,23 @@ export class MiningOverlord extends Overlord {
 
     get isSuspended(): boolean {
         const room = this.colony.room;
-        return this.sites.every(s => !s.container && !s.link) && !(room?.storage);
+        // Suspended only when we cannot yet afford a proper miner (RCL1 range).
+        // At RCL2 (capacity ≥ 550) we allow drop-mining even before containers exist.
+        const canAffordMiner = (room?.energyCapacityAvailable ?? 0) >= 550;
+        return this.sites.every(s => !s.container && !s.link) && !room?.storage && !canAffordMiner;
     }
 
     private handleSpawning(site: MiningSite): void {
         const room = this.colony.room;
         if (!room) return;
-        if (!site.container && !site.link && !room.storage) return;
+
+        // Allow a drop-mining bootstrap miner once we can afford one (RCL2: capacity ≥ 550).
+        // The hard gate (container required) prevented miners from ever spawning until workers
+        // built containers first — but building containers is what we need miners FOR.
+        // Drop-mining incurs ~10% decay tax but is far better than zero production.
+        // Containers are built by workers concurrently; once built the miner steps onto them.
+        const canAffordMiner = room.energyCapacityAvailable >= 550;
+        if (!site.container && !site.link && !room.storage && !canAffordMiner) return;
 
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
 

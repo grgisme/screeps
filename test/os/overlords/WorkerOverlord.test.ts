@@ -171,6 +171,9 @@ describe("WorkerOverlord", () => {
             return [];
         };
 
+        // RCL1 guard returns null — set level to 2 so site priority logic actually runs
+        (colony as any).room.controller = { level: 2, my: true };
+
         // Bump tick to invalidate per-tick memoization cache
         (global as any).Game.time = 999;
 

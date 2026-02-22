@@ -359,6 +359,7 @@ export class MockCreep {
         this.store = {
             getUsedCapacity: () => 0,
             getFreeCapacity: () => 50,
+            getCapacity: () => 50,
             energy: 0
         };
         this.memory = {};

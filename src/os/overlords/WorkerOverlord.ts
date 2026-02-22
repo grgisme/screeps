@@ -38,17 +38,24 @@ export class WorkerOverlord extends Overlord {
         // adoptOrphans() removed — base Overlord getter handles adoption via _overlord tag
         this.workers = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "worker") as Worker[];
 
-        // Register workers as energy sinks so TransporterOverlord dispatches
-        // haulers to them directly. Priority 5 = served after spawns/extensions (10)
-        // but before upgraders (4). TransferTask.isValid() handles Creep targets
-        // natively via the `store` property check — no task-layer changes needed.
+        // Predictive Requesting: only register workers as energy sinks when they are
+        // running LOW (used < 30% of total capacity). This dispatches a hauler early
+        // enough to arrive just-in-time, targeting a 100% duty cycle. Workers above
+        // the threshold are not registered — haulers won't be wasted on nearly-full creeps.
+        // Workers in collecting=true mode are excluded: they're self-fetching, so a
+        // hauler dispatch would race their own withdraw/harvest task.
         for (const worker of this.workers) {
             const creep = worker.creep;
-            if (creep) {
+            if (!creep) continue;
+
+            const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+            const total = creep.store.getCapacity(RESOURCE_ENERGY);
+            const isSelfFetching = (worker.memory as any).collecting === true;
+
+            // Only register once dropping below 30% — early enough to be predictive
+            if (!isSelfFetching && used < total * 0.30) {
                 const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
-                if (free > 0) {
-                    this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 5 });
-                }
+                this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 5 });
             }
         }
 
@@ -212,6 +219,20 @@ export class WorkerOverlord extends Overlord {
                     }
                 }
 
+                // ── RCL1 Metabolic Stabilization ─────────────────────────────────
+                // Research: "First 2 pioneers must transfer to Spawn before upgrading
+                // to prevent metabolic collapse." Only active at RCL1 with no transporters
+                // (no filler / transporter to handle it) and only for the first 2 workers.
+                const roomRCL = room?.controller?.level ?? 0;
+                if (roomRCL <= 1 && !hasTransporters) {
+                    const spawn = room?.find(FIND_MY_SPAWNS)?.[0];
+                    if (spawn && spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                        && this.workers.indexOf(worker) < 2) {
+                        worker.setTask(new TransferTask(spawn.id as Id<Structure>));
+                        continue;
+                    }
+                }
+
                 // 1. Emergency repairs (with targetHits barrier threshold)
                 const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
                     filter: (s: Structure) => {
@@ -259,7 +280,7 @@ export class WorkerOverlord extends Overlord {
                     continue;
                 }
 
-                // 3. Upgrade controller (only if no dedicated upgraders)
+                // 4. Upgrade controller (only if no dedicated upgraders)
                 const hasUpgraders = this.colony.creeps.some(c => (c.memory as any)?.role === "upgrader");
                 const controller = this.colony.room?.controller;
                 if (!hasUpgraders && controller) {
@@ -365,6 +386,15 @@ export class WorkerOverlord extends Overlord {
         // Return cached site if already sorted this tick
         if (this._bestSiteTick === Game.time) return this._bestSite ?? null;
         this._bestSiteTick = Game.time;
+
+        // RCL1 Rush: Do NOT build anything at RCL1 — bypass all construction sites
+        // and route workers directly to upgradeController(). The controller only needs
+        // 200 energy to advance to RCL2; spending 60+ ticks building a container first
+        // is a severe bottleneck. Containers/extensions are built properly at RCL2+.
+        if ((this.colony.room?.controller?.level ?? 0) <= 1) {
+            this._bestSite = null;
+            return null;
+        }
 
         const priority: { [key in StructureConstant]?: number } = {
             [STRUCTURE_SPAWN]: 0,
