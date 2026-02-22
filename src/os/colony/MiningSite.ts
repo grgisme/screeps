@@ -115,16 +115,28 @@ export class MiningSite {
                 this.containerId = found.id;
                 log.info(`Discovered container ${found.id.slice(-4)} at site ${this.sourceId.slice(-4)}`);
             } else {
-                // Ensure construction site exists
-                const site = this.containerPos
-                    .lookFor(LOOK_CONSTRUCTION_SITES)
-                    .find(s => s.structureType === STRUCTURE_CONTAINER);
-                if (!site) {
-                    this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
-                    log.info(`Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+                // Fix 2 — Delayed Container Placement:
+                // At RCL 1-2, workers should build extensions first (unlock better spawn capacity).
+                // Containers cost 250 energy and worker-ticks that compound extension delays.
+                // Gate: place container site only at RCL >= 3 OR when 5+ extensions exist.
+                const rcl = room?.controller?.level ?? 0;
+                const extensionCount = room?.find(FIND_MY_STRUCTURES, {
+                    filter: (s: Structure) => s.structureType === STRUCTURE_EXTENSION
+                }).length ?? 0;
+                const readyForContainers = rcl >= 3 || extensionCount >= 5;
+
+                if (readyForContainers) {
+                    const site = this.containerPos
+                        .lookFor(LOOK_CONSTRUCTION_SITES)
+                        .find(s => s.structureType === STRUCTURE_CONTAINER);
+                    if (!site) {
+                        this.containerPos.createConstructionSite(STRUCTURE_CONTAINER);
+                        log.info(`Placing container site at ${this.containerPos.x}, ${this.containerPos.y}`);
+                    }
                 }
             }
         }
+
 
         // 2. Find link at the calculated position
         if (this.linkPos && !this.linkId) {

@@ -295,13 +295,30 @@ export class TrafficManager {
                         creep.say("🔗");
                     }
                 } else if (!blockerAssignedTile) {
-                    // FIX 4: The Unmatched Loser Swap.
-                    // The blocker was evicted but is so boxed in by walls/structures
-                    // that Gale-Shapley left it unmatched (no valid fallback tiles).
-                    // Force a swap so the miner doesn't bounce off it every tick.
-                    if (blocker.fatigue > 0) creep.pull(blocker);
-                    blocker.move(creep);
-                    creep.say("🔄");
+                    // Fix 3 — vacatePos Step-Aside:
+                    // The blocker is idle (unmatched). Instead of swapping it onto the
+                    // path (which just relocates the jam), scan adjacent tiles for an
+                    // off-path empty spot. The hauler keeps its straight-line move and
+                    // the idle creep steps onto a swamp/plain without blocking traffic.
+                    let steppedAside = false;
+                    for (let d = 1; d <= 8 && !steppedAside; d++) {
+                        const adjPos = getPositionAtDirection(blocker.pos, d as DirectionConstant);
+                        if (!adjPos || adjPos.roomName !== roomName) continue;
+                        if (adjPos.x === 0 || adjPos.x === 49 || adjPos.y === 0 || adjPos.y === 49) continue;
+                        if ((terrain.get(adjPos.x, adjPos.y) & TERRAIN_MASK_WALL) !== 0) continue;
+                        if (matrix.get(adjPos.x, adjPos.y) >= 255) continue; // wall/structure
+                        const adjKey = `${adjPos.roomName}_${adjPos.x},${adjPos.y}`;
+                        if (creepAtPos.has(adjKey)) continue; // occupied by another creep
+                        // Clear tile found — step aside off the hauler's path
+                        blocker.move(d as DirectionConstant);
+                        steppedAside = true;
+                    }
+                    if (!steppedAside) {
+                        // Boxed in — fall back to swap so the hauler isn't hard-blocked
+                        if (blocker.fatigue > 0) creep.pull(blocker);
+                        blocker.move(creep);
+                        creep.say("🔄");
+                    }
                 }
             }
 

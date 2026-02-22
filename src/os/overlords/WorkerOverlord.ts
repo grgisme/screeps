@@ -49,13 +49,23 @@ export class WorkerOverlord extends Overlord {
             if (!creep) continue;
 
             const used = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-            const total = creep.store.getCapacity(RESOURCE_ENERGY);
             const isSelfFetching = (worker.memory as any).collecting === true;
 
-            // Only register once dropping below 30% — early enough to be predictive
-            if (!isSelfFetching && used < total * 0.30) {
-                const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+            // Fix 1 — Predictive Requesting (Mathematical Threshold):
+            // Request exactly when current energy + already-reserved deliveries fall
+            // below what the worker will consume during a hauler's average travel time.
+            // Formula: workParts × 5 energy/tick × 15 tick average travel time.
+            // A 2-WORK builder fires at 150e remaining — guaranteeing the hauler arrives
+            // before the builder runs dry. Static percentages over-request on small bodies.
+            const workParts = creep.getActiveBodyparts(WORK) || 1;
+            const consumptionPerTick = workParts * 5;
+            const estimatedTravelTime = 15; // ticks — conservative average for hauler travel
+            const predictiveThreshold = consumptionPerTick * estimatedTravelTime;
 
+            const incoming = this.colony.logistics.incomingReservations.get(creep.id) || 0;
+            const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
+
+            if (!isSelfFetching && used + incoming <= predictiveThreshold && free > 0) {
                 // Fix #3: Dynamic priority based on task urgency.
                 // Higher = dispatched sooner by Gale-Shapley matching.
                 let reqPriority = 4; // Default: generic work
@@ -81,6 +91,7 @@ export class WorkerOverlord extends Overlord {
 
                 this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: reqPriority });
             }
+
         }
 
         this.handleSpawning();
