@@ -122,6 +122,26 @@ export class WorkerOverlord extends Overlord {
                 mem.collecting = false;
             }
 
+            // ── Static Sink: anchor while awaiting in-flight delivery ─────────────
+            // If the worker is empty but NOT collecting (because a transporter is en
+            // route), hold position near the nearest construction site or container.
+            // Emitting no moveTo() keeps the hauler's cached path valid — the key fix
+            // for Kinetic Friction / constant path-recalculation CPU spikes.
+            if (!mem.collecting && (worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
+                const creepId = worker.creep?.id;
+                const inFlight = creepId ? (this.colony.logistics.incomingReservations.get(creepId) || 0) : 0;
+                if (inFlight > 0 && hasTransporters) {
+                    worker.creep?.say('⏳');
+                    // Nudge toward the nearest construction site so delivery meets us at the job
+                    const site = this.getBestConstructionSite();
+                    if (site && worker.pos && !worker.pos.inRangeTo(site.pos, 3)) {
+                        worker.travelTo(site.pos, 3);
+                    }
+                    // If already close enough (or no site), stay still — do nothing, just anchor
+                    continue;
+                }
+            }
+
             if (mem.collecting) {
                 // Collecting energy — fill up completely before working
 
