@@ -161,6 +161,17 @@ export class Kernel {
     /** Maximum priority value allowed in Safe Mode (load shedding). */
     private static readonly SAFE_MODE_MAX_PRIORITY = 2;
 
+    /**
+     * Maximum CPU (ms) a single process may consume in one tick before being
+     * force-slept for 1 tick. Prevents a runaway process from starving all
+     * lower-priority work on the same tick.
+     *
+     * With a typical 20 ms tick limit, 5 ms = 25% of the budget for one process.
+     * Raise this if you have a legitimately expensive one-shot initialization
+     * process (e.g. min-cut computation), or lower it for tighter fairness.
+     */
+    static readonly PROCESS_CPU_TIMEOUT_MS = 5;
+
     // -----------------------------------------------------------------------
     // Process Registration (static)
     // -----------------------------------------------------------------------
@@ -466,6 +477,25 @@ export class Kernel {
 
                 const existing = this._cpuProfile.get(process.processName) ?? 0;
                 this._cpuProfile.set(process.processName, existing + delta);
+
+                // Per-process CPU timeout: if this process consumed more than its
+                // per-tick budget, force-sleep it for one tick. This prevents a single
+                // slow process from starving all lower-priority processes on the same
+                // tick. The process wakes automatically next tick and resumes normally.
+                //
+                // Note: this fires AFTER the work is done — it cannot interrupt a
+                // synchronous run() call mid-way. Its purpose is to shed the process
+                // from the NEXT tick if it continues to over-spend, giving other
+                // buckets a fair chance. The CPU profile already records the overrun
+                // so operators can identify chronic offenders.
+                if (delta > Kernel.PROCESS_CPU_TIMEOUT_MS) {
+                    log.warning(
+                        `Process ${process.processName} (PID ${process.pid}) used ` +
+                        `${delta.toFixed(2)}ms (limit: ${Kernel.PROCESS_CPU_TIMEOUT_MS}ms). ` +
+                        `Force-sleeping 1 tick to yield to lower-priority processes.`
+                    );
+                    process.sleep(1);
+                }
             }
         }
 

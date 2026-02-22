@@ -343,6 +343,17 @@ export class LogisticsNetwork {
             }
         }
 
+        // Compute average free capacity of the batch haulers so receiver slot counts
+        // reflect actual hauler sizes. A hardcoded 50 under-counts slots for large
+        // haulers (e.g. [CARRY×15] = 750 capacity) and over-counts for small ones,
+        // causing the stable match to send too many or too few haulers to each source.
+        const totalFreeCapacity = haulers.reduce(
+            (sum, h) => sum + (h.store?.getFreeCapacity() ?? 0), 0
+        );
+        const avgFreeCapacity = haulers.length > 0
+            ? Math.max(1, totalFreeCapacity / haulers.length)
+            : 50;
+
         // Build receivers: each offer can accept multiple haulers based on stored energy
         const receivers: MatchReceiver[] = [];
         for (const offerId of this.offerIds) {
@@ -352,9 +363,9 @@ export class LogisticsNetwork {
             const effectiveAmount = this.getEffectiveAmount(offerId);
             if (effectiveAmount <= 0) continue;
 
-            // Capacity: how many haulers can withdraw simultaneously
-            // Each hauler takes ~50 energy, so capacity = ceil(amount / 50)
-            const cap = Math.max(1, Math.ceil(effectiveAmount / 50));
+            // Capacity: how many haulers can withdraw simultaneously.
+            // Use real average hauler free capacity — not a hardcoded constant.
+            const cap = Math.max(1, Math.ceil(effectiveAmount / avgFreeCapacity));
 
             receivers.push({
                 id: offerId as string,
@@ -407,6 +418,15 @@ export class LogisticsNetwork {
             }
         }
 
+        // Compute average carry of the loaded batch haulers so receiver slot counts
+        // reflect actual payload sizes rather than a hardcoded 50.
+        const totalUsedCapacity = haulers.reduce(
+            (sum, h) => sum + (h.store?.getUsedCapacity() ?? 0), 0
+        );
+        const avgUsedCapacity = haulers.length > 0
+            ? Math.max(1, totalUsedCapacity / haulers.length)
+            : 50;
+
         const receivers: MatchReceiver[] = [];
         for (const req of this.requesters) {
             const incoming = this.incomingReservations.get(req.targetId) || 0;
@@ -416,8 +436,9 @@ export class LogisticsNetwork {
             const target = Game.getObjectById(req.targetId);
             if (!target) continue;
 
-            // Capacity: how many haulers needed to fill the deficit
-            const cap = Math.max(1, Math.ceil(deficit / 50));
+            // Capacity: how many haulers needed to fill the deficit.
+            // Use real average hauler payload — not a hardcoded constant.
+            const cap = Math.max(1, Math.ceil(deficit / avgUsedCapacity));
 
             receivers.push({
                 id: req.targetId as string,

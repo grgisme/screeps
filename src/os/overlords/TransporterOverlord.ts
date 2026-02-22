@@ -46,6 +46,19 @@ export class TransporterOverlord extends Overlord {
 
             if (transporter.task) continue;
 
+            // Skip re-assignment for transporters with a persisted in-flight task.
+            //
+            // Heap tasks start null every tick (V8 global reset resilience), so the
+            // check above only catches tasks assigned earlier in THIS tick's loop.
+            // Without this memory.task guard, the overlord re-evaluates every
+            // transporter each tick. If reservation weights shift mid-transit (common
+            // after another hauler completes a delivery), matchWithdraw/matchTransfer
+            // can return a different target, rerouting a hauler that was already
+            // halfway to its original destination — wasting the travel already done
+            // and causing collecting-state thrashing.
+            const _nativeCreep = transporter.creep;
+            if (_nativeCreep && !_nativeCreep.spawning && (_nativeCreep.memory as any).task) continue;
+
             const mem = transporter.memory as any;
 
             // ── Fix 5: State Machine transitions ──
