@@ -183,9 +183,10 @@ export class Colony {
         // ── Blackout Detection (Protocol Layer 1) ────────────────────────────
         // Fires early — when destabilized — not just at total collapse.
         // Condition: 0 extractors entirely, OR fewer than 2 combined AND low energy.
-        const extractors = this.creeps.filter(
-            c => (c.memory as any).role === 'miner' || (c.memory as any).role === 'worker'
-        );
+        const extractors = this.creeps.filter(c => {
+            const role = (c.memory as any).role;
+            return role === 'miner' || role === 'worker' || role === 'bootstrapper';
+        });
         const room = this.room;
         const lowEnergy = room.energyAvailable < room.energyCapacityAvailable * 0.25;
         const wasBlackout = this.state.isCriticalBlackout;

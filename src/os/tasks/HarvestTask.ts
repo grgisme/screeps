@@ -43,8 +43,8 @@ export class HarvestTask implements ITask {
     isValid(): boolean {
         const source = this.target;
         if (!source) return false;
-        // Valid if source has energy OR is regenerating (it will have energy soon)
-        return source.energy > 0 || source.ticksToRegeneration !== undefined;
+        // Valid if source has energy OR is actively regenerating
+        return source.energy > 0 || source.ticksToRegeneration > 0;
     }
 
     run(zerg: Zerg): boolean {

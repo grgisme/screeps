@@ -194,6 +194,13 @@ export class BootstrappingOverlord extends Overlord {
                     const source = bootstrapper.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
                     if (source) {
                         bootstrapper.setTask(new HarvestTask(source.id));
+                        // Also call travelTo directly this tick — on the first tick after spawn
+                        // the path cache is cold, and relying solely on Zerg.run() / HarvestTask.run()
+                        // can produce a 0-length path if the static matrix is stale. Calling travelTo
+                        // here guarantees TrafficManager receives the move intent regardless.
+                        if (!bootstrapper.pos?.inRangeTo(source, 1)) {
+                            bootstrapper.travelTo(source, 1, SHOVE_PRIORITY);
+                        }
                         continue;
                     }
                 } else {
