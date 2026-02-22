@@ -83,11 +83,21 @@ export class WorkerOverlord extends Overlord {
 
             // Stale task breaker: if worker has 0 energy but a work-phase task,
             // the task can never complete — clear it and switch to collecting.
+            // Effective Store Check: if a transporter is already en route (incomingReservations > 0),
+            // do NOT flip to collecting — let the worker hold position as a static sink.
             if (worker.task && (worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
                 const taskName = worker.task.name;
                 if (taskName === 'Transfer' || taskName === 'Build' || taskName === 'Upgrade' || taskName === 'Repair') {
-                    worker.setTask(null);
-                    (worker.memory as any).collecting = true;
+                    const creepId = worker.creep?.id;
+                    const inFlight = creepId ? (this.colony.logistics.incomingReservations.get(creepId) || 0) : 0;
+                    if (inFlight > 0 && hasTransporters) {
+                        // Delivery is en route — keep the work task, hold position, do not collect
+                        worker.setTask(null); // Clear stale task so we fall through to static-sink logic
+                        (worker.memory as any).collecting = false;
+                    } else {
+                        worker.setTask(null);
+                        (worker.memory as any).collecting = true;
+                    }
                 }
             }
 
@@ -95,9 +105,18 @@ export class WorkerOverlord extends Overlord {
 
             const mem = worker.memory as any;
 
-            // STATE MACHINE: Commit to collecting until full, then work until empty
+            // STATE MACHINE: Commit to collecting until full, then work until empty.
+            // Effective Store Check: before flipping to collecting, verify no hauler is already
+            // en route. If incomingReservations > 0, hold position as a static sink.
             if ((worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
-                mem.collecting = true;
+                const creepId = worker.creep?.id;
+                const inFlight = creepId ? (this.colony.logistics.incomingReservations.get(creepId) || 0) : 0;
+                if (inFlight > 0 && hasTransporters) {
+                    // A hauler is already en route — do not switch to collecting
+                    mem.collecting = false;
+                } else {
+                    mem.collecting = true;
+                }
             }
             if ((worker.store?.getFreeCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
                 mem.collecting = false;
