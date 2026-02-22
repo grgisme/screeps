@@ -289,11 +289,10 @@ export class TrafficManager {
 
                 // If the blocker is mathematically moving to OUR tile, it's a mutual swap
                 if (blockerAssignedTile === myCurrentTile) {
-                    if (blocker.fatigue > 0) {
-                        creep.pull(blocker);
-                        blocker.move(creep);
-                        creep.say("🔗");
-                    }
+                    // pull() only makes sense for fatigued blockers; the swap move is always needed
+                    if (blocker.fatigue > 0) creep.pull(blocker);
+                    blocker.move(creep);
+                    creep.say("🔗");
                 } else if (!blockerAssignedTile) {
                     // Fix 3 — vacatePos Step-Aside:
                     // The blocker is idle (unmatched). Instead of swapping it onto the
