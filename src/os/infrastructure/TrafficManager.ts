@@ -240,9 +240,22 @@ export class TrafficManager {
             // Preference 2: The current tile (yield / stay still)
             prefs.push(addReceiver(currentPos));
 
-            // Preference 3-N: Adjacent tiles (allow self to be shoved)
-            const shuffledDirs = [...DIRS].sort(() => Math.random() - 0.5);
-            for (const dir of shuffledDirs) {
+            // Preference 3-N: Adjacent tiles (allow self to be shoved).
+            //
+            // Use a deterministic per-creep order instead of Math.random().
+            // A random shuffle changes each tick, so a displaced idle creep can
+            // be sent to tile X one tick then tile Y the next — it never settles.
+            // Hashing the creep name gives a stable, tick-invariant order that is
+            // still unique per creep (so all idles don't pile into the same tile).
+            const nameHash = creep.name.split('').reduce(
+                (h, c) => Math.imul(h, 31) + c.charCodeAt(0) | 0, 0
+            );
+            const deterministicDirs = [...DIRS].sort((a, b) => {
+                const ah = (Math.imul(nameHash ^ (a << 16), 0x9e3779b9)) >>> 0;
+                const bh = (Math.imul(nameHash ^ (b << 16), 0x9e3779b9)) >>> 0;
+                return ah - bh;
+            });
+            for (const dir of deterministicDirs) {
                 const adjPos = getPositionAtDirection(currentPos, dir);
                 if (!adjPos || adjPos.roomName !== roomName) continue;
 
@@ -287,10 +300,16 @@ export class TrafficManager {
                 const blockerAssignedTile = matches.get(blocker.name);
                 const myCurrentTile = `${creep.pos.roomName}_${creep.pos.x},${creep.pos.y}`;
 
-                // If the blocker is mathematically moving to OUR tile, it's a mutual swap
+                // If the blocker is mathematically moving to OUR tile, it's a mutual swap.
                 if (blockerAssignedTile === myCurrentTile) {
-                    // pull() only makes sense for fatigued blockers; the swap move is always needed
-                    if (blocker.fatigue > 0) creep.pull(blocker);
+                    // pull() is required for ALL move(creep) calls, not just fatigued ones.
+                    //
+                    // The Screeps engine requires a matching pull() from the target whenever
+                    // a creep calls move(anotherCreep). Without pull(), move(creep) is
+                    // silently rejected — swaps between two non-fatigued creeps on roads
+                    // were silently failing because the fatigue guard suppressed pull().
+                    // pull() also exempts the pulled creep from road/swamp fatigue costs.
+                    creep.pull(blocker);
                     blocker.move(creep);
                     creep.say("🔗");
                 } else if (!blockerAssignedTile) {
@@ -313,8 +332,9 @@ export class TrafficManager {
                         steppedAside = true;
                     }
                     if (!steppedAside) {
-                        // Boxed in — fall back to swap so the hauler isn't hard-blocked
-                        if (blocker.fatigue > 0) creep.pull(blocker);
+                        // Boxed in — fall back to swap so the hauler isn't hard-blocked.
+                        // Same pull() requirement applies (see mutual-swap comment above).
+                        creep.pull(blocker);
                         blocker.move(creep);
                         creep.say("🔄");
                     }
