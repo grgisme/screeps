@@ -50,23 +50,21 @@ export class MiningOverlord extends Overlord {
 
     get isSuspended(): boolean {
         const room = this.colony.room;
-        // Suspended only when we cannot yet afford a proper miner (RCL1 range).
-        // At RCL2 (capacity ≥ 550) we allow drop-mining even before containers exist.
-        const canAffordMiner = (room?.energyCapacityAvailable ?? 0) >= 550;
-        return this.sites.every(s => !s.container && !s.link) && !room?.storage && !canAffordMiner;
+        // Suspended only at RCL1 when no energy infrastructure exists.
+        // At RCL2+, allow drop-mining regardless of container/storage state.
+        const canDropMine = (room?.controller?.level ?? 0) >= 2;
+        return this.sites.every(s => !s.container && !s.link) && !room?.storage && !canDropMine;
     }
 
     private handleSpawning(site: MiningSite): void {
         const room = this.colony.room;
         if (!room) return;
 
-        // Allow a drop-mining bootstrap miner once we can afford one (RCL2: capacity ≥ 550).
-        // The hard gate (container required) prevented miners from ever spawning until workers
-        // built containers first — but building containers is what we need miners FOR.
+        // Allow drop-mining at RCL2+ even before containers exist.
         // Drop-mining incurs ~10% decay tax but is far better than zero production.
         // Containers are built by workers concurrently; once built the miner steps onto them.
-        const canAffordMiner = room.energyCapacityAvailable >= 550;
-        if (!site.container && !site.link && !room.storage && !canAffordMiner) return;
+        const canDropMine = (room.controller?.level ?? 0) >= 2;
+        if (!site.container && !site.link && !room.storage && !canDropMine) return;
 
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
 
@@ -96,9 +94,11 @@ export class MiningOverlord extends Overlord {
             const isBootstrap = this.miners.length === 0;
             const capacity = room.energyCapacityAvailable;
 
-            // Miner body tiers (research-backed optimal morphologies):
+            // Miner body tiers — incremental WORK scaling by energy capacity:
             // ≥700: Self-Repair Miner — 5W+1C+3M (700e) — 10e/tick + container repair
             // ≥550: Dedicated Miner  — 5W+1M   (550e) — 10e/tick, full saturation
+            // ≥450: Heavy Miner      — 4W+1M   (450e) — 8e/tick
+            // ≥350: Mid Miner        — 3W+1M   (350e) — 6e/tick
             // ≥300: Starter Miner    — 2W+1M   (250e) — 4e/tick
             //  <300: Pioneer Fallback — 1W+1C+1M (200e) — 2e/tick
             let body: BodyPartConstant[];
@@ -106,22 +106,24 @@ export class MiningOverlord extends Overlord {
                 body = [WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE];
             } else if (capacity >= 550) {
                 body = [WORK, WORK, WORK, WORK, WORK, MOVE];
+            } else if (capacity >= 450) {
+                body = [WORK, WORK, WORK, WORK, MOVE];
+            } else if (capacity >= 350) {
+                body = [WORK, WORK, WORK, MOVE];
             } else if (capacity >= 300) {
                 body = [WORK, WORK, MOVE];
             } else {
                 body = [WORK, CARRY, MOVE];
             }
 
+            const bodyCost = body.reduce((s, p) => s + BODYPART_COST[p], 0);
+
             this.colony.hatchery.enqueue({
                 priority: 100,
                 bodyTemplate: body,
-                // Bootstrap cap: when no miners are alive and the template is small (≤300e),
-                // cap to spawn-only energy so Hatchery doesn't deadlock waiting for unfilled
-                // extensions. For larger templates (≥550e), no cap — the spawn must wait for
-                // extensions to fill, but that's correct and expected at RCL2+.
-                maxEnergy: (isBootstrap && body.reduce((s, p) => s + BODYPART_COST[p], 0) <= 300)
-                    ? 300
-                    : undefined,
+                // Bootstrap cap: when no miners are alive, spawn as soon as the body
+                // cost is available rather than waiting for extensions to refill.
+                maxEnergy: isBootstrap ? bodyCost : undefined,
                 overlord: this,
                 name: `miner_${site.sourceId.slice(-4)}_${Game.time}`,
                 memory: { role: "miner", state: { siteId: site.sourceId } }
