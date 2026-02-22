@@ -50,6 +50,31 @@ const log = new Logger("OS");
 };
 
 /**
+ * Print the persistent error log sorted by most-recently-seen.
+ * Run from the Screeps console: showErrors()
+ */
+(global as any).showErrors = (): string => {
+    const entries = ErrorMapper.getErrorLog();
+    if (entries.length === 0) {
+        return "No errors logged.";
+    }
+    const lines = entries.map((e, i) => {
+        const recency = e.count > 1 ? ` ×${e.count}, last tick ${e.lastTick}` : ` tick ${e.firstTick}`;
+        return `[${i + 1}] ${e.message}${recency} (bucket ${e.bucket})\n${e.mappedStack}`;
+    });
+    return lines.join("\n\n");
+};
+
+/**
+ * Clear the persistent error log.
+ * Run from the Screeps console: clearErrors()
+ */
+(global as any).clearErrors = (): string => {
+    ErrorMapper.clearErrorLog();
+    return "Error log cleared.";
+};
+
+/**
  * Full bot reset — wipes Memory, heap, and forces a fresh bootstrap.
  * Run from the Screeps console: resetBot()
  */
@@ -203,8 +228,10 @@ export const loop = ErrorMapper.wrapLoop(() => {
     try {
         TrafficManager.run();
     } catch (e: unknown) {
-        const msg = e instanceof Error ? e.stack ?? e.message : String(e);
-        log.error(`TrafficManager crashed (non-fatal):\n${ErrorMapper.mapTrace(msg)}`);
+        const err = e instanceof Error ? e : new Error(String(e));
+        const mapped = ErrorMapper.mapTrace(err.stack ?? err.message);
+        log.error(`TrafficManager crashed (non-fatal):\n${mapped}`);
+        ErrorMapper.persistError(err);
     }
 
     // --- 9. Persist state (Heap-First) ---
