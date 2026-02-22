@@ -83,9 +83,9 @@ describe("Movement Optimization", () => {
             zerg.travelTo(target, 0); // stuckCount = 2
             zerg.travelTo(target, 0); // stuckCount = 3, triggers repath
 
-            expect(zerg._stuckCount).to.equal(3);
+            expect(zerg._stuckCount).to.equal(0); // Reset to 0 after repath fires
             expect(zerg._path).to.not.be.null;
-            expect(zerg._path).to.not.equal(initialPath);
+            expect(zerg._path).to.not.equal(initialPath); // New path object after repath
         });
     });
 
@@ -151,6 +151,21 @@ describe("Movement Optimization", () => {
             miner.memory = { role: "miner" } as any;
             miner.move = (() => OK) as any;
             (globalThis as any).Game.creeps["miner1"] = miner;
+
+            // A source at (12, 10) — isNearTo(miner at 11,10) = true (range 1)
+            // This makes isParked=true in TrafficManager, giving the miner score=10000.
+            const mockSource = {
+                id: "source1",
+                pos: new RoomPosition(12, 10, "W1N1"),
+            };
+
+            // Override room.find to include the source
+            const baseRoom = (globalThis as any).Game.rooms["W1N1"];
+            const prevFind = baseRoom.find.bind(baseRoom);
+            baseRoom.find = (type: number, opts?: any) => {
+                if (type === FIND_SOURCES) return [mockSource];
+                return prevFind(type, opts);
+            };
 
             // Track whether miner was told to move
             let minerMoveDir: DirectionConstant | null = null;

@@ -37,6 +37,8 @@
 (globalThis as any).FIND_HOSTILE_CREEPS = 106;
 (globalThis as any).FIND_DROPPED_RESOURCES = 109;
 (globalThis as any).FIND_TOMBSTONES = 119;
+(globalThis as any).FIND_MINERALS = 103;
+(globalThis as any).FIND_RUINS = 118;
 
 // Mocks for PathFinder
 (globalThis as any).PathFinder = {

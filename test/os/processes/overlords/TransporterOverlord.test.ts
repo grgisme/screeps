@@ -12,7 +12,37 @@ describe("TransporterOverlord", () => {
     beforeEach(() => {
         room = new Room("W1N1");
         (room as any).energyCapacityAvailable = 550;
-        (room as any).find = (_type: number, _opts?: any) => [];
+        (room as any).energyAvailable = 550;
+        (room as any).storage = null;
+
+        // Provide a spawn with 300 energy so buildTransporterBody has non-zero
+        // capacity even when hasHaulers=false (no transporters/fillers alive).
+        const mockSpawn = {
+            id: "spawn1",
+            structureType: "spawn",
+            store: {
+                getUsedCapacity: (res: string) => res === "energy" ? 300 : 0,
+                getFreeCapacity: () => 0
+            },
+            pos: { x: 25, y: 25, roomName: "W1N1" }
+        };
+        const mockExtension = {
+            id: "ext1",
+            structureType: "extension",
+            store: {
+                getUsedCapacity: (res: string) => res === "energy" ? 50 : 0,
+                getFreeCapacity: () => 0
+            }
+        };
+
+        (room as any).find = (type: number, _opts?: any) => {
+            if (type === FIND_MY_SPAWNS) return [mockSpawn];
+            if (type === FIND_MY_STRUCTURES && _opts?.filter) {
+                // Return extension for the extension-energy sum
+                return [mockExtension].filter(_opts.filter);
+            }
+            return [];
+        };
         (globalThis as any).Game.rooms["W1N1"] = room;
 
         mockColony = {

@@ -49,9 +49,9 @@ export function distanceTransform(roomName: string, initialMatrix?: CostMatrix):
         for (let y = 0; y < 50; y++) {
             const idx = x * 50 + y;
             if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) {
-                bits[idx] = 0; // Hard terrain wall
-            } else if (initialMatrix && initialMatrix.get(x, y) >= 255) {
-                bits[idx] = 0; // Structure obstacle — treat as wall for DT purposes
+                bits[idx] = 0; // Terrain wall
+            } else if (initialMatrix && initialMatrix.get(x, y) === 0) {
+                bits[idx] = 0; // Caller-marked obstacle (0 = impassable in the input matrix)
             }
         }
     }
