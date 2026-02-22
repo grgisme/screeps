@@ -151,7 +151,29 @@ export class DefenseOverlord extends Overlord {
 
         if (hostiles.length > 0) {
             // ────────────────────────────────────────────────────────────
-            // 1. Safe Mode Fail-Safe (Pathfinding Threat Detection)
+            // 1. Preemptive Safe Mode (Protocol Layer 1: Blackout Guard)
+            // ────────────────────────────────────────────────────────────
+            // During a critical blackout, any attack-capable hostile can kill
+            // the lone bootstrapper before it spawns, resetting the 20k-tick
+            // passive regen timer. Don't wait for a wall breach — act now.
+            if (this.colony.state.isCriticalBlackout) {
+                const threats = hostiles.filter(h =>
+                    h.getActiveBodyparts(ATTACK) > 0 ||
+                    h.getActiveBodyparts(RANGED_ATTACK) > 0 ||
+                    h.getActiveBodyparts(WORK) > 0
+                );
+                const ctrl = room.controller;
+                if (threats.length > 0 && ctrl &&
+                    ctrl.safeModeAvailable > 0 &&
+                    !ctrl.safeMode &&
+                    !ctrl.safeModeCooldown) {
+                    ctrl.activateSafeMode();
+                    log.error(`BLACKOUT + THREAT: Preemptive safe mode activated in ${room.name}!`);
+                }
+            }
+
+            // ────────────────────────────────────────────────────────────
+            // 2. Safe Mode Fail-Safe (Pathfinding Threat Detection)
             // ────────────────────────────────────────────────────────────
             const spawns = room.find(FIND_MY_SPAWNS);
             const dangerousHostiles = hostiles.filter(h =>

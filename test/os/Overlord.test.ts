@@ -55,8 +55,8 @@ describe("Overlord Control Pattern", () => {
     describe("Colony", () => {
         it("should instantiate and scan for overlords", () => {
             const colony = new Colony("W1N1");
-            expect(colony.overlords).to.have.length(8);
-            expect(colony.overlords[1]).to.be.instanceOf(MiningOverlord);
+            expect(colony.overlords).to.have.length(9);
+            expect(colony.overlords[2]).to.be.instanceOf(MiningOverlord);
         });
 
         it("should register zergs", () => {
@@ -107,8 +107,8 @@ describe("Overlord Control Pattern", () => {
             };
 
             const colony = new Colony("W1N1");
-            // overlords[1] is MiningOverlord (overlords[0] is ConstructionOverlord)
-            const overlord = colony.overlords[1] as MiningOverlord;
+            // overlords[2] is MiningOverlord (overlords[0] is BootstrappingOverlord, overlords[1] is ConstructionOverlord)
+            const overlord = colony.overlords[2] as MiningOverlord;
 
             overlord.init();
             colony.hatchery.run();

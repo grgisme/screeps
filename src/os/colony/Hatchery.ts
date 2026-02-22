@@ -82,38 +82,10 @@ export class Hatchery {
 
         const spawns = this.spawns;
 
-        // 1. Emergency Mode Check (Deadlock Prevention)
-        const criticalCreeps = this.colony.creeps.filter(
-            c => c.memory.role === 'miner' || c.memory.role === 'worker'
-        );
+        // Emergency recovery is handled by BootstrappingOverlord, which enqueues
+        // at priority 999 during isCriticalBlackout. No special-casing needed here.
 
-        if (criticalCreeps.length === 0 && spawns.length > 0) {
-            const spawn = spawns[0];
-            const bootstrapperName = `bootstrapper_${this.colony.name}_${Game.time}`;
-
-            if (!spawn.spawning) {
-                // Wait until we have 200 energy for [WORK, CARRY, MOVE]
-                if (room.energyAvailable >= 200) {
-                    log.warning(`${this.colony.name}: EMERGENCY MODE ACTIVATED. Spawning ${bootstrapperName}.`);
-
-                    const result = spawn.spawnCreep([WORK, CARRY, MOVE], bootstrapperName, {
-                        memory: {
-                            role: 'worker',
-                            colony: this.colony.name,
-                            _overlord: "worker"
-                        } as any
-                    });
-
-                    if (result === OK) {
-                        this.pendingSpawns.add(bootstrapperName); // Phase I: Commitment Handshake
-                        return; // Halt queue processing for this tick
-                    }
-                }
-                return; // Always halt normal queue if in an emergency to stockpile 200 energy
-            }
-        }
-
-        // 2. Process Queue
+        // 1. Process Queue
         if (Game.time % 10 === 0) {
             log.debug(() => `Queue: ${this.queue.length} requests | Energy: ${room.energyAvailable}/${room.energyCapacityAvailable} | Spawns: ${spawns.length} (${spawns.filter(s => !s.spawning).length} idle)`);
             for (const req of this.queue) {

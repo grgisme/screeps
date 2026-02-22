@@ -66,15 +66,20 @@ describe("Hatchery", () => {
         expect(hatchery.queue[2].priority).to.equal(1);
     });
 
-    it("should spawn bootstrapper in emergency mode", () => {
-        // Arrange: No critical creeps (miners/workers)
-        room.find = (type: FindConstant) => {
-            if (type === FIND_MY_SPAWNS) return [spawn];
-            if (type === FIND_MY_CREEPS) return []; // EMPTY — no miners or workers
-            return [];
-        };
-
+    it("should spawn bootstrapper via queue when enqueued at priority 999 (simulating BootstrappingOverlord)", () => {
+        // BootstrappingOverlord enqueues at priority 999 during isCriticalBlackout.
+        // Hatchery's run() should process that request just like any other queue item.
         const hatchery = new Hatchery(mockColony);
+        const overlord = { processId: "bootstrapping" } as any;
+
+        hatchery.enqueue({
+            priority: 999,
+            bodyTemplate: [WORK, CARRY, MOVE],
+            overlord,
+            name: "bootstrap_pioneer_W1N1_1",
+            memory: { role: "bootstrapper" },
+            maxEnergy: 200  // CAP: ensures body stays [WORK, CARRY, MOVE] regardless of room capacity
+        });
 
         let spawnedName = "";
         let spawnedBody: BodyPartConstant[] = [];
@@ -86,9 +91,30 @@ describe("Hatchery", () => {
 
         hatchery.run();
 
-        // Name now includes colony name and Game.time
-        expect(spawnedName).to.match(/^bootstrapper_W1N1_\d+$/);
+        expect(spawnedName).to.equal("bootstrap_pioneer_W1N1_1");
         expect(spawnedBody).to.deep.equal([WORK, CARRY, MOVE]);
+    });
+
+    it("should not directly spawn a bootstrapper bypassing the queue (emergency block removed)", () => {
+        // Confirm that Hatchery does NOT bypass the queue with its own emergency logic.
+        // If the queue is empty and no critical creeps exist, nothing should be spawned.
+        room.find = (type: FindConstant) => {
+            if (type === FIND_MY_SPAWNS) return [spawn];
+            if (type === FIND_MY_CREEPS) return []; // No workers/miners
+            return [];
+        };
+
+        const hatchery = new Hatchery(mockColony);
+
+        let spawnCalled = false;
+        spawn.spawnCreep = () => {
+            spawnCalled = true;
+            return OK;
+        };
+
+        hatchery.run(); // Queue empty, no direct emergency spawning
+
+        expect(spawnCalled).to.equal(false);
     });
 
     it("should process queue if no emergency", () => {

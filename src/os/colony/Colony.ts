@@ -18,6 +18,7 @@ import { UpgradingOverlord } from "../overlords/UpgradingOverlord";
 import { TerminalOverlord } from "../overlords/TerminalOverlord";
 import { DefenseOverlord } from "../overlords/DefenseOverlord";
 import { FillerOverlord } from "../overlords/FillerOverlord";
+import { BootstrappingOverlord } from "../overlords/BootstrappingOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LinkNetwork } from "./LinkNetwork";
 import { LogisticsNetwork } from "./LogisticsNetwork";
@@ -35,6 +36,13 @@ export interface ColonyMemory {
 
 export interface ColonyState {
     rclChanged: boolean;
+    /**
+     * True when the colony is critically destabilized:
+     * fewer than 2 energy-extracting creeps (miners + workers) AND
+     * room energy < 25% capacity, OR zero extractors entirely.
+     * Used to trigger preemptive safe mode and BootstrappingOverlord.
+     */
+    isCriticalBlackout: boolean;
 }
 
 export class Colony {
@@ -48,6 +56,13 @@ export class Colony {
     linkNetwork: LinkNetwork;
     hatchery: Hatchery;
 
+    /**
+     * Deterministic refill order: spawn at [0], then extensions sorted by
+     * ascending range to spawn. Cached and invalidated on structure count change.
+     */
+    refillOrder: Id<StructureSpawn | StructureExtension>[] = [];
+    private _refillStructCount = -1;
+
     constructor(roomName: string) {
         this.name = roomName;
 
@@ -56,7 +71,7 @@ export class Colony {
         if (!(Memory as any).colonies[this.name]) (Memory as any).colonies[this.name] = {};
         this.memory = (Memory as any).colonies[this.name];
 
-        this.state = { rclChanged: true };
+        this.state = { rclChanged: true, isCriticalBlackout: false };
 
         this.logistics = new LogisticsNetwork(this);
         this.linkNetwork = new LinkNetwork(this);
@@ -95,6 +110,9 @@ export class Colony {
     // -----------------------------------------------------------------------
 
     private initOverlords(): void {
+        // BootstrappingOverlord registered first — runs before all others
+        // so recovery requests are enqueued at priority 999 before anything else.
+        this.registerOverlord(new BootstrappingOverlord(this));
         this.registerOverlord(new ConstructionOverlord(this));
         this.registerOverlord(new MiningOverlord(this));
         this.registerOverlord(new TransporterOverlord(this));
@@ -145,6 +163,39 @@ export class Colony {
                 this.state.rclChanged = true;
                 this.memory.lastRcl = currentRcl;
             }
+        }
+
+        // ── Blackout Detection (Protocol Layer 1) ────────────────────────────
+        // Fires early — when destabilized — not just at total collapse.
+        // Condition: 0 extractors entirely, OR fewer than 2 combined AND low energy.
+        const extractors = this.creeps.filter(
+            c => (c.memory as any).role === 'miner' || (c.memory as any).role === 'worker'
+        );
+        const room = this.room;
+        const lowEnergy = room.energyAvailable < room.energyCapacityAvailable * 0.25;
+        this.state.isCriticalBlackout = extractors.length === 0 ||
+            (extractors.length < 2 && lowEnergy);
+
+        // ── Deterministic Refill Order (Protocol Layer 3) ────────────────────
+        // Spawn is always index[0]. Extensions sorted ascending by range to spawn.
+        // Invalidated when structure count changes (new extension built, etc.).
+        const structCount = room.find(FIND_MY_STRUCTURES).length;
+        if (this.refillOrder.length === 0 || this._refillStructCount !== structCount) {
+            this._refillStructCount = structCount;
+            const spawns = room.find(FIND_MY_SPAWNS);
+            const extensions = room.find(FIND_MY_STRUCTURES, {
+                filter: (s: Structure) => s.structureType === STRUCTURE_EXTENSION
+            }) as StructureExtension[];
+
+            const spawnIds = spawns.map(s => s.id) as Id<StructureSpawn | StructureExtension>[];
+            const anchor = spawns[0];
+            const extIds = anchor
+                ? extensions
+                    .sort((a, b) => anchor.pos.getRangeTo(a) - anchor.pos.getRangeTo(b))
+                    .map(e => e.id as Id<StructureSpawn | StructureExtension>)
+                : extensions.map(e => e.id as Id<StructureSpawn | StructureExtension>);
+
+            this.refillOrder = [...spawnIds, ...extIds];
         }
 
         // Prune dead zergs
