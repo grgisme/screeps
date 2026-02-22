@@ -159,8 +159,15 @@ export class TransporterOverlord extends Overlord {
 
         if (!miningOverlord || miningOverlord.sites.length === 0) return;
 
-        // Only count sites that are actively mined (have container/link)
-        const activeSites = miningOverlord.sites.filter(s => s.container || s.link);
+        // Count sites that are actively mined: container/link OR actively drop-mined
+        // (miner assigned but no container yet). Drop miners produce energy on the
+        // floor which the logistics network registers globally via FIND_DROPPED_RESOURCES.
+        const dropMiningSiteIds = new Set(
+            miningOverlord.miners.map(m => (m.memory as any)?.state?.siteId as string)
+        );
+        const activeSites = miningOverlord.sites.filter(s =>
+            s.container || s.link || dropMiningSiteIds.has(s.sourceId)
+        );
         if (activeSites.length === 0) return;
 
         let totalCarryNeeded = 0;
@@ -253,7 +260,12 @@ export class TransporterOverlord extends Overlord {
 
         let avgRoadCoverage = 0;
         if (miningOverlord) {
-            const activeSites = miningOverlord.sites.filter(s => s.container || s.link);
+            const dropMiningSiteIds = new Set(
+                miningOverlord.miners.map(m => (m.memory as any)?.state?.siteId as string)
+            );
+            const activeSites = miningOverlord.sites.filter(s =>
+                s.container || s.link || dropMiningSiteIds.has(s.sourceId)
+            );
             if (activeSites.length > 0) {
                 const validSites = activeSites.filter(s => s.roadCoverage >= 0);
                 if (validSites.length > 0) {
@@ -268,25 +280,24 @@ export class TransporterOverlord extends Overlord {
         if (hasGoodRoads) {
             // Road mode: 2:1 CARRY:MOVE ratio + 1 WORK for repair-on-transit
             const remaining = capacity - 100; // Reserve 100e for WORK
-            const segmentCost = 150; // CARRY(50) + CARRY(50) + MOVE(50)
-            const segments = Math.min(Math.floor(remaining / segmentCost), 16);
-            if (segments < 1) return [];
-
-            for (let i = 0; i < segments; i++) {
-                body.push(CARRY, CARRY, MOVE);
+            const segments = Math.min(Math.floor(remaining / 150), 16);
+            if (segments >= 1) {
+                for (let i = 0; i < segments; i++) {
+                    body.push(CARRY, CARRY, MOVE);
+                }
+                body.push(WORK); // Single WORK for road repair
+                return body;
             }
-            body.push(WORK); // Single WORK for road repair
-        } else {
-            // Plains/swamp mode: 1:1 ratio for full speed, no WORK (nothing to repair)
-            const segmentCost = 100; // CARRY(50) + MOVE(50)
-            const segments = Math.min(Math.floor(capacity / segmentCost), 25);
-            if (segments < 1) return [];
-
-            for (let i = 0; i < segments; i++) {
-                body.push(CARRY, MOVE);
-            }
+            // Fall through to plains mode — can't fit even 1 road segment at this energy level
         }
 
+        // Plains/swamp mode: 1:1 ratio for full speed, no WORK (nothing to repair)
+        const segments = Math.min(Math.floor(capacity / 100), 25);
+        if (segments < 1) return [];
+
+        for (let i = 0; i < segments; i++) {
+            body.push(CARRY, MOVE);
+        }
         return body;
     }
 }
