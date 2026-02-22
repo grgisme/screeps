@@ -71,7 +71,18 @@ export class Hatchery {
 
     enqueue(request: SpawnRequest): string {
         const name = request.name || `${request.overlord.processId}_${Game.time}_${Math.floor(Math.random() * 100)}`;
-        this.queue.push({ ...request, name });
+
+        // Step 6 — Spawn Governor: during post-blackout recovery (200 ticks),
+        // clamp non-bootstrapper body sizes to 400 energy. Forces cheap, redundant
+        // workers to fill the spawn queue rather than one expensive creep that could
+        // create a secondary blackout if killed by a stray invader.
+        let effectiveRequest = { ...request, name };
+        if (this.colony.state?.isRecovering && request.priority < 999 && !request.maxEnergy) {
+            effectiveRequest.maxEnergy = 400;
+            log.debug(() => `Recovery mode: clamping ${name} to 400e (cap was ${this.colony.room?.energyCapacityAvailable ?? '?'})`);
+        }
+
+        this.queue.push(effectiveRequest);
         this.queue.sort((a, b) => b.priority - a.priority);
         return name;
     }

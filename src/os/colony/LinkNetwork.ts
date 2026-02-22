@@ -11,6 +11,10 @@
 import type { Colony } from "./Colony";
 import { Logger } from "../../utils/Logger";
 
+/** Energy to keep locked in the hubLink as an emergency battery.
+ *  Released only when the colony is in critical blackout. */
+const HUB_RESERVE = 400;
+
 export class LinkNetwork {
     colony: Colony;
 
@@ -146,12 +150,18 @@ export class LinkNetwork {
         }
 
         // 2. Distribution Phase: Hub -> Receivers/Controller
-        if (hubLink && hubLink.cooldown === 0 && hubLink.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+        // Step 10 — Link Reserve: always keep HUB_RESERVE locked unless in blackout.
+        const inBlackout = this.colony.state?.isCriticalBlackout ?? false;
+        const hubEnergy = hubLink ? hubLink.store.getUsedCapacity(RESOURCE_ENERGY) : 0;
+        const hubCanDistribute = hubLink && hubLink.cooldown === 0 &&
+            (inBlackout ? hubEnergy > 0 : hubEnergy > HUB_RESERVE);
+
+        if (hubCanDistribute) {
             let transferred = false;
             // Priority 1: Receivers (Towers/Extensions)
             for (const receiver of this.receiverLinks) {
                 if (receiver.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
-                    hubLink.transferEnergy(receiver);
+                    hubLink!.transferEnergy(receiver);
                     transferred = true;
                     break; // Only one transfer per tick
                 }
@@ -159,7 +169,7 @@ export class LinkNetwork {
 
             // Priority 2: Controller Link
             if (!transferred && controllerLink && controllerLink.store.getUsedCapacity(RESOURCE_ENERGY) < 400) {
-                hubLink.transferEnergy(controllerLink);
+                hubLink!.transferEnergy(controllerLink);
             }
         }
     }

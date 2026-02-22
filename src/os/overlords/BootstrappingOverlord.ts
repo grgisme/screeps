@@ -63,6 +63,18 @@ export class BootstrappingOverlord extends Overlord {
 
         log.warning(`${this.colony.name}: CRITICAL BLACKOUT — BootstrappingOverlord activating.`);
 
+        // ── Step 8: 25-Tile Morphology Split ────────────────────────────────
+        // If the nearest harvestable source is > 25 tiles away, a single
+        // [WORK,CARRY,MOVE] pioneer spends more time walking than harvesting.
+        // Splitting into a drop-miner + relay hauler achieves higher energy/tick.
+        const miningOverlord = this.colony.overlords.find(o => (o as any).sites !== undefined) as any;
+        const miningSites: Array<{ distance: number }> = miningOverlord?.sites ?? [];
+        // distance===0 means MiningSite hasn't computed the route yet — skip those
+        const knownDistances = miningSites.map((s: { distance: number }) => s.distance).filter(d => d > 0);
+        const closestDistance = knownDistances.length > 0 ? Math.min(...knownDistances) : 0;
+        // Only split when we have a confirmed long-haul path (known > 25 tiles)
+        const longHaul = closestDistance > 25;
+
         // ── Protocol Layer 2: Conditional Morphology Selector ────────────────
         const bufferEnergy = this._findBufferEnergy(room);
 
@@ -76,6 +88,28 @@ export class BootstrappingOverlord extends Overlord {
                 name: `bootstrap_hauler_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
             });
+        } else if (longHaul && room.energyAvailable >= 150) {
+            // Step 8: Long haul — drop-miner stays at source, relay hauler ferries energy.
+            // A [WORK,MOVE] miner at the source + [CARRY,MOVE] relay beats a slow pioneer.
+            log.warning(`${this.colony.name}: Long-haul source (${closestDistance} tiles). Enqueuing split morphology.`);
+            // Drop-miner: harvests and drops in place
+            this.colony.hatchery.enqueue({
+                priority: BOOTSTRAP_PRIORITY,
+                bodyTemplate: [WORK, MOVE],
+                overlord: this,
+                name: `bootstrap_dropminer_${this.colony.name}_${Game.time}`,
+                memory: { role: "bootstrapper" }
+            });
+            // Relay hauler: follows the drop-miner (spawns if we have 100 more energy)
+            if (room.energyAvailable >= 250) {
+                this.colony.hatchery.enqueue({
+                    priority: BOOTSTRAP_PRIORITY,
+                    bodyTemplate: [CARRY, MOVE],
+                    overlord: this,
+                    name: `bootstrap_relay_${this.colony.name}_${Game.time}`,
+                    memory: { role: "bootstrapper" }
+                });
+            }
         } else if (room.energyAvailable >= 200 || room.energyAvailable >= 100 && bufferEnergy) {
             // No pre-processed energy: wait for Pioneer body
             log.warning(`${this.colony.name}: No buffer energy. Enqueuing [WORK, CARRY, MOVE] Pioneer.`);
@@ -155,7 +189,7 @@ export class BootstrappingOverlord extends Overlord {
                     continue;
                 }
 
-                // 4. Harvest directly — [WORK, CARRY, MOVE] pioneer bodies only
+                // 4. Harvest directly — [WORK, CARRY, MOVE] pioneer or [WORK, MOVE] drop-miner bodies only
                 if (creep.getActiveBodyparts(WORK) > 0) {
                     const source = bootstrapper.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
                     if (source) {
@@ -163,17 +197,43 @@ export class BootstrappingOverlord extends Overlord {
                         continue;
                     }
                 } else {
-                    // [CARRY, MOVE] Hauler with no energy — do nothing, will die
+                    // [CARRY, MOVE] Hauler/relay — look for dropped energy near sources
+                    const dropped = bootstrapper.pos?.findClosestByRange(FIND_DROPPED_RESOURCES, {
+                        filter: (r: Resource) => r.resourceType === RESOURCE_ENERGY && r.amount > 10
+                    });
+                    if (dropped) {
+                        bootstrapper.setTask(new PickupTask(dropped.id as Id<Resource>));
+                        continue;
+                    }
                     creep.say("⚠️ no src");
                 }
             } else {
                 // ── Working Phase (Protocol Layer 3: Deterministic Routing) ───
                 // Iterate refillOrder: spawn at [0], then extensions by distance.
+                // Step 9 — Threat-Aware Tower-First: if room is dangerous, prepend
+                // any unfilled towers so bootstrapper charges defenses before extensions.
+                const isDangerous = !!(Memory.rooms?.[creep.room.name] as any)?.isDangerous;
                 const refillOrder = this.colony.refillOrder;
-                let transferTarget: StructureSpawn | StructureExtension | null = null;
 
-                for (const id of refillOrder) {
-                    const structure = Game.getObjectById(id) as StructureSpawn | StructureExtension | null;
+                let orderedFill: string[];
+                if (isDangerous) {
+                    // Inject towers immediately after the spawn (index 0).
+                    const towers = creep.room.find(FIND_MY_STRUCTURES, {
+                        filter: (s: Structure) => s.structureType === STRUCTURE_TOWER &&
+                            (s as StructureTower).store.getFreeCapacity(RESOURCE_ENERGY) > 400
+                    }).map((t: Structure) => t.id as string);
+                    // Keep spawn first, insert towers next, then standard extensions
+                    orderedFill = refillOrder.length > 0
+                        ? [refillOrder[0], ...towers, ...refillOrder.slice(1)]
+                        : towers;
+                } else {
+                    orderedFill = refillOrder;
+                }
+
+                let transferTarget: StructureSpawn | StructureExtension | StructureTower | null = null;
+
+                for (const id of orderedFill) {
+                    const structure = Game.getObjectById(id as Id<Structure>) as StructureSpawn | StructureExtension | StructureTower | null;
                     if (structure && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                         transferTarget = structure;
                         break;
@@ -203,7 +263,7 @@ export class BootstrappingOverlord extends Overlord {
 
     /**
      * Returns true if "buffer energy" is accessible in the room:
-     * tombstones with energy, dropped resources > 50, or containers with energy.
+     * tombstones, ruins, dropped resources > 50, or containers with energy.
      * Used by the Conditional Morphology Selector to pick the cheapest usable body.
      */
     private _findBufferEnergy(room: Room): boolean {
@@ -218,6 +278,12 @@ export class BootstrappingOverlord extends Overlord {
             filter: (t: Tombstone) => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0
         });
         if (tombstones.length > 0) return true;
+
+        // Step 10: Ruins with energy (RCL 3+ only, always check)
+        const ruins = room.find(FIND_RUINS, {
+            filter: (r: Ruin) => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+        });
+        if (ruins.length > 0) return true;
 
         // Containers with energy
         const containers = room.find(FIND_STRUCTURES, {

@@ -28,10 +28,19 @@ import { HarvestDirective } from "../directives/HarvestDirective";
 import { GuardDirective } from "../directives/GuardDirective";
 import { AttackDirective } from "../directives/AttackDirective";
 import { ColonizeDirective } from "../directives/ColonizeDirective";
+import { Logger } from "../../utils/Logger";
+
+const log = new Logger("Colony");
 
 export interface ColonyMemory {
     anchor?: { x: number, y: number };
     lastRcl?: number;
+    /** Tick when CRITICAL_BLACKOUT last fired — persists across global resets. */
+    lastBlackoutTick?: number;
+    /** Tick when CRITICAL_BLACKOUT last cleared — used for recovery countdown. */
+    lastBlackoutClearTick?: number;
+    /** Set by GlobalManager when another colony needs energy rescue. */
+    rescueTarget?: string;
 }
 
 export interface ColonyState {
@@ -43,6 +52,12 @@ export interface ColonyState {
      * Used to trigger preemptive safe mode and BootstrappingOverlord.
      */
     isCriticalBlackout: boolean;
+    /**
+     * True for 200 ticks after isCriticalBlackout clears.
+     * Step 6 — Spawn Governor: Hatchery clamps body sizes during this window
+     * to force a swarm of cheap, redundant workers over expensive single creeps.
+     */
+    isRecovering: boolean;
 }
 
 export class Colony {
@@ -71,7 +86,7 @@ export class Colony {
         if (!(Memory as any).colonies[this.name]) (Memory as any).colonies[this.name] = {};
         this.memory = (Memory as any).colonies[this.name];
 
-        this.state = { rclChanged: true, isCriticalBlackout: false };
+        this.state = { rclChanged: true, isCriticalBlackout: false, isRecovering: false };
 
         this.logistics = new LogisticsNetwork(this);
         this.linkNetwork = new LinkNetwork(this);
@@ -173,8 +188,19 @@ export class Colony {
         );
         const room = this.room;
         const lowEnergy = room.energyAvailable < room.energyCapacityAvailable * 0.25;
+        const wasBlackout = this.state.isCriticalBlackout;
         this.state.isCriticalBlackout = extractors.length === 0 ||
             (extractors.length < 2 && lowEnergy);
+
+        // ── Step 6: Recovery Tracking ────────────────────────────────────────
+        if (this.state.isCriticalBlackout) {
+            this.memory.lastBlackoutTick = Game.time;
+        } else if (wasBlackout && !this.state.isCriticalBlackout) {
+            // Blackout just cleared — start recovery window
+            this.memory.lastBlackoutClearTick = Game.time;
+        }
+        const clearTick = this.memory.lastBlackoutClearTick ?? 0;
+        this.state.isRecovering = !this.state.isCriticalBlackout && (Game.time - clearTick) < 200;
 
         // ── Deterministic Refill Order (Protocol Layer 3) ────────────────────
         // Spawn is always index[0]. Extensions sorted ascending by range to spawn.
@@ -202,6 +228,36 @@ export class Colony {
         for (const [name, zerg] of this.zergs.entries()) {
             if (!zerg.isAlive()) {
                 this.zergs.delete(name);
+            }
+        }
+
+        // ── Step 7: Inter-Colony Rescue Dispatch ─────────────────────────────
+        // GlobalManager.run() sets memory.rescueTarget when a nearby colony
+        // enters prolonged blackout. We enqueue a large CARRY transporter here
+        // so it is handled through the normal Hatchery queue (respecting CPU budgets).
+        if (this.memory.rescueTarget) {
+            const targetName = this.memory.rescueTarget;
+            // Check if a rescue creep is already alive or spawning
+            const alreadyDispatched = this.creeps.some(c => (c.memory as any).rescueTarget === targetName) ||
+                this.hatchery.spawns.some(s => s.spawning?.name.startsWith(`rescue_`));
+            if (!alreadyDispatched) {
+                // Inline rescue body: 15 CARRY + 10 MOVE = 1250 carry capacity
+                const rescueBody: BodyPartConstant[] = [
+                    CARRY, CARRY, CARRY, CARRY, CARRY,
+                    CARRY, CARRY, CARRY, CARRY, CARRY,
+                    CARRY, CARRY, CARRY, CARRY, CARRY,
+                    MOVE, MOVE, MOVE, MOVE, MOVE,
+                    MOVE, MOVE, MOVE, MOVE, MOVE,
+                ];
+                this.hatchery.enqueue({
+                    priority: 900,
+                    bodyTemplate: rescueBody,
+                    overlord: this.overlords[0], // BootstrappingOverlord as nominal owner
+                    name: `rescue_${targetName}_${Game.time}`,
+                    memory: { role: "rescueTransporter", rescueTarget: targetName }
+                });
+                log.info(`${this.name}: Rescue transporter enqueued for → ${targetName}`);
+                delete this.memory.rescueTarget; // Prevent duplicate enqueue
             }
         }
     }
