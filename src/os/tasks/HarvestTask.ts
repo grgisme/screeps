@@ -51,9 +51,15 @@ export class HarvestTask implements ITask {
         const source = this.target;
         if (!source) return true; // Target gone — task complete (invalid)
 
-        // Non-miners must stop harvesting when full so they can build/upgrade
+        // Non-miners stop harvesting when full so they can go build/upgrade.
+        // Miners (static workers) drop their energy in place — this is Drop Mining:
+        // energy lands on the terrain tile beneath them so haulers/logistics can
+        // pick it up via FIND_DROPPED_RESOURCES without blocking the harvest loop.
         if (zerg.store && zerg.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
             if ((zerg.memory as any)?.role !== "miner") return true;
+            // Miner: dump and keep harvesting
+            zerg.drop(RESOURCE_ENERGY);
+            return false;
         }
 
         if (zerg.pos && zerg.pos.inRangeTo(source, this.settings.workRange)) {

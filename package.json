@@ -1,6 +1,6 @@
 {
   "name": "screeps",
-  "version": "4.6",
+  "version": "4.7",
   "description": "Screeps just for me.",
   "main": "index.js",
   "scripts": {

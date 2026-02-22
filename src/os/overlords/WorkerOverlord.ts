@@ -55,7 +55,31 @@ export class WorkerOverlord extends Overlord {
             // Only register once dropping below 30% — early enough to be predictive
             if (!isSelfFetching && used < total * 0.30) {
                 const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
-                this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 5 });
+
+                // Fix #3: Dynamic priority based on task urgency.
+                // Higher = dispatched sooner by Gale-Shapley matching.
+                let reqPriority = 4; // Default: generic work
+                const taskMem = (worker.memory as any).task;
+                if (taskMem) {
+                    if (taskMem.name === "Build") {
+                        const site = Game.getObjectById(taskMem.targetId as Id<ConstructionSite>);
+                        if (site) {
+                            if (site.structureType === STRUCTURE_SPAWN || site.structureType === STRUCTURE_TOWER) {
+                                reqPriority = 8; // Critical defense / spawn infra
+                            } else if (site.structureType === STRUCTURE_EXTENSION || site.structureType === STRUCTURE_CONTAINER) {
+                                reqPriority = 6; // Economy upgrades
+                            } else if (site.structureType === STRUCTURE_ROAD) {
+                                reqPriority = 2; // Nice-to-have infra
+                            }
+                        }
+                    } else if (taskMem.name === "Upgrade") {
+                        reqPriority = 3; // Important but not urgent
+                    } else if (taskMem.name === "Repair") {
+                        reqPriority = 5; // Active repair is moderately urgent
+                    }
+                }
+
+                this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: reqPriority });
             }
         }
 

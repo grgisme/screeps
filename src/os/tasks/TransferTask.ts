@@ -72,7 +72,11 @@ export class TransferTask implements ITask {
             if (result === OK) return true;
             return false;
         } else {
-            zerg.travelTo(target, this.settings.targetRange);
+            // Fix #4: Transporters get priority 10 — right-of-way in corridors.
+            // Workers transferring to spawn get default 1 (they yield to haulers).
+            const isTransporter = (zerg.memory as any)?.role === "transporter";
+            const travelPriority = isTransporter ? 10 : 1;
+            zerg.travelTo(target, this.settings.targetRange, travelPriority);
             return false;
         }
     }

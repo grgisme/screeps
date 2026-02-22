@@ -287,21 +287,16 @@ export class MiningSite {
         // Links transfer instantly, no haulers needed
         if (this.linkId) return;
 
+        // Container energy: register as a logistics output offer
         if (this.containerId) {
             const container = this.container;
             if (container && container.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
                 this.colony.logistics.requestOutput(this.containerId);
             }
-        } else {
-            // Early game fallback: broadcast dropped energy near source (if visible)
-            const source = this.source;
-            if (source && Game.rooms[source.pos.roomName]) {
-                const dropped = source.pos.findInRange(FIND_DROPPED_RESOURCES, 1)
-                    .find(r => r.resourceType === RESOURCE_ENERGY && r.amount > 50);
-                if (dropped) {
-                    this.colony.logistics.requestOutput(dropped.id as Id<Resource>);
-                }
-            }
         }
+        // NOTE: Dropped energy (Drop Mining fallback) is intentionally NOT registered
+        // here. LogisticsNetwork.registerInfrastructure() already finds ALL dropped
+        // resources globally via FIND_DROPPED_RESOURCES. Registering here too would
+        // create duplicate offerIds entries → two haulers targeting the same pile.
     }
 }
