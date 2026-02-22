@@ -16,7 +16,7 @@ import type { Zerg } from "../zerg/Zerg";
  */
 export class BuildTask implements ITask {
     readonly name = "Build";
-    settings: TaskSettings = { targetRange: 3, workRange: 3 };
+    settings: TaskSettings = { targetRange: 2, workRange: 3 };
 
     /** Stored as an ID string — never a live Game object. */
     public readonly targetId: Id<ConstructionSite>;
@@ -48,19 +48,33 @@ export class BuildTask implements ITask {
         // Out of energy — task done, overlord will reassign
         if (zerg.store?.getUsedCapacity(RESOURCE_ENERGY) === 0) return true;
 
-        if (zerg.pos && zerg.pos.inRangeTo(target, this.settings.workRange)) {
+        const inWorkRange = zerg.pos?.inRangeTo(target, this.settings.workRange) ?? false;
+        const atTargetRange = zerg.pos?.inRangeTo(target, this.settings.targetRange) ?? false;
+
+        // ── Intent Combination ────────────────────────────────────────────
+        // build() and move() use separate engine pipelines and can both fire
+        // in the same tick. By splitting workRange (3) from targetRange (2),
+        // a worker at range 3 fires BOTH: it builds now AND closes to range 2
+        // for even more build ticks next tick. This reclaims the approach tick
+        // for free construction progress — zero extra CPU, zero extra energy.
+        //
+        //   Range 4+  →  move only        (out of workRange)
+        //   Range 3   →  move + build     ← combination tick
+        //   Range 2   →  build only       (at targetRange, settled)
+        // ─────────────────────────────────────────────────────────────────
+
+        if (inWorkRange) {
+            // Build — succeeds whether moving or stationary
             const result = zerg.build(target);
-            if (
-                result === ERR_INVALID_TARGET ||
-                result === ERR_NOT_OWNER
-            ) {
-                return true; // Fatal
-            }
-            return false; // Keep building
-        } else {
-            zerg.travelTo(target, this.settings.targetRange);
-            return false;
+            if (result === ERR_INVALID_TARGET || result === ERR_NOT_OWNER) return true;
         }
+
+        if (!atTargetRange) {
+            // Move: fires even when in workRange (range 3 → range 2 transition)
+            zerg.travelTo(target, this.settings.targetRange);
+        }
+
+        return false;
     }
 
     serialize(): TaskMemory {
