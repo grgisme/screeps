@@ -70,23 +70,30 @@ export class UpgradingOverlord extends Overlord {
             // STATE MACHINE LOGIC
             if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
 
-                // When transporters exist: stay near controller, use controller container if adjacent
+                // When transporters exist: stay near controller, use controller container if nearby
                 if (hasTransporters && controller) {
-                    // Check for controller container within 1 tile — hyperlocal, no trekking
                     if (upgrader.pos) {
-                        const adjContainer = upgrader.pos.findInRange(FIND_STRUCTURES, 1, {
+                        // Scan range 2 so we detect the container even when parked at range 3
+                        // of the controller (which can be range 2 from a nearby container).
+                        const nearbyContainer = upgrader.pos.findInRange(FIND_STRUCTURES, 2, {
                             filter: (s: Structure) =>
                                 s.structureType === STRUCTURE_CONTAINER &&
                                 (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 0
                         })[0] as StructureContainer | undefined;
 
-                        if (adjContainer) {
-                            upgrader.withdraw(adjContainer);
+                        if (nearbyContainer) {
+                            if (upgrader.pos.getRangeTo(nearbyContainer) <= 1) {
+                                // Adjacent — withdraw immediately
+                                upgrader.withdraw(nearbyContainer);
+                            } else {
+                                // One step away — move closer so we can withdraw next tick
+                                upgrader.travelTo(nearbyContainer, 1);
+                            }
                             continue;
                         }
                     }
 
-                    // No adjacent container — rally near controller and wait for delivery
+                    // No container in range — rally near controller and wait for delivery
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
