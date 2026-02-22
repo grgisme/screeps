@@ -115,7 +115,13 @@ export class MiningOverlord extends Overlord {
             this.colony.hatchery.enqueue({
                 priority: 100,
                 bodyTemplate: body,
-                maxEnergy: isBootstrap ? 300 : undefined,
+                // Bootstrap cap: when no miners are alive and the template is small (≤300e),
+                // cap to spawn-only energy so Hatchery doesn't deadlock waiting for unfilled
+                // extensions. For larger templates (≥550e), no cap — the spawn must wait for
+                // extensions to fill, but that's correct and expected at RCL2+.
+                maxEnergy: (isBootstrap && body.reduce((s, p) => s + BODYPART_COST[p], 0) <= 300)
+                    ? 300
+                    : undefined,
                 overlord: this,
                 name: `miner_${site.sourceId.slice(-4)}_${Game.time}`,
                 memory: { role: "miner", state: { siteId: site.sourceId } }
