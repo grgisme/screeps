@@ -425,7 +425,12 @@ export class LogisticsNetwork {
                 score: (proposerId: string) => {
                     const h = haulerMap.get(proposerId);
                     if (!h?.pos || !target.pos) return 0;
-                    return 100 - h.pos.getRangeTo(target.pos);
+                    const distScore = 100 - h.pos.getRangeTo(target.pos);
+                    // Fix #4: Weight by payload so a full hauler beats a closer empty one.
+                    // Each energy unit adds 1 point — a full 50-carry hauler at range 2
+                    // scores 148 vs an empty hauler at range 1 scoring 99.
+                    const energyCarried = h.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
+                    return distScore + energyCarried;
                 }
             });
         }

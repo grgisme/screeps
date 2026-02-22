@@ -109,6 +109,32 @@ export class WorkerOverlord extends Overlord {
         const activeMiners = this.colony.creeps.filter(c => (c.memory as any).role === "miner");
         const minedSourceIds = new Set(activeMiners.map(m => (m.memory as any).state?.siteId));
 
+        // Fix #2: Hoist spatial queries OUTSIDE the worker loop.
+        // Passing a pre-computed array to findClosestByRange() converts the
+        // expensive room scan + filter callback (O(structures * workers)) into
+        // simple linear distance math (O(results * workers)).
+        const activeSources = room?.find(FIND_SOURCES_ACTIVE, {
+            filter: (s: Source) => !minedSourceIds.has(s.id)
+        }) || [];
+
+        const damagedStructures = room?.find(FIND_STRUCTURES, {
+            filter: (s: Structure) => {
+                if (s.structureType === STRUCTURE_WALL) return false;
+                if (s.structureType === STRUCTURE_RAMPART) return s.hits < 10000;
+                return s.hits < s.hitsMax * 0.5;
+            }
+        }) || [];
+
+        const filledContainers = room?.find(FIND_STRUCTURES, {
+            filter: (s: Structure) =>
+                s.structureType === STRUCTURE_CONTAINER &&
+                (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 50
+        }) as StructureContainer[] || [];
+
+        const anyContainers = room?.find(FIND_STRUCTURES, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        }) as StructureContainer[] || [];
+
         for (const worker of this.workers) {
             if (!worker.isAlive()) continue;
 
@@ -190,31 +216,20 @@ export class WorkerOverlord extends Overlord {
 
                 // 2. Peasant Mode fallback — harvest directly from source
 
-                // Miner Deference: Ignore sources that already have a dedicated miner
-                const source = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE, {
-                    filter: (s: Source) => !minedSourceIds.has(s.id)
-                });
+                // Miner Deference: use pre-hoisted activeSources array (Fix #2)
+                const source = worker.pos?.findClosestByRange(activeSources);
 
                 if (source) {
                     worker.setTask(new HarvestTask(source.id));
                 } else {
-                    // All sources have miners — try withdrawing from containers first
-                    const container = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
-                        filter: (s: Structure) =>
-                            s.structureType === STRUCTURE_CONTAINER &&
-                            (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 50
-                    }) as StructureContainer | undefined;
+                    // All sources have miners — use pre-hoisted filledContainers array (Fix #2)
+                    const container = worker.pos?.findClosestByRange(filledContainers);
 
                     if (container) {
                         worker.setTask(new WithdrawTask(container.id as Id<Structure>));
                     } else {
-                        // Fix 4: Static Sink — anchor to the nearest container and wait
-                        // instead of wandering. Haulers delivering energy can path to a
-                        // stationary target (deep path cache, near-zero CPU per tick).
-                        // Only wander if no container exists at all.
-                        const anyContainer = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
-                            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
-                        }) as StructureContainer | undefined;
+                        // Anchor to nearest container — use pre-hoisted anyContainers array (Fix #2)
+                        const anyContainer = worker.pos?.findClosestByRange(anyContainers);
 
                         if (anyContainer) {
                             // Anchor to container position — do NOT issue travelTo; just hold still
@@ -257,14 +272,8 @@ export class WorkerOverlord extends Overlord {
                     }
                 }
 
-                // 1. Emergency repairs (with targetHits barrier threshold)
-                const damaged = worker.pos?.findClosestByRange(FIND_STRUCTURES, {
-                    filter: (s: Structure) => {
-                        if (s.structureType === STRUCTURE_WALL) return false; // Walls handled by Masons/Defense
-                        if (s.structureType === STRUCTURE_RAMPART) return s.hits < 10000; // Save newborn ramparts from decay
-                        return s.hits < s.hitsMax * 0.5;
-                    }
-                });
+                // 1. Emergency repairs — use pre-hoisted damagedStructures array (Fix #2)
+                const damaged = worker.pos?.findClosestByRange(damagedStructures);
                 if (damaged) {
                     // Apply the barrier threshold to prevent 300M HP rampart deadlock
                     const task = new RepairTask(damaged.id);
@@ -298,7 +307,12 @@ export class WorkerOverlord extends Overlord {
                 }
 
                 // 3. Build construction sites
-                const site = this.getBestConstructionSite();
+                // Fix #5 — Geometric Anchoring: prefer sites within range 3 of current
+                // position before falling back to the global priority-weighted best site.
+                // Workers that stay still preserve the hauler's path cache — each step
+                // forces a PathFinder rebuild costing ~0.1-0.2 CPU.
+                const adjacentSite = worker.pos?.findInRange(FIND_MY_CONSTRUCTION_SITES, 3)[0];
+                const site = adjacentSite || this.getBestConstructionSite();
                 if (site) {
                     worker.setTask(new BuildTask(site.id));
                     continue;
