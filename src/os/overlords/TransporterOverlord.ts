@@ -190,8 +190,21 @@ export class TransporterOverlord extends Overlord {
 
         let totalCarryNeeded = 0;
         for (const site of activeSites) {
-            totalCarryNeeded += Math.ceil(site.calculateHaulingPowerNeeded() / 50);
+            // 1.5× overhead buffer beyond the bare hauling formula:
+            //   - Bare formula (energyPerTick * 2 * distance / 50) gives the
+            //     theoretical minimum with zero margin for delays or overhead.
+            //   - At exactly 4 CARRY needed, the 400e panic transporter satisfies
+            //     the formula exactly — no second transporter ever spawns.
+            //   - 1.5× guarantees at least one extra trip's worth of buffer (50%
+            //     extra capacity for extension filling, drop pickup, travel variance,
+            //     and redundancy against transporter death).
+            const rawNeeded = site.calculateHaulingPowerNeeded();
+            totalCarryNeeded += Math.ceil(rawNeeded * 1.5 / 50);
         }
+        // Hard floor: at least 2 CARRY per active site so there is always
+        // enough CARRY for a replacement transporter to be spawned proactively.
+        const minCarry = activeSites.length * 2;
+        totalCarryNeeded = Math.max(totalCarryNeeded, minCarry);
 
         // Current CARRY capacity across all transporters
         // Discount dying transporters (TTL ≤ spawnTime + travelTime)
