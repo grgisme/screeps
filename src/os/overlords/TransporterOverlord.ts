@@ -249,25 +249,20 @@ export class TransporterOverlord extends Overlord {
      * - <75% (plains/swamp): [CARRY, MOVE] × N (1:1 ratio, no WORK)
      */
     private buildTransporterBody(room: Room): BodyPartConstant[] {
-        // Bootstrap fix: if no transporters/fillers exist, extensions won't be filled
-        // passively. Use only the spawn's current energy + energy already in extensions,
-        // rather than the theoretical energyCapacityAvailable, to avoid a deadlock where
-        // the spawn waits for 400e that can never arrive.
-        const hasHaulers = this.colony.creeps.some(c => {
-            const role = (c.memory as any).role;
-            return role === 'transporter' || role === 'filler';
-        });
-
-        let capacity: number;
-        if (hasHaulers) {
-            capacity = room.energyCapacityAvailable;
-        } else {
-            // Bootstrap: no haulers/fillers exist yet, so extensions may be unfilled.
-            // Use room.energyAvailable (actual current sum of spawn + extension energy)
-            // rather than energyCapacityAvailable so we don't deadlock waiting for
-            // extensions that nobody is filling yet.
-            capacity = room.energyAvailable;
-        }
+        // Panic spawn: when ALL transporters are dead, use room.energyAvailable
+        // (whatever is actually in the spawn + extensions RIGHT NOW) instead of
+        // energyCapacityAvailable. This prevents the colony from waiting for
+        // extensions that nobody can fill — a deadlock that can persist forever.
+        //
+        // The old check (hasHaulers = filler || transporter alive) was wrong:
+        //   • Filler alive + transporters dead → hasHaulers=true → capacity=800e
+        //   • But the filler can't harvest sources or fill the hub container
+        //   • 800e body is unspawnable with only 400e available → deadlock
+        //
+        // Direct check: transporters.length === 0 is the exact panic condition.
+        // Filler/Queen status is irrelevant — they cannot replace haulers.
+        const isPanic = this.transporters.length === 0;
+        const capacity = isPanic ? room.energyAvailable : room.energyCapacityAvailable;
 
         // Read route terrain from MiningSite cache (0 CPU — heap data)
         const miningOverlord = this.colony.overlords

@@ -154,4 +154,35 @@ describe("TransporterOverlord", () => {
         expect(hasWork).to.be.false;
         expect(carryCount).to.equal(moveCount); // 1:1 ratio
     });
+
+    it("should use energyAvailable (panic spawn) when all transporters are dead even if filler is alive", () => {
+        // Regression: old code used `filler alive → hasHaulers=true → capacity=energyCapacityAvailable`.
+        // With only 400e available (2 empty extensions), the 800e body was unspawnable → deadlock.
+        // Fix: gate on transporters.length === 0 directly, ignoring filler/queen status.
+
+        // Simulate: filler creep alive, no transporters
+        mockColony.creeps = [{ memory: { role: "filler" } }];
+        (room as any).energyCapacityAvailable = 800;
+        (room as any).energyAvailable = 400; // Only 400e actually on hand
+
+        const miningOverlord = new MiningOverlord(mockColony);
+        miningOverlord.sites = [{
+            container: { id: "c1" }, link: null,
+            roadCoverage: 0.0, hasSwamp: false
+        } as any];
+        mockColony.overlords = [miningOverlord];
+
+        const overlord = new TransporterOverlord(mockColony);
+        overlord.transporters = []; // No transporters → panic mode
+
+        const body = (overlord as any).buildTransporterBody(room);
+
+        // Body must cost ≤ 400e (energyAvailable), NOT scale to 800e
+        const bodyCost = body.reduce((sum: number, part: string) =>
+            sum + (BODYPART_COST as any)[part], 0);
+
+        expect(bodyCost).to.be.at.most(400,
+            "panic body must fit within energyAvailable (400e), not energyCapacityAvailable (800e)");
+        expect(body.length).to.be.greaterThan(0, "must produce a valid non-empty body");
+    });
 });
