@@ -14,16 +14,32 @@ export class UpgradingOverlord extends Overlord {
         super(colony, "upgrading");
     }
 
+    // ── Helper: find the controller container (may be empty) ──────────────────
+    private findControllerContainer(room: Room): StructureContainer | null {
+        const controller = room.controller;
+        if (!controller) return null;
+        const containers = controller.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        }) as StructureContainer[];
+        return containers[0] ?? null;
+    }
+
     init() {
         this.upgraders = this.zergs.filter(z => z.isAlive() && z.memory?.role === "upgrader");
 
-        // Register Upgraders as Energy Sinks for creep-to-creep transfers
+        const room = this.colony.room;
+        const ctrlContainer = room ? this.findControllerContainer(room) : null;
+
         for (const upgrader of this.upgraders) {
             const creep = upgrader.creep;
-            if (creep) {
+            if (!creep) continue;
+
+            // Only register as a logistics requester when there is NO controller container.
+            // Once a container exists the upgrader self-serves from it exclusively —
+            // no transporter trips needed.
+            if (!ctrlContainer) {
                 const free = creep.store.getFreeCapacity(RESOURCE_ENERGY);
                 if (free > 0) {
-                    // Priority 4 ensures Spawns/Exts (10) and Towers (5) are filled first
                     this.colony.logistics.requestInput(creep.id as any, { amount: free, priority: 4 });
                 }
             }
@@ -34,17 +50,20 @@ export class UpgradingOverlord extends Overlord {
 
     run() {
         const controllerLink = this.colony.linkNetwork?.controllerLink;
-        const controller = this.colony.room?.controller;
+        const room = this.colony.room;
+        const controller = room?.controller;
+
+        // Find the controller container once per tick — even if empty.
+        // This is the trigger for switching to stationary container mode.
+        const ctrlContainer = room ? this.findControllerContainer(room) : null;
+
         const activeMiners = this.colony.creeps.filter((c: any) => c.memory.role === "miner");
         const minedSourceIds = new Set(activeMiners.map((m: any) => m.memory.state?.siteId));
-
-        // Check for Transporters
-        const hasTransporters = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
 
         for (const upgrader of this.upgraders) {
             if (!upgrader.isAlive()) continue;
 
-            // Existing Link Logic
+            // ── Priority 1: Link mode (RCL 5+) ──────────────────────────────────
             if (controllerLink && controller) {
                 if (!upgrader.pos?.inRangeTo(controllerLink, 1) || !upgrader.pos?.inRangeTo(controller, 3)) {
                     upgrader.travelTo(controllerLink, 1);
@@ -63,48 +82,51 @@ export class UpgradingOverlord extends Overlord {
                 }
             }
 
+            // ── Priority 2: Controller container mode ───────────────────────────
+            // Engage if container has energy OR transporters exist to fill it.
+            // Fall through to self-collect if container is empty AND no one can fill it
+            // (colony collapse: dead transporters, empty container).
+            const hasTransporters = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
+            const containerHasEnergy = (ctrlContainer?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0) > 0;
+
+            if (ctrlContainer && controller && (containerHasEnergy || hasTransporters)) {
+                if (upgrader.task) upgrader.setTask(null);
+
+                // Must be in range 1 of container AND in range 3 of controller
+                const atContainer = upgrader.pos?.inRangeTo(ctrlContainer, 1) ?? false;
+                const atController = upgrader.pos?.inRangeTo(controller, 3) ?? false;
+
+                if (!atContainer || !atController) {
+                    // Walk to a spot that satisfies both constraints.
+                    // Targeting the container with range 1 guarantees controller range 3
+                    // for any well-placed container (within 2 of controller).
+                    upgrader.travelTo(ctrlContainer, 1);
+                    continue;
+                }
+
+                // In position — drain container then upgrade.
+                const energy = upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
+                const workParts = upgrader.creep?.getActiveBodyparts(WORK) ?? 0;
+                const containerEnergy = ctrlContainer.store.getUsedCapacity(RESOURCE_ENERGY);
+
+                if (energy <= workParts && containerEnergy > 0) {
+                    // Keep topping up: withdraw when store is nearly empty
+                    upgrader.withdraw(ctrlContainer);
+                }
+                if (energy > 0) {
+                    upgrader.upgradeController(controller);
+                }
+                continue;
+            }
+
+            // ── Priority 3: No container — self-collect via LogisticsNetwork ────
             if (upgrader.task) continue;
 
             const mem = upgrader.memory as any;
 
-            // STATE MACHINE LOGIC
             if ((upgrader.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
-
-                // When transporters exist: stay near controller, use controller container if nearby
-                if (hasTransporters && controller) {
-                    if (upgrader.pos) {
-                        // Scan range 2 so we detect the container even when parked at range 3
-                        // of the controller (which can be range 2 from a nearby container).
-                        const nearbyContainer = upgrader.pos.findInRange(FIND_STRUCTURES, 2, {
-                            filter: (s: Structure) =>
-                                s.structureType === STRUCTURE_CONTAINER &&
-                                (s as StructureContainer).store.getUsedCapacity(RESOURCE_ENERGY) > 0
-                        })[0] as StructureContainer | undefined;
-
-                        if (nearbyContainer) {
-                            if (upgrader.pos.getRangeTo(nearbyContainer) <= 1) {
-                                // Adjacent — withdraw immediately
-                                upgrader.withdraw(nearbyContainer);
-                            } else {
-                                // One step away — move closer so we can withdraw next tick
-                                upgrader.travelTo(nearbyContainer, 1);
-                            }
-                            continue;
-                        }
-                    }
-
-                    // No container in range — rally near controller and wait for delivery
-                    if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
-                        upgrader.travelTo(controller, 3);
-                    }
-                    continue;
-                }
-
-                // No transporters — self-collect via LogisticsNetwork
                 mem.collecting = true;
             }
-
-            // Toggle collecting state off when full so we don't crumb chase
             if ((upgrader.store?.getFreeCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
                 mem.collecting = false;
             }
@@ -128,13 +150,10 @@ export class UpgradingOverlord extends Overlord {
                 if (source) {
                     upgrader.setTask(new HarvestTask(source.id));
                 } else if (controller) {
-                    // Nothing to collect — rally to controller and stop collecting.
-                    // This prevents idle-in-the-middle-of-nowhere: the upgrader
-                    // parks at the controller where it can receive deliveries.
                     if (upgrader.pos && upgrader.pos.getRangeTo(controller) > 3) {
                         upgrader.travelTo(controller, 3);
                     }
-                    mem.collecting = false; // Break out of collecting — upgrade with whatever we have
+                    mem.collecting = false;
                 }
             } else {
                 if (controller) {
