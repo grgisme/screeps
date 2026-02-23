@@ -109,6 +109,10 @@ export class LogisticsNetwork {
         }
 
         // ── Hatchery Container — central energy buffer near spawn ──
+        // Role depends on whether a filler is active:
+        //   Filler present  → REQUESTER only. Haulers keep it topped up; filler draws from it.
+        //   No filler       → OFFER only. Workers/transporters withdraw from it to fill extensions.
+        const hasFillers = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
         const spawns = this.colony.room?.find(FIND_MY_SPAWNS) ?? [];
         if (spawns.length > 0) {
             const spawn = spawns[0];
@@ -123,12 +127,18 @@ export class LogisticsNetwork {
             }) as StructureContainer[];
 
             for (const c of hatchContainers) {
-                // Requester only (NOT an offer) — only the Filler draws from it directly.
-                // Haulers deliver here; Filler distributes to extensions/spawns.
-                if (!this.colony.room?.storage) {
-                    const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
-                    if (free > 50) {
-                        this.requestInput(c.id as Id<Structure | Resource>, { amount: free, priority: 5 });
+                if (hasFillers) {
+                    // Filler draws from container directly — keep it as a supply request for haulers.
+                    if (!this.colony.room?.storage) {
+                        const free = c.store.getFreeCapacity(RESOURCE_ENERGY);
+                        if (free > 50) {
+                            this.requestInput(c.id as Id<Structure | Resource>, { amount: free, priority: 5 });
+                        }
+                    }
+                } else {
+                    // No filler — expose as an offer so workers/transporters drain it into extensions.
+                    if (c.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+                        this.offerIds.push(c.id as Id<Structure | Resource>);
                     }
                 }
             }
@@ -139,7 +149,7 @@ export class LogisticsNetwork {
         // not spawns (which sit at range 2+). Transporters must top up spawns directly.
         // Extensions are only registered when NO filler exists — if a filler is active
         // it handles those from its standing tile and haulers should stay away.
-        const hasFillers = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
+        // (hasFillers was computed above in the hatchery container block)
 
         for (const spawn of this.colony.hatchery.spawns) {
             const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);

@@ -188,13 +188,18 @@ export class FillerOverlord extends Overlord {
         //     Spawns directly into the bunker core (all eject tiles are within
         //     range 1 of the hub + filler-ring extensions). Pure withdraw/transfer
         //     loop — zero pathfinding CPU for the lifetime of the creep.
-        //   RCL 2-3 or no Storage → [CARRY, CARRY, MOVE] — needs MOVE to reach
-        //     the standing tile which may be far from the early spawn location.
+        //   RCL 4+ with Storage → [CARRY×3, MOVE] — three CARRY parts give good throughput
+        //     while the single MOVE part lets the creep walk from the spawn eject-tile
+        //     to the standing tile (0,0) once, then idle there forever.
+        //     A zero-MOVE body can never reach the standing tile — it spawns adjacent
+        //     to the spawn (e.g. (-1,2)) and the position-correction block is a no-op
+        //     for hasMoveBody=false, so findInRange(1) scans the wrong position.
+        //   RCL 2-3 or no Storage → [CARRY, CARRY, MOVE] — same concept, cheaper.
         const hasStorage = !!room.storage;
-        const useStationary = hasStorage && rcl >= 4; // rcl already declared above
+        const useHighThroughput = hasStorage && rcl >= 4;
 
-        const template: BodyPartConstant[] = useStationary
-            ? [CARRY, CARRY, CARRY, CARRY]   // 0-MOVE: ~200e, 4× carry throughput
+        const template: BodyPartConstant[] = useHighThroughput
+            ? [CARRY, CARRY, CARRY, MOVE]   // 3× carry throughput, 1× MOVE to reach tile
             : [CARRY, CARRY, MOVE];           // Mobile: navigates to standing tile
 
         this.colony.hatchery.enqueue({
