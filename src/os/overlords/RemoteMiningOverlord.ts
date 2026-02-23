@@ -203,12 +203,30 @@ export class RemoteMiningOverlord extends Overlord {
             if (mem.collecting) {
                 if (hauler.room?.name !== this.targetRoom) {
                     hauler.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
-                } else if (site?.containerId) {
-                    hauler.setTask(new WithdrawTask(site.containerId));
-                } else if (site?.source) {
-                    const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1).find(r => r.resourceType === RESOURCE_ENERGY && r.amount > 50);
-                    if (dropped) hauler.setTask(new PickupTask(dropped.id as Id<Resource>));
-                    else hauler.travelTo(site.source.pos, 3);
+                } else {
+                    const room = Game.rooms[this.targetRoom];
+
+                    // ── Priority 1: Tombstone reclamation ──────────────────────────────
+                    // Invader tombstones decay quickly after a fight — scavenge them
+                    // before touching the stable container. Sort descending by energy
+                    // so the richest tombstone (usually the invader's) is targeted first.
+                    const tombstones = room?.find(FIND_TOMBSTONES, {
+                        filter: (t: Tombstone) => t.store.getUsedCapacity(RESOURCE_ENERGY) > 50
+                    }) ?? [];
+                    const bestTomb = tombstones.sort((a, b) =>
+                        b.store.getUsedCapacity(RESOURCE_ENERGY) - a.store.getUsedCapacity(RESOURCE_ENERGY)
+                    )[0];
+                    if (bestTomb) {
+                        hauler.setTask(new WithdrawTask(bestTomb.id as Id<Tombstone>));
+                    } else if (site?.containerId) {
+                        // ── Priority 2: Container ────────────────────────────────────────
+                        hauler.setTask(new WithdrawTask(site.containerId));
+                    } else if (site?.source) {
+                        // ── Priority 3: Dropped energy on the ground ────────────────────
+                        const dropped = site.source.pos.findInRange(FIND_DROPPED_RESOURCES, 1).find(r => r.resourceType === RESOURCE_ENERGY && r.amount > 50);
+                        if (dropped) hauler.setTask(new PickupTask(dropped.id as Id<Resource>));
+                        else hauler.travelTo(site.source.pos, 3);
+                    }
                 }
             } else {
                 // ── FIX: Integrate Returning Haulers with the Global Broker! ──

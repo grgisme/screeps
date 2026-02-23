@@ -69,9 +69,15 @@ export class TrafficManager {
         const structCount = room.find(FIND_STRUCTURES).length;
         let matrix: CostMatrix;
 
-        // FIX 2: Invalidate instantly if structure count changed (mirrors Zerg.ts)
-        if (staticCached && staticCached.count === structCount) {
-            matrix = staticCached.matrix;
+        // Invalidate on structure-count change (build/destroy events) OR every 100 ticks
+        // to catch gradual road-HP decay that doesn't change the structure count.
+        const ROAD_DECAY_INTERVAL = 100;
+        const cacheStale = !staticCached ||
+            staticCached.count !== structCount ||
+            (Game.time - staticCached.tick) >= ROAD_DECAY_INTERVAL;
+
+        if (!cacheStale) {
+            matrix = staticCached!.matrix;
         } else {
             matrix = new PathFinder.CostMatrix();
             room.find(FIND_STRUCTURES).forEach((s: any) => {
@@ -80,11 +86,16 @@ export class TrafficManager {
                     matrix.set(s.pos.x, s.pos.y, 255);
                 } else if (s.structureType === STRUCTURE_ROAD) {
                     if (matrix.get(s.pos.x, s.pos.y) !== 255) {
-                        matrix.set(s.pos.x, s.pos.y, 1);
+                        // Roads below 20% HP are treated as plain terrain (cost 2).
+                        // They're about to disappear and routing through them causes
+                        // stale-path stalls the tick they vanish. Road-Repair-on-Transit
+                        // keeps healthy roads at cost 1 the vast majority of the time.
+                        const hpRatio = s.hits / s.hitsMax;
+                        matrix.set(s.pos.x, s.pos.y, hpRatio < 0.2 ? 2 : 1);
                     }
                 }
             });
-            // FIX 2: Sync Sources/Minerals as solid rock (mirrors Zerg.ts static cache).
+            // Sync Sources/Minerals as solid rock (mirrors Zerg.ts static cache).
             room.find(FIND_SOURCES).forEach((s: Source) => matrix.set(s.pos.x, s.pos.y, 255));
             room.find(FIND_MINERALS).forEach((m: Mineral) => matrix.set(m.pos.x, m.pos.y, 255));
 

@@ -89,17 +89,88 @@ export class DefenseOverlord extends Overlord {
 
     // ── Dynamic Body Scaling ─────────────────────────────────────────────
 
-    private getDefenderBody(capacity: number): BodyPartConstant[] {
-        if (capacity < 400) return [RANGED_ATTACK, MOVE]; // RCL 1 (200 energy)
-        if (capacity < 800) return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE]; // RCL 2 (400 energy)
-        if (capacity < 1300) return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE, HEAL, MOVE]; // RCL 3 (700 energy)
+    /**
+     * Classify the current hostile force.
+     * Priority: healer > ranged > dismantler > melee > unknown.
+     * "healer" takes top priority because alive healers negate all tower DPS.
+     */
+    private getThreatProfile(hostiles: Creep[]): 'healer' | 'ranged' | 'dismantler' | 'melee' | 'unknown' {
+        if (hostiles.length === 0) return 'unknown';
+        const hasHealer = hostiles.some(h => h.body.some(p => p.type === HEAL && p.hits > 0));
+        const hasRanged = hostiles.some(h => h.body.some(p => p.type === RANGED_ATTACK && p.hits > 0));
+        const hasDismantler = hostiles.some(h => h.body.some(p => p.type === WORK && p.hits > 0));
+        const hasMelee = hostiles.some(h => h.body.some(p => p.type === ATTACK && p.hits > 0));
+        if (hasHealer) return 'healer';
+        if (hasRanged) return 'ranged';
+        if (hasDismantler) return 'dismantler';
+        if (hasMelee) return 'melee';
+        return 'unknown';
+    }
 
-        // RCL 4+ (1300+ energy) - The 1040 energy bruiser
-        return [
-            TOUGH, TOUGH, MOVE, MOVE,
-            RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE,
-            HEAL, MOVE
-        ];
+    /**
+     * Choose a counter-body based on what is actually attacking.
+     *
+     * Threat → Body strategy:
+     *   healer     → high ATTACK count; raw melee DPS overwhelms regen
+     *   melee      → pure ranged kiter; stay at range 3, never get hit
+     *   dismantler → ranged kiter; WORK parts target structures, not us
+     *   ranged     → TOUGH + self-HEAL + RANGED_ATTACK to trade efficiently
+     *   unknown    → generic RANGED + HEAL (safe default / pre-spawn)
+     */
+    private getDefenderBody(capacity: number, hostiles: Creep[] = []): BodyPartConstant[] {
+        // Low-RCL rooms: no energy for differentiated bodies
+        if (capacity < 400) return [RANGED_ATTACK, MOVE];
+        if (capacity < 800) return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE];
+
+        const threat = this.getThreatProfile(hostiles);
+        log.info(`Threat profile: ${threat} (hostiles=${hostiles.length}, capacity=${capacity})`);
+
+        // ── RCL 3 tier (800–1299 energy) ────────────────────────────────
+        if (capacity < 1300) {
+            switch (threat) {
+                case 'healer':
+                    // Max raw melee DPS at this tier — 3 ATTACK + HEAL = 690 energy
+                    return [ATTACK, ATTACK, ATTACK, HEAL, MOVE, MOVE, MOVE, MOVE];
+                case 'melee':
+                case 'dismantler':
+                    // Ranged kiter — 2 RANGED + HEAL = 700 energy
+                    return [RANGED_ATTACK, RANGED_ATTACK, HEAL, MOVE, MOVE, MOVE];
+                case 'ranged':
+                default:
+                    // Generic: RANGED + HEAL (same as old body)
+                    return [RANGED_ATTACK, MOVE, RANGED_ATTACK, MOVE, HEAL, MOVE];
+            }
+        }
+
+        // ── RCL 4+ tier (1300+ energy) ──────────────────────────────────
+        switch (threat) {
+            case 'healer':
+                // Brawler: 4 ATTACK + 2 HEAL + TOUGH absorb = 1140 energy
+                // Movement: closes to melee (ATTACK > RANGED_ATTACK → isRanged=false in run())
+                return [
+                    TOUGH, TOUGH, MOVE, MOVE,
+                    ATTACK, ATTACK, ATTACK, ATTACK,
+                    HEAL, HEAL,
+                    MOVE, MOVE, MOVE, MOVE
+                ];
+            case 'melee':
+            case 'dismantler':
+                // Ranged kiter: 4 RANGED_ATTACK + HEAL — stays at range 3 (isRanged=true)
+                return [
+                    TOUGH, TOUGH, MOVE, MOVE,
+                    RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
+                    HEAL,
+                    MOVE, MOVE, MOVE
+                ];
+            case 'ranged':
+            default:
+                // Existing bruiser — balanced TOUGH+RANGED+HEAL
+                return [
+                    TOUGH, TOUGH, MOVE, MOVE,
+                    RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE,
+                    HEAL, MOVE
+                ];
+        }
     }
 
     // ── Init ────────────────────────────────────────────────────────────
@@ -141,9 +212,10 @@ export class DefenseOverlord extends Overlord {
 
             if (this.defenders.length < defenderCap) {
                 const capacity = room.energyCapacityAvailable;
+                // Pass live hostiles so body selection counters the actual threat
                 this.colony.hatchery.enqueue({
                     priority: 100,
-                    bodyTemplate: this.getDefenderBody(capacity),
+                    bodyTemplate: this.getDefenderBody(capacity, hostiles),
                     overlord: this,
                     name: `defender_${Game.time}`,
                     memory: { role: "defender" }
@@ -182,9 +254,10 @@ export class DefenseOverlord extends Overlord {
                 log.alert(`pre-defense-${room.name}`,
                     `Wave ${wave + 1} approaching (${lifetime.toLocaleString()} mined). Pre-spawning defender.`,
                     LogLevel.WARNING);
+                // No hostiles present yet (hostilesFree=true) — spawn generic body
                 this.colony.hatchery.enqueue({
                     priority: 95, // Below active invader response (100), above normal economy
-                    bodyTemplate: this.getDefenderBody(capacity),
+                    bodyTemplate: this.getDefenderBody(capacity), // hostiles=[] → 'unknown' → generic
                     overlord: this,
                     name: `predefender_w${wave}_${Game.time}`,
                     memory: { role: "defender" }
