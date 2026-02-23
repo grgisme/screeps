@@ -257,57 +257,69 @@ export class UpgradingOverlord extends Overlord {
         if (downgradeImminent) shouldSpawn = true;
         if (!shouldSpawn) return;
 
-        // ── Target Scaling ──
-        // RCL 2-3 (pre-Storage): scale with energy saturation
-        // RCL 4+ (Storage): scale with stored energy
-        let target = 1;
-        if (isRCL8) {
-            target = 1;
-        } else if (storage) {
-            if (storage.store.energy > 500000) target = 5;
-            else if (storage.store.energy > 100000) target = 3;
-        } else {
-            // Pre-Storage: if economy is saturated (spawn+ext ≥90% full),
-            // scale up upgraders to absorb surplus energy
-            const saturation = room.energyAvailable / Math.max(room.energyCapacityAvailable, 1);
-            const offerCount = this.colony.logistics.offerIds.length;
+        // ── Body Formula ──────────────────────────────────────────────────────
+        //
+        // MODE A — Stationary Heavy: container or link exists so the upgrader
+        //   parks in one spot and never hauls.
+        //   Body: [WORK*N, CARRY*1, MOVE*1]
+        //   Only 1 CARRY (pull from adjacent source once) and 1 MOVE (walk to
+        //   slot once). All remaining spawn budget goes into WORK density.
+        //   Pre-built and pinned (maxEnergy = bodyCost) so CreepBody.grow
+        //   returns it exactly once rather than repeating the pattern.
+        //   Capped at 15 WORK (game engine cap independent of RCL).
+        //
+        // MODE B — Mobile Workhorse: no container/link yet, upgrader self-hauls.
+        //   Body: [WORK, WORK, CARRY, MOVE] × N  (2:1:1 ratio)
+        //   Moves at half-speed when CARRY is loaded — acceptable because the
+        //   TrafficManager shove algorithm handles displacement by faster creeps.
+        //   CreepBody.grow scales this automatically with energyCapacityAvailable.
+        //
+        const energyCap = room.energyCapacityAvailable ?? 300;
+        const hasContainer = !!(room ? this.findControllerContainer(room) : null);
+        const hasLink = !!this.colony.linkNetwork?.controllerLink;
+        const hasTransportersNow = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
 
-            if (saturation >= 0.9 && offerCount >= 2) {
-                target = 3; // Full surplus → max upgrader throughput
-            } else if (saturation >= 0.7 && offerCount >= 1) {
-                target = 2; // Moderate surplus
-            }
-            // else target = 1 (minimal safety upgrader)
+        let template: BodyPartConstant[];
+        let maxEnergy: number | undefined;
+
+        if (isRCL8) {
+            // RCL8 hard cap: 15 WORK + 1 CARRY + 8 MOVE = 2300e, pinned to 2000e
+            template = [
+                ...Array(15).fill(WORK), CARRY,
+                MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
+            ];
+            maxEnergy = 2000;
+        } else if (hasLink || (hasContainer && hasTransportersNow)) {
+            // MODE A — Stationary Heavy
+            // WORK parts = floor((cap - 100) / 100), capped at 15
+            const workCount = Math.min(15, Math.max(1, Math.floor((energyCap - 100) / 100)));
+            template = [...Array(workCount).fill(WORK), CARRY, MOVE];
+            maxEnergy = workCount * 100 + 100; // pin: don't let grow() repeat it
+        } else {
+            // MODE B — Mobile Workhorse [WORK, WORK, CARRY, MOVE] × N
+            template = [WORK, WORK, CARRY, MOVE];
+            maxEnergy = undefined; // let CreepBody.grow scale to energyCapacityAvailable
         }
 
-        // Priority: 20 (below workers, haulers, miners)
-        let priority = downgradeImminent ? 95 : 20;
+        // ── WORK-parts targeting ──────────────────────────────────────────────
+        // Keep spawning until we hit the target WORK-part count.
+        // Pre-storage cap (5) prevents burning economy before infrastructure exists.
+        const TARGET_WORK = isRCL8 ? 15 : (storage ? 15 : 5);
 
-        if (this.upgraders.length < target) {
-            // Controller container-aware body: WORK-heavy since upgraders pull
-            // from adjacent container — no long-distance hauling needed.
-            // Base: [W,W,C,M] = 300e → fits a single spawn at RCL 1
-            let template: BodyPartConstant[] = [WORK, WORK, CARRY, MOVE];
-            let maxEnergy: number | undefined = undefined;
+        const currentWork = this.upgraders.reduce((sum: number, u: any) =>
+            sum + (u.creep?.getActiveBodyparts(WORK) ?? 0), 0);
 
-            if (isRCL8) {
-                template = [
-                    WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK,
-                    CARRY,
-                    MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE
-                ];
-                maxEnergy = 2000;
-            } else if (this.colony.linkNetwork?.controllerLink) {
-                template = [WORK, WORK, WORK, CARRY, MOVE];
-            }
+        const priority = downgradeImminent ? 95 : 20;
 
+        if (currentWork < TARGET_WORK) {
             this.colony.hatchery.enqueue({
-                priority: priority,
+                priority,
                 bodyTemplate: template,
                 overlord: this,
                 memory: { role: "upgrader" },
-                maxEnergy: maxEnergy
+                maxEnergy
             });
         }
+
     }
 }
