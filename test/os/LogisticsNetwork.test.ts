@@ -280,4 +280,77 @@ describe("LogisticsNetwork", () => {
         const result = network.matchWithdraw(zerg, [zerg]);
         expect(result).to.equal("drop1");
     });
+
+    it("should register outer extensions even when a filler is active", () => {
+        // Setup: filler exists, anchor at (25,25), filler tile at (25,25).
+        // Inner-ring ext at (25,26) — range 1 — should be SKIPPED (filler handles it).
+        // Outer ext at (25,30)     — range 5 — should be REGISTERED for transporters.
+        const network = new LogisticsNetwork(mockColony);
+
+        const innerExtId = "innerExt" as Id<Structure | Resource>;
+        const outerExtId = "outerExt" as Id<Structure | Resource>;
+
+        const innerExt = {
+            id: innerExtId,
+            structureType: STRUCTURE_EXTENSION,
+            pos: new RoomPosition(25, 26, "W1N1"), // range 1 from filler tile (25,25)
+            store: { getFreeCapacity: () => 50, getUsedCapacity: () => 0, [RESOURCE_ENERGY]: 0 }
+        };
+        const outerExt = {
+            id: outerExtId,
+            structureType: STRUCTURE_EXTENSION,
+            pos: new RoomPosition(25, 30, "W1N1"), // range 5 from filler tile (25,25)
+            store: { getFreeCapacity: () => 50, getUsedCapacity: () => 0, [RESOURCE_ENERGY]: 0 }
+        };
+
+        (mockColony as any).creeps = [{ memory: { role: "filler" } }];
+        (mockColony as any).memory = { anchor: { x: 25, y: 25 } };
+        (mockColony as any).hatchery = { spawns: [], extensions: [innerExt, outerExt] };
+        (mockColony as any).zergs = new Map();
+        (mockColony as any).linkNetwork = null;
+
+        room.find = (_type: any, _opts?: any) => [];
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === innerExtId) return innerExt;
+            if (id === outerExtId) return outerExt;
+            return null;
+        };
+
+        (network as any).registerInfrastructure();
+
+        const registeredIds = network.requesters.map((r: any) => r.targetId);
+        expect(registeredIds).to.not.include(innerExtId, "inner-ring ext should be skipped (filler handles it)");
+        expect(registeredIds).to.include(outerExtId, "outer ext must be registered for transporters");
+    });
+
+    it("should skip inner-ring extensions when no anchor exists and a filler is active", () => {
+        // Without an anchor we can't compute the filler tile position, so all
+        // extensions are treated as inner-ring and skipped (safe bootstrap fallback).
+        const network = new LogisticsNetwork(mockColony);
+
+        const extId = "ext1" as Id<Structure | Resource>;
+        const ext = {
+            id: extId,
+            structureType: STRUCTURE_EXTENSION,
+            pos: new RoomPosition(30, 30, "W1N1"),
+            store: { getFreeCapacity: () => 50, getUsedCapacity: () => 0, [RESOURCE_ENERGY]: 0 }
+        };
+
+        (mockColony as any).creeps = [{ memory: { role: "filler" } }];
+        (mockColony as any).memory = {}; // no anchor
+        (mockColony as any).hatchery = { spawns: [], extensions: [ext] };
+        (mockColony as any).zergs = new Map();
+        (mockColony as any).linkNetwork = null;
+
+        room.find = (_type: any, _opts?: any) => [];
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === extId) return ext;
+            return null;
+        };
+
+        (network as any).registerInfrastructure();
+
+        const registeredIds = network.requesters.map((r: any) => r.targetId);
+        expect(registeredIds).to.not.include(extId, "no anchor → treat as inner-ring, skip when filler active");
+    });
 });

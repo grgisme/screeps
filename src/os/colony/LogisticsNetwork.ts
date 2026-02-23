@@ -12,6 +12,7 @@ import type { Colony } from "./Colony";
 import type { Zerg } from "../zerg/Zerg";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { TransferTask } from "../tasks/TransferTask";
+import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { Logger } from "../../utils/Logger";
 import { stableMatch, MatchProposer, MatchReceiver } from "../../utils/Algorithms";
 
@@ -152,8 +153,13 @@ export class LogisticsNetwork {
         // ── Hatchery Integration (Individual Registration) ──
         // Spawns are ALWAYS registered: the filler can only reach radius-1 extensions,
         // not spawns (which sit at range 2+). Transporters must top up spawns directly.
-        // Extensions are only registered when NO filler exists — if a filler is active
-        // it handles those from its standing tile and haulers should stay away.
+        // Extensions are registered with a per-extension range check:
+        //   - Inner ring (range ≤1 of filler standing tile): handled by FillerOverlord
+        //     via stationary findInRange(1) — skip these when a filler is active.
+        //   - Outer extensions (range >1): filler cannot reach them, ALWAYS register
+        //     so transporters fill them via the LogisticsNetwork.
+        // This fixes the RCL 3 colony collapse: at RCL 3 the game unlocks outer
+        // extensions that the stationary filler can never reach.
         // (hasFillers was computed above in the hatchery container block)
 
         for (const spawn of this.colony.hatchery.spawns) {
@@ -163,13 +169,30 @@ export class LogisticsNetwork {
             }
         }
 
-        if (!hasFillers) {
-            for (const ext of this.colony.hatchery.extensions) {
-                const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
-                if (free > 0) {
-                    this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
-                }
+        // Compute filler standing tile position (used to distinguish inner vs outer extensions)
+        const anchor = (this.colony.memory as any)?.anchor as { x: number; y: number } | undefined;
+        const fillerTileCoord = BunkerLayout.fillerTiles[0]; // Primary filler tile
+        const fillerPos = anchor && this.colony.room
+            ? new RoomPosition(
+                anchor.x + fillerTileCoord.x,
+                anchor.y + fillerTileCoord.y,
+                this.colony.room.name)
+            : null;
+
+        for (const ext of this.colony.hatchery.extensions) {
+            const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
+            if (free <= 0) continue;
+
+            // If a filler is active and this extension is within range 1 of the
+            // filler tile, skip it — FillerOverlord fills it via findInRange(1).
+            // Without an anchor (pre-blueprint), fall back to skipping all when
+            // a filler is active (safe: bootstrap mode never has outer extensions).
+            if (hasFillers) {
+                const isInnerRing = fillerPos ? fillerPos.getRangeTo(ext.pos) <= 1 : true;
+                if (isInnerRing) continue;
             }
+
+            this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
         }
 
         // ── Fix 2: Tower Integration (Critical Defense Sinks) ──
