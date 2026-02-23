@@ -57,7 +57,10 @@ describe("UpgradingOverlord", () => {
             pos: { x: 25, y: 25, roomName: "W1N1" },
             store: { energy: 20000, getUsedCapacity: () => 20000 }
         } as any;
-        (room as any).controller = { ticksToDowngrade: 10000 };
+        (room as any).controller = {
+            ticksToDowngrade: 10000,
+            pos: { findInRange: () => [] }
+        };
 
         let request: any = null;
         colony.hatchery.enqueue = (req: any) => { request = req; return "test"; };
@@ -71,7 +74,7 @@ describe("UpgradingOverlord", () => {
     it("should trigger Critical Mode if downgrade imminent", () => {
         // Setup poor room but critical controller
         room.storage = undefined;
-        (room as any).controller = { ticksToDowngrade: 3000, level: 1 }; // Critical < 4000
+        (room as any).controller = { ticksToDowngrade: 3000, level: 1, pos: { findInRange: () => [] } }; // Critical < 4000
 
         let request: any = null;
         colony.hatchery.enqueue = (req: any) => { request = req; return "test"; };
@@ -88,7 +91,7 @@ describe("UpgradingOverlord", () => {
             pos: { x: 25, y: 25, roomName: "W1N1" },
             store: { energy: 150000, getUsedCapacity: () => 150000 } // > 100k
         } as any;
-        (room as any).controller = { ticksToDowngrade: 10000 };
+        (room as any).controller = { ticksToDowngrade: 10000, pos: { findInRange: () => [] } };
 
         // Mock existing upgraders (0) -> Should request 1
         // We need to simulate that we want to reach 3.

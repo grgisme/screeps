@@ -250,7 +250,7 @@ describe("Critical Behavior", () => {
             const room = new Room("W1N1");
             (room as any).energyAvailable = 200;
             (room as any).energyCapacityAvailable = 300;
-            (room as any).controller = { level: 1, ticksToDowngrade: 20000 };
+            (room as any).controller = { level: 1, ticksToDowngrade: 20000, pos: { findInRange: () => [] } };
             (room as any).storage = undefined;
 
             let enqueued: any = null;
@@ -283,7 +283,7 @@ describe("Critical Behavior", () => {
             const room = new Room("W1N1");
             (room as any).energyAvailable = 290;
             (room as any).energyCapacityAvailable = 300;
-            (room as any).controller = { level: 1, ticksToDowngrade: 20000 };
+            (room as any).controller = { level: 1, ticksToDowngrade: 20000, pos: { findInRange: () => [] } };
             (room as any).storage = undefined;
 
             let enqueued: any = null;
@@ -317,7 +317,7 @@ describe("Critical Behavior", () => {
             const room = new Room("W1N1");
             (room as any).energyAvailable = 300;
             (room as any).energyCapacityAvailable = 300;
-            (room as any).controller = { level: 1, ticksToDowngrade: 20000 };
+            (room as any).controller = { level: 1, ticksToDowngrade: 20000, pos: { findInRange: () => [] } };
             (room as any).storage = undefined;
 
             let enqueued: any = null;

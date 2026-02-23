@@ -288,9 +288,9 @@ describe("Kernel", () => {
             expect(kernel.getSchedulerMode()).to.equal(SchedulerMode.NORMAL);
         });
 
-        it("should be in SAFE mode when bucket < 500", () => {
+        it("should be in SAFE mode when bucket < 300", () => {
             const kernel = new Kernel();
-            (globalThis as any).Game.cpu.bucket = 300;
+            (globalThis as any).Game.cpu.bucket = 200; // 100 <= 200 < 300 => SAFE tier
 
             kernel.addProcess(new TestProcess(0, 0, []));
             kernel.run();
