@@ -144,19 +144,11 @@ export class FillerOverlord extends Overlord {
 
                 if (target) {
                     filler.setTask(new TransferTask(target.id as Id<Structure>));
-                } else {
-                    // Fallback: mobile filling for sub-optimal layouts
-                    // Extensions may not be adjacent yet — walk to them
-                    const farTarget = filler.pos?.findClosestByRange(FIND_MY_STRUCTURES, {
-                        filter: (s: Structure) =>
-                            (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
-                            (s as StructureSpawn | StructureExtension).store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                    }) as StructureSpawn | StructureExtension | undefined;
-
-                    if (farTarget) {
-                        filler.setTask(new TransferTask(farTarget.id as Id<Structure>));
-                    }
                 }
+                // No adjacent target needing energy — idle until next tick.
+                // The filler is stationary by design: it only fills structures within
+                // range 1. Spawns are at range 2+ and are topped up by transporters
+                // via the LogisticsNetwork (see LogisticsNetwork.registerInfrastructure).
             }
         }
     }

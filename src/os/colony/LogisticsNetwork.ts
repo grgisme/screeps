@@ -135,19 +135,20 @@ export class LogisticsNetwork {
         }
 
         // ── Hatchery Integration (Individual Registration) ──
-        // Only register spawns/extensions as requesters when NO filler exists.
-        // When a filler is active, it fills extensions directly from the hub —
-        // haulers should focus on containers (hatchery + controller), not extensions.
+        // Spawns are ALWAYS registered: the filler can only reach radius-1 extensions,
+        // not spawns (which sit at range 2+). Transporters must top up spawns directly.
+        // Extensions are only registered when NO filler exists — if a filler is active
+        // it handles those from its standing tile and haulers should stay away.
         const hasFillers = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
 
-        if (!hasFillers) {
-            for (const spawn of this.colony.hatchery.spawns) {
-                const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);
-                if (free > 0) {
-                    this.requestInput(spawn.id as Id<Structure | Resource>, { amount: free, priority: 10 });
-                }
+        for (const spawn of this.colony.hatchery.spawns) {
+            const free = spawn.store.getFreeCapacity(RESOURCE_ENERGY);
+            if (free > 0) {
+                this.requestInput(spawn.id as Id<Structure | Resource>, { amount: free, priority: 10 });
             }
+        }
 
+        if (!hasFillers) {
             for (const ext of this.colony.hatchery.extensions) {
                 const free = ext.store.getFreeCapacity(RESOURCE_ENERGY);
                 if (free > 0) {
