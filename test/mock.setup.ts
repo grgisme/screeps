@@ -88,6 +88,8 @@
 (globalThis as any).LOOK_SOURCES = "source";
 (globalThis as any).LOOK_STRUCTURES = "structure";
 (globalThis as any).LOOK_CONSTRUCTION_SITES = "constructionSite";
+(globalThis as any).LOOK_RESOURCES = "resource";
+(globalThis as any).LOOK_TOMBSTONES = "tombstone";
 (globalThis as any).STRUCTURE_WALL = "constructedWall";
 (globalThis as any).FIND_SOURCES_ACTIVE = 104;
 (globalThis as any).FIND_MY_STRUCTURES = 108;

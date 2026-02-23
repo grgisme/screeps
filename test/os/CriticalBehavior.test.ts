@@ -87,7 +87,7 @@ describe("Critical Behavior", () => {
                 structureType: STRUCTURE_CONTAINER,
                 hits: 250000,
                 hitsMax: 250000,
-                store: { getUsedCapacity: () => 500 }
+                store: { getUsedCapacity: () => 500, getFreeCapacity: () => 1500 }
             };
 
             let travelCalled = false;
@@ -159,7 +159,7 @@ describe("Critical Behavior", () => {
                 structureType: STRUCTURE_CONTAINER,
                 hits: 250000,
                 hitsMax: 250000,
-                store: { getUsedCapacity: () => 500 }
+                store: { getUsedCapacity: () => 500, getFreeCapacity: () => 1500 }
             };
 
             let taskSet: any = null;

@@ -156,6 +156,21 @@ export class MiningOverlord extends Overlord {
                 }
             }
 
+            // ── Miner Sweep Duty ───────────────────────────────────────────────
+            // When standing on the container, pick up dropped energy before harvesting.
+            // Converts rapidly-decaying drops into stable container energy for free.
+            // Only fires when the miner has a CARRY part (700e body-tier) and free
+            // capacity, and the container has room — otherwise skip silently.
+            if (site.container && miner.pos?.isEqualTo(site.container.pos)) {
+                const hasFreeCarry = (miner.creep?.getActiveBodyparts(CARRY) ?? 0) > 0
+                    && (miner.store?.getFreeCapacity() ?? 0) > 0;
+                const containerHasRoom = site.container.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+                if (hasFreeCarry && containerHasRoom) {
+                    const drops = miner.pos.lookFor(LOOK_RESOURCES)
+                        .find((r: Resource) => r.resourceType === RESOURCE_ENERGY);
+                    if (drops) miner.creep?.pickup(drops);
+                }
+            }
             // ── FIX 3: Static In-Place Container Repair ──
             const needsRepair = site.container && site.container.hits < site.container.hitsMax - 1000;
             const hasEnergy = (miner.store?.energy ?? 0) > 0;

@@ -77,6 +77,11 @@ export class LogisticsNetwork {
         }) || [];
         for (const t of tombstones) this.offerIds.push(t.id as unknown as Id<Structure | Resource>);
 
+        const ruins = this.colony.room?.find(FIND_RUINS, {
+            filter: (r: Ruin) => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+        }) || [];
+        for (const r of ruins) this.offerIds.push(r.id as unknown as Id<Structure | Resource>);
+
         // ── Fix #4: Storage — always offer + always request (priority 0 sink) ──
         if (this.colony.room?.storage) {
             const storage = this.colony.room.storage;
@@ -351,7 +356,17 @@ export class LogisticsNetwork {
                 // have plenty. The hauler can't carry more than its free capacity
                 // anyway, so extra energy beyond that provides no additional value.
                 const usableAmount = Math.min(effectiveAmount, h.store?.getFreeCapacity() ?? effectiveAmount);
-                scored.push({ id: offerId as string, score: usableAmount / Math.max(1, distance) });
+
+                // Decay-weighted scoring: decaying entities get priority boosts so
+                // a dropped pile always dominates a stable container at equal distance.
+                let decayMultiplier = 1.0;
+                if ('amount' in target) {
+                    decayMultiplier = 2.0; // Dropped Resource: actively decaying (~1/300 per tick)
+                } else if (!('structureType' in target)) {
+                    // Tombstone or Ruin: no structureType, has a store, will decay soon
+                    decayMultiplier = 1.5;
+                }
+                scored.push({ id: offerId as string, score: (usableAmount / Math.max(1, distance)) * decayMultiplier });
             }
 
             scored.sort((a, b) => b.score - a.score);

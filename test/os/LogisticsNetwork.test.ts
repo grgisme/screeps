@@ -209,4 +209,75 @@ describe("LogisticsNetwork", () => {
         // Reservations should accumulate
         expect(network.outgoingReservations.get("offer1")).to.equal(60); // 30 + 30
     });
+
+    it("should register ruins as offers when they contain energy", () => {
+        const network = new LogisticsNetwork(mockColony);
+
+        const mockRuin = {
+            id: "ruin1",
+            store: {
+                getUsedCapacity: (res: string) => res === "energy" ? 200 : 0,
+                getFreeCapacity: () => 0,
+                [RESOURCE_ENERGY]: 200,
+            },
+            pos: new RoomPosition(15, 15, "W1N1")
+        };
+
+        room.find = (type: any, opts?: any) => {
+            if (type === FIND_RUINS) {
+                const results = [mockRuin];
+                return opts?.filter ? results.filter(opts.filter) : results;
+            }
+            if (type === FIND_DROPPED_RESOURCES || type === FIND_TOMBSTONES) return [];
+            return [];
+        };
+
+        // Stub colony infrastructure so init() doesn't blow up
+        (mockColony as any).creeps = [];
+        (mockColony as any).hatchery = { spawns: [], extensions: [] };
+        (mockColony as any).zergs = new Map();
+        (mockColony as any).linkNetwork = null;
+        (network as any).registerInfrastructure();
+
+        expect(network.offerIds).to.include("ruin1" as any);
+    });
+
+    it("should score dropped resources 2x higher than containers at same distance", () => {
+        const network = new LogisticsNetwork(mockColony);
+
+        const containerId = "cont1" as Id<Structure | Resource>;
+        const droppedId = "drop1" as Id<Structure | Resource>;
+        network.requestOutput(containerId);
+        network.requestOutput(droppedId);
+
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "cont1") return {
+                id: "cont1",
+                structureType: STRUCTURE_CONTAINER,
+                pos: new RoomPosition(15, 10, "W1N1"),
+                store: { [RESOURCE_ENERGY]: 300 }
+            };
+            if (id === "drop1") return {
+                id: "drop1",
+                // Dropped Resource: has 'amount' property, no 'structureType'
+                amount: 200,
+                resourceType: RESOURCE_ENERGY,
+                pos: new RoomPosition(15, 10, "W1N1"),
+            };
+            return null;
+        };
+
+        // Both offers at distance 5 from the hauler.
+        // Container: score = 300/5 * 1.0 = 60
+        // Drop:      score = 200/5 * 2.0 = 80  <-- should win despite lower amount
+        const zerg = {
+            name: "hauler1",
+            pos: new RoomPosition(10, 10, "W1N1"),
+            memory: { role: "transporter" },
+            store: { getFreeCapacity: () => 300, getUsedCapacity: () => 0 }
+        } as any;
+
+        const result = network.matchWithdraw(zerg, [zerg]);
+        expect(result).to.equal("drop1");
+    });
 });

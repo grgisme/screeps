@@ -55,6 +55,25 @@ export class WithdrawTask implements ITask {
         if (zerg.store?.getFreeCapacity() === 0) return true;
 
         if (zerg.pos && zerg.pos.inRangeTo(target, this.settings.workRange)) {
+            // ── Opportunistic Vacuuming ──────────────────────────────────────────
+            // When heading to a container, check its exact tile for dropped energy
+            // or tombstones first — grabs them for free while already in range.
+            if ('structureType' in target &&
+                (target as Structure).structureType === STRUCTURE_CONTAINER) {
+                const droppedEnergy = target.pos.lookFor(LOOK_RESOURCES)
+                    .find((r: Resource) => r.resourceType === RESOURCE_ENERGY);
+                if (droppedEnergy) {
+                    zerg.pickup(droppedEnergy);
+                    return false; // Keep task alive; revisit container next trip
+                }
+                const tomb = target.pos.lookFor(LOOK_TOMBSTONES)
+                    .find((t: Tombstone) => t.store[RESOURCE_ENERGY] > 0);
+                if (tomb) {
+                    zerg.withdraw(tomb, RESOURCE_ENERGY);
+                    return false;
+                }
+            }
+            // ── Normal withdraw ──────────────────────────────────────────────────
             const result = zerg.withdraw(
                 target as Structure | Tombstone | Ruin,
                 RESOURCE_ENERGY

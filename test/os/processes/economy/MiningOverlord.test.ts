@@ -120,4 +120,80 @@ describe("MiningOverlord", () => {
         const haulerRequest = hatcheryQueue.find(r => r.memory.role === "hauler");
         expect(haulerRequest).to.be.undefined;
     });
+
+    it("miner with CARRY should pickup dropped energy on container tile (sweep duty)", () => {
+        const overlord = new MiningOverlord(mockColony);
+        (overlord as any)._zergs = []; (overlord as any)._zergsTick = Game.time;
+
+        const containerPos = new RoomPosition(11, 11, "W1N1");
+        const droppedResource = {
+            id: "drop1",
+            resourceType: RESOURCE_ENERGY,
+            amount: 150,
+            pos: containerPos
+        };
+
+        const container = {
+            id: "container1",
+            structureType: STRUCTURE_CONTAINER,
+            pos: containerPos,
+            hits: 250000, hitsMax: 250000,
+            store: {
+                [RESOURCE_ENERGY]: 500,
+                getUsedCapacity: () => 500,
+                getFreeCapacity: (_res?: string) => 1500 // Has room
+            }
+        };
+
+        let pickupCalled = false;
+        const mockNativeCreep = {
+            getActiveBodyparts: (type: string) => type === CARRY ? 1 : 0,
+            pickup: (_r: any) => { pickupCalled = true; return OK; },
+            withdraw: () => OK,
+            harvest: () => OK
+        };
+
+        // Mock the miner zerg
+        const mockMiner = {
+            isAlive: () => true,
+            creep: mockNativeCreep,
+            pos: containerPos,
+            task: null,
+            memory: { role: "miner", state: { siteId: "src1" } },
+            store: { getFreeCapacity: () => 50, energy: 0 },
+            setTask: (_t: any) => { },
+            travelTo: () => { }
+        } as any;
+
+        (globalThis as any).Game.getObjectById = (id: string) => {
+            if (id === "src1") return source;
+            if (id === "container1") return container;
+            return null;
+        };
+
+        // Patch containerPos.lookFor so LOOK_RESOURCES returns the dropped pile
+        (containerPos as any).lookFor = (type: string) => {
+            if (type === LOOK_RESOURCES) return [droppedResource];
+            if (type === LOOK_TOMBSTONES) return [];
+            return [];
+        };
+        // Patch containerPos.isEqualTo so miner.pos.isEqualTo(site.container.pos) passes
+        (containerPos as any).isEqualTo = (other: any) =>
+            other.x === containerPos.x && other.y === containerPos.y;
+
+        // Push a mock site directly into overlord.sites so run() can find it by siteId
+        const mockSite = {
+            sourceId: "src1",
+            containerId: "container1",
+            get container() { return container; },
+            get link() { return null; },
+            get source() { return source; },
+        } as any;
+        overlord.sites = [mockSite];
+        overlord.miners = [mockMiner];
+
+        overlord.run();
+
+        expect(pickupCalled).to.be.true;
+    });
 });
