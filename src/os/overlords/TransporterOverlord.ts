@@ -262,14 +262,11 @@ export class TransporterOverlord extends Overlord {
         if (hasHaulers) {
             capacity = room.energyCapacityAvailable;
         } else {
-            // Sum: spawn energy + existing extension energy (only what's actually there)
-            const spawns = room.find(FIND_MY_SPAWNS);
-            const spawnEnergy = spawns.reduce((sum, s) => sum + s.store.getUsedCapacity(RESOURCE_ENERGY), 0);
-            const extensions = room.find(FIND_MY_STRUCTURES, {
-                filter: (s) => s.structureType === STRUCTURE_EXTENSION
-            }) as StructureExtension[];
-            const extEnergy = extensions.reduce((sum, e) => sum + e.store.getUsedCapacity(RESOURCE_ENERGY), 0);
-            capacity = spawnEnergy + extEnergy;
+            // Bootstrap: no haulers/fillers exist yet, so extensions may be unfilled.
+            // Use room.energyAvailable (actual current sum of spawn + extension energy)
+            // rather than energyCapacityAvailable so we don't deadlock waiting for
+            // extensions that nobody is filling yet.
+            capacity = room.energyAvailable;
         }
 
         // Read route terrain from MiningSite cache (0 CPU — heap data)

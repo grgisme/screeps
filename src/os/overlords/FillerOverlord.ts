@@ -36,8 +36,40 @@ export class FillerOverlord extends Overlord {
     }
 
     /**
+     * Check whether the hub infrastructure EXISTS (regardless of energy).
+     * Used for spawn gating — we want to spawn a filler even if the hub is
+     * currently empty, otherwise a dead filler leaves an empty hub that
+     * prevents a replacement from ever spawning (deadlock).
+     */
+    private getFillerHubExists(room: Room): StructureStorage | StructureContainer | null {
+        if (room.storage) return room.storage;
+
+        const anchor = this.colony.memory.anchor;
+        if (!anchor) return null;
+
+        const hubCoord = BunkerLayout.hubPos;
+        const hubPos = new RoomPosition(anchor.x + hubCoord.x, anchor.y + hubCoord.y, room.name);
+        const containers = hubPos.lookFor(LOOK_STRUCTURES)
+            .filter(s => s.structureType === STRUCTURE_CONTAINER) as StructureContainer[];
+        if (containers.length > 0) return containers[0];
+
+        // Broader search: any hatchery container near spawn
+        const spawns = room.find(FIND_MY_SPAWNS);
+        if (spawns.length === 0) return null;
+        const controller = room.controller;
+        const hatchContainers = spawns[0].pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+        }).filter(c => {
+            const nearSource = c.pos.findInRange(FIND_SOURCES, 2).length > 0;
+            const nearCtrl = controller && c.pos.getRangeTo(controller) <= 3;
+            return !nearSource && !nearCtrl;
+        }) as StructureContainer[];
+        return hatchContainers[0] ?? null;
+    }
+
+    /**
      * Get the filler's energy hub: Storage (RCL 4+) or hatchery container (RCL 2+).
-     * Returns null if neither exists.
+     * Returns null if neither exists OR if the hub has no energy to withdraw.
      */
     getFillerHub(room: Room): StructureStorage | StructureContainer | null {
         // Prefer Storage when available
@@ -158,11 +190,16 @@ export class FillerOverlord extends Overlord {
         if (!room) return;
 
         // Gate: need a hub to draw from (hatchery container OR Storage)
-        const hub = this.getFillerHub(room);
+        // We only require the hub to EXIST — not to have energy yet.
+        // A filler being dead is exactly when the hub is empty, so gating on
+        // hub energy creates a deadlock: no filler → hub stays empty → no filler.
+        // The 200e threshold is kept only for pre-spawn replacement (filler already exists).
+        const hub = this.getFillerHubExists(room);
         if (!hub) return;
 
-        // Don't spawn if hub is nearly empty — wait for haulers to fill it
-        if (hub.store.getUsedCapacity(RESOURCE_ENERGY) < 200) return;
+        // Don't spam-spawn into empty infrastructure when a filler is already active.
+        const hasActiveFiller = this.fillers.some(f => (f.creep?.ticksToLive ?? 0) > 50);
+        if (hasActiveFiller && hub.store.getUsedCapacity(RESOURCE_ENERGY) < 200) return;
 
         // Count scaling: 1 filler for RCL 2-5, 2 for RCL 6+
         const rcl = room.controller?.level ?? 0;
