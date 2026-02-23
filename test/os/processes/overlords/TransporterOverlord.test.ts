@@ -129,7 +129,7 @@ describe("TransporterOverlord", () => {
         mockColony.overlords = [miningOverlord];
 
         const overlord = new TransporterOverlord(mockColony);
-        const body = (overlord as any).buildTransporterBody(room);
+        const { body } = (overlord as any).buildTransporterBody(room);
 
         const hasWork = body.includes(WORK);
         const workCount = body.filter((p: string) => p === WORK).length;
@@ -146,7 +146,7 @@ describe("TransporterOverlord", () => {
         mockColony.overlords = [miningOverlord];
 
         const overlord = new TransporterOverlord(mockColony);
-        const body = (overlord as any).buildTransporterBody(room);
+        const { body } = (overlord as any).buildTransporterBody(room);
 
         const hasWork = body.includes(WORK);
         const carryCount = body.filter((p: string) => p === CARRY).length;
@@ -175,7 +175,10 @@ describe("TransporterOverlord", () => {
         const overlord = new TransporterOverlord(mockColony);
         overlord.transporters = []; // No transporters → panic mode
 
-        const body = (overlord as any).buildTransporterBody(room);
+        const { body, energyCap } = (overlord as any).buildTransporterBody(room);
+
+        // energyCap must equal energyAvailable, not energyCapacityAvailable
+        expect(energyCap).to.equal(400, "panic mode must use energyAvailable (400e)");
 
         // Body must cost ≤ 400e (energyAvailable), NOT scale to 800e
         const bodyCost = body.reduce((sum: number, part: string) =>

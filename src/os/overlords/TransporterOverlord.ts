@@ -217,7 +217,7 @@ export class TransporterOverlord extends Overlord {
         if (currentCarry >= totalCarryNeeded) return; // Fully staffed
 
         // ── Road-Aware Body Template ───────────────────────────────────────
-        const body = this.buildTransporterBody(room);
+        const { body, energyCap } = this.buildTransporterBody(room);
 
         if (body.length === 0) return; // Can't afford minimum body
 
@@ -232,23 +232,31 @@ export class TransporterOverlord extends Overlord {
             bodyTemplate: body,
             overlord: this,
             name: `Transporter_${this.colony.name}_${Game.time}`,
-            memory: { role: "transporter" }
+            memory: { role: "transporter" },
+            // Panic mode: cap the Hatchery's grow() call to the same energy we
+            // used to compute the body. Without this, Hatchery re-grows the
+            // template using energyCapacityAvailable (e.g. 800e) even though
+            // only 400e is available — producing an unspawnable body → deadlock.
+            maxEnergy: energyCap < room.energyCapacityAvailable ? energyCap : undefined
         });
 
-        log.debug(() => `Hauler deficit: ${currentCarry}/${totalCarryNeeded} CARRY. Spawning (${body.length} parts).`);
+        log.debug(() => `Hauler deficit: ${currentCarry}/${totalCarryNeeded} CARRY. Spawning (${body.length} parts, cap=${energyCap}e).`);
     }
 
     /**
      * Build a route-aware transporter body using MiningSite terrain data.
      *
-     * Uses cached `roadCoverage` and `hasSwamp` from each MiningSite's
-     * actual hauling route (containerPos → spawn/storage), NOT a naive
-     * room-wide road count. Data lives in heap, recalculated every 50 ticks.
+     * Returns `{ body, energyCap }` where `energyCap` is the energy budget
+     * that was actually used. When `transporters.length === 0` (panic spawn),
+     * `energyCap = room.energyAvailable` so the caller can pass it as
+     * `maxEnergy` to the Hatchery — preventing the Hatchery from re-growing
+     * the template to the full `energyCapacityAvailable` and making the
+     * resulting body unspawnable.
      *
      * - ≥75% road coverage: [CARRY, CARRY, MOVE] × N + 1 WORK (2:1 ratio + repair)
      * - <75% (plains/swamp): [CARRY, MOVE] × N (1:1 ratio, no WORK)
      */
-    private buildTransporterBody(room: Room): BodyPartConstant[] {
+    private buildTransporterBody(room: Room): { body: BodyPartConstant[], energyCap: number } {
         // Panic spawn: when ALL transporters are dead, use room.energyAvailable
         // (whatever is actually in the spawn + extensions RIGHT NOW) instead of
         // energyCapacityAvailable. This prevents the colony from waiting for
@@ -296,18 +304,18 @@ export class TransporterOverlord extends Overlord {
                     body.push(CARRY, CARRY, MOVE);
                 }
                 body.push(WORK); // Single WORK for road repair
-                return body;
+                return { body, energyCap: capacity };
             }
             // Fall through to plains mode — can't fit even 1 road segment at this energy level
         }
 
         // Plains/swamp mode: 1:1 ratio for full speed, no WORK (nothing to repair)
         const segments = Math.min(Math.floor(capacity / 100), 25);
-        if (segments < 1) return [];
+        if (segments < 1) return { body: [], energyCap: capacity };
 
         for (let i = 0; i < segments; i++) {
             body.push(CARRY, MOVE);
         }
-        return body;
+        return { body, energyCap: capacity };
     }
 }
