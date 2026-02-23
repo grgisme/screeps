@@ -18,6 +18,7 @@ import { UpgradingOverlord } from "../overlords/UpgradingOverlord";
 import { TerminalOverlord } from "../overlords/TerminalOverlord";
 import { DefenseOverlord } from "../overlords/DefenseOverlord";
 import { FillerOverlord } from "../overlords/FillerOverlord";
+import { QueenOverlord } from "../overlords/QueenOverlord";
 import { BootstrappingOverlord } from "../overlords/BootstrappingOverlord";
 import { BunkerLayout } from "../infrastructure/BunkerLayout";
 import { LinkNetwork } from "./LinkNetwork";
@@ -135,6 +136,7 @@ export class Colony {
         this.registerOverlord(new WorkerOverlord(this));
         this.registerOverlord(new UpgradingOverlord(this));
         this.registerOverlord(new FillerOverlord(this));
+        this.registerOverlord(new QueenOverlord(this));
         this.registerOverlord(new TerminalOverlord(this));
         this.registerOverlord(new DefenseOverlord(this));
     }

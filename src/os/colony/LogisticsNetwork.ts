@@ -119,6 +119,11 @@ export class LogisticsNetwork {
         //   Filler present  → REQUESTER only. Haulers keep it topped up; filler draws from it.
         //   No filler       → OFFER only. Workers/transporters withdraw from it to fill extensions.
         const hasFillers = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
+        // Queen is active when a queen-role creep exists AND Storage is present.
+        // When active, the Queen handles outer extensions and towers directly —
+        // removing them from the transporter logistics network prevents racing.
+        const hasQueen = this.colony.room?.storage != null &&
+            this.colony.creeps.some(c => (c.memory as any)?.role === "queen");
         const spawns = this.colony.room?.find(FIND_MY_SPAWNS) ?? [];
         if (spawns.length > 0) {
             const spawn = spawns[0];
@@ -192,22 +197,31 @@ export class LogisticsNetwork {
                 if (isInnerRing) continue;
             }
 
+            // Queen handles outer extensions at RCL 4+ — skip them from logistics
+            // so transporters don't race the Queen to fill the same ext.
+            if (hasQueen) continue;
+
             this.requestInput(ext.id as Id<Structure | Resource>, { amount: free, priority: 10 });
         }
 
-        // ── Fix 2: Tower Integration (Critical Defense Sinks) ──
-        const towers = this.colony.room?.find(FIND_MY_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_TOWER
-        }) as StructureTower[] ?? [];
-
+        // ── Tower Integration (Critical Defense Sinks) ──
+        // When a Queen is active she handles towers via her own patrol loop.
+        // Exception: if the room is UNDER ATTACK, always register towers at emergency
+        // priority — the Queen may be off filling extensions and can't respond fast enough.
         const isUnderAttack = (this.colony.room?.find(FIND_HOSTILE_CREEPS)?.length ?? 0) > 0;
 
-        for (const t of towers) {
-            const free = t.store.getFreeCapacity(RESOURCE_ENERGY);
-            if (free > 400) {
-                this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: isUnderAttack ? 15 : 8 });
-            } else if (free > 0) {
-                this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: 5 });
+        if (!hasQueen || isUnderAttack) {
+            const towers = this.colony.room?.find(FIND_MY_STRUCTURES, {
+                filter: (s: Structure) => s.structureType === STRUCTURE_TOWER
+            }) as StructureTower[] ?? [];
+
+            for (const t of towers) {
+                const free = t.store.getFreeCapacity(RESOURCE_ENERGY);
+                if (free > 400) {
+                    this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: isUnderAttack ? 15 : 8 });
+                } else if (free > 0) {
+                    this.requestInput(t.id as Id<Structure | Resource>, { amount: free, priority: isUnderAttack ? 15 : 5 });
+                }
             }
         }
 
