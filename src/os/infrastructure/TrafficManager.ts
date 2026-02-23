@@ -137,19 +137,40 @@ export class TrafficManager {
                                     role === "miner" || role === "filler") {
 
                                     // FIX 3: Scope isParked correctly.
+                                    // FIX 4: Tighten isParked checks and reduce score.
+                                    //
+                                    // isNearTo() checks a 3×3 grid — a worker merely walking past a
+                                    // source on a road tile gets classified as "parked" if it pauses.
+                                    // Miners/harvesters should only be truly parked when at range 1
+                                    // from the source AND on a container tile (their workstation).
+                                    //
+                                    // Score reduced from 10000 to 50. This is still high enough to
+                                    // resist standard haulers (priority 1-10) and shove proposals
+                                    // (score 0.2), but emergency/military traffic (priority 100+)
+                                    // can displace them when absolutely needed.
+                                    // Fillers are a special case — they NEVER move and get 10000.
                                     let isParked = false;
                                     if (taskName === "Upgrade" && room.controller && creep.pos.inRangeTo(room.controller, 3)) {
                                         isParked = true;
                                     } else if (taskName === "Harvest" || role === "miner") {
-                                        if (room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s))) isParked = true;
-                                        if (!isParked && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m))) isParked = true;
+                                        // Only truly parked if adjacent to a source AND on a container
+                                        // (the designated mining spot). Just being isNearTo a source
+                                        // on a road tile is NOT parked — that's a transient creep.
+                                        const nearSource = room.find(FIND_SOURCES).some(s => creep.pos.isNearTo(s));
+                                        const nearMineral = !nearSource && room.find(FIND_MINERALS).some(m => creep.pos.isNearTo(m));
+                                        if (nearSource || nearMineral) {
+                                            // Check if standing on a container (designated workstation)
+                                            const onContainer = creep.pos.lookFor(LOOK_STRUCTURES)
+                                                .some((s: Structure) => s.structureType === STRUCTURE_CONTAINER);
+                                            isParked = onContainer || role === "miner"; // miners always park at their source
+                                        }
                                     } else if (role === "filler") {
-                                        // Fillers always hold their standing tile — they are permanent residents
-                                        // of the bunker center and must never be displaced by passing traffic.
-                                        isParked = true;
+                                        // Fillers are permanent residents of the bunker center.
+                                        // They NEVER move and must never be displaced by any traffic.
+                                        return 10000;
                                     }
 
-                                    if (isParked) return 10000;
+                                    if (isParked) return 50;
                                 }
 
                                 // Fix 5: Priority-Based Yielding.
@@ -160,8 +181,18 @@ export class TrafficManager {
                                 const hasTask = !!(creep.memory as any).task;
                                 return hasTask ? 0.5 : 0.01;
                             } else {
-                                // Creep is trying to move but falling back — weak hold so traffic flows
-                                return 0.1;
+                                // Creep is trying to move but blocked — hold ground against
+                                // same-priority trailing traffic to form a stable queue.
+                                // Without this, two same-priority creeps leapfrog endlessly:
+                                // A blocks at 0.1, B (priority 1) evicts A; next tick B blocks
+                                // at 0.1, A evicts B — infinite oscillation.
+                                //
+                                // Using intent.priority + 0.1 means:
+                                //   - A priority-1 hauler holds at 1.1, resisting a trailing
+                                //     priority-1 hauler (score 1.0) → stable queue forms.
+                                //   - A priority-10 transporter (score 10.0) still displaces
+                                //     the priority-1 hauler (1.1) → right-of-way preserved.
+                                return intent.priority + 0.1;
                             }
                         }
 
@@ -277,9 +308,24 @@ export class TrafficManager {
         let movesThisTick = 0;
         let shovesThisTick = 0;
 
+        // Track creeps whose move intents have been finalized by a swap.
+        // In Screeps, only the LAST move() call per tick counts. If we issue
+        // creep.pull(blocker) + creep.move(blocker) for a mutual swap, then
+        // later call creep.move(direction), the directional move OVERWRITES
+        // the swap target — silently breaking the pull() handshake.
+        // handledSwaps prevents this by skipping the directional move.
+        const handledSwaps = new Set<string>();
+
+        // Build a set of all tiles assigned by Gale-Shapley so the step-aside
+        // logic can avoid nudging a blocker into a tile that another creep is
+        // simultaneously routing into (creepAtPos only shows start-of-tick state).
+        const assignedTiles = new Set<string>(matches.values());
+
         for (const creep of myCreeps) {
             // Skip creeps that already moved off-grid in phase 1
             if (exitedCreeps.has(creep.name)) continue;
+            // Skip creeps already handled by a prior swap iteration
+            if (handledSwaps.has(creep.name)) continue;
 
             const matchedTileId = matches.get(creep.name);
             if (!matchedTileId) continue;
@@ -295,7 +341,9 @@ export class TrafficManager {
             const tileKey = `${matchedPos.roomName}_${matchedPos.x},${matchedPos.y}`;
             const blocker = creepAtPos.get(tileKey) || null;
 
-            // ── Fix #1: pull() needs all three intents ──
+            // ── Swap / Step-Aside resolution ──
+            let isSwapping = false;
+
             if (blocker && blocker.my) {
                 const blockerAssignedTile = matches.get(blocker.name);
                 const myCurrentTile = `${creep.pos.roomName}_${creep.pos.x},${creep.pos.y}`;
@@ -309,16 +357,51 @@ export class TrafficManager {
                     // silently rejected — swaps between two non-fatigued creeps on roads
                     // were silently failing because the fatigue guard suppressed pull().
                     // pull() also exempts the pulled creep from road/swamp fatigue costs.
+                    //
+                    // CRITICAL: Use move(blocker) not move(direction) — move(direction)
+                    // would overwrite the pull() target. The Screeps engine needs the
+                    // explicit creep reference to link the pull-move pair atomically.
                     creep.pull(blocker);
+                    creep.move(blocker);
                     blocker.move(creep);
+                    // Protect blocker from having its move(creep) overwritten when
+                    // the loop processes it later.
+                    handledSwaps.add(blocker.name);
+                    isSwapping = true;
                     creep.say("🔗");
-                } else if (!blockerAssignedTile) {
-                    // Fix 3 — vacatePos Step-Aside:
-                    // The blocker is idle (unmatched). Instead of swapping it onto the
-                    // path (which just relocates the jam), scan adjacent tiles for an
-                    // off-path empty spot. The hauler keeps its straight-line move and
-                    // the idle creep steps onto a swamp/plain without blocking traffic.
+                } else if (!blockerAssignedTile || blockerAssignedTile !== myCurrentTile) {
+                    // vacatePos Step-Aside:
+                    // The blocker is idle (unmatched) OR matched to a THIRD tile (not
+                    // a mutual swap). In either case, the blocker needs to vacate our
+                    // target tile. Scan adjacent tiles for an off-path empty spot.
+                    // The hauler keeps its straight-line move and the blocking creep
+                    // steps onto a swamp/plain without blocking traffic.
                     let steppedAside = false;
+
+                    // If the blocker IS matched to another tile, try to nudge it
+                    // toward its assigned destination first (most natural resolution).
+                    if (blockerAssignedTile) {
+                        const assignedPos = tileMap.get(blockerAssignedTile);
+                        if (assignedPos && !assignedPos.isEqualTo(blocker.pos)) {
+                            const nudgeDir = blocker.pos.getDirectionTo(assignedPos);
+                            // Verify the nudge tile is walkable and unoccupied
+                            const nudgePos = getPositionAtDirection(blocker.pos, nudgeDir);
+                            if (nudgePos && nudgePos.roomName === roomName &&
+                                nudgePos.x > 0 && nudgePos.x < 49 && nudgePos.y > 0 && nudgePos.y < 49 &&
+                                (terrain.get(nudgePos.x, nudgePos.y) & TERRAIN_MASK_WALL) === 0 &&
+                                matrix.get(nudgePos.x, nudgePos.y) < 255) {
+                                const nudgeKey = `${nudgePos.roomName}_${nudgePos.x},${nudgePos.y}`;
+                                // Check both start-of-tick positions AND Gale-Shapley assignments
+                                // to avoid nudging into a tile another creep is routing into.
+                                if (!creepAtPos.has(nudgeKey) && !assignedTiles.has(nudgeKey)) {
+                                    blocker.move(nudgeDir);
+                                    steppedAside = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // General step-aside scan: find any adjacent empty tile
                     for (let d = 1; d <= 8 && !steppedAside; d++) {
                         const adjPos = getPositionAtDirection(blocker.pos, d as DirectionConstant);
                         if (!adjPos || adjPos.roomName !== roomName) continue;
@@ -326,7 +409,8 @@ export class TrafficManager {
                         if ((terrain.get(adjPos.x, adjPos.y) & TERRAIN_MASK_WALL) !== 0) continue;
                         if (matrix.get(adjPos.x, adjPos.y) >= 255) continue; // wall/structure
                         const adjKey = `${adjPos.roomName}_${adjPos.x},${adjPos.y}`;
-                        if (creepAtPos.has(adjKey)) continue; // occupied by another creep
+                        // Check both start-of-tick AND Gale-Shapley assigned tiles
+                        if (creepAtPos.has(adjKey) || assignedTiles.has(adjKey)) continue;
                         // Clear tile found — step aside off the hauler's path
                         blocker.move(d as DirectionConstant);
                         steppedAside = true;
@@ -335,18 +419,24 @@ export class TrafficManager {
                         // Boxed in — fall back to swap so the hauler isn't hard-blocked.
                         // Same pull() requirement applies (see mutual-swap comment above).
                         creep.pull(blocker);
+                        creep.move(blocker);
                         blocker.move(creep);
+                        handledSwaps.add(blocker.name);
+                        isSwapping = true;
                         creep.say("🔄");
                     }
                 }
             }
 
-            creep.move(moveDir);
+            // Only issue a directional move if we did NOT set up a swap.
+            // move(direction) would overwrite the move(creep) from pull().
+            if (!isSwapping) {
+                creep.move(moveDir);
+            }
 
             if (intentMap.has(creep.name) && intentMap.get(creep.name)!.direction === moveDir) {
                 movesThisTick++;
             } else {
-                creep.say("🔀");
                 shovesThisTick++;
             }
         }

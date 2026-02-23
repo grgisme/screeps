@@ -19,6 +19,7 @@ import { RepairTask } from "../tasks/RepairTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { DismantleTask } from "../tasks/DismantleTask";
 import { getParkingZones, pickParkingZone, getRampartTarget } from "../../utils/ParkingZones";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 
 
@@ -195,6 +196,10 @@ export class WorkerOverlord extends Overlord {
             // route), hold position near the nearest construction site or container.
             // Emitting no moveTo() keeps the hauler's cached path valid — the key fix
             // for Kinetic Friction / constant path-recalculation CPU spikes.
+            //
+            // Fix: If there's no construction site to anchor toward, move to a parking
+            // zone instead of idling in-place. Workers idling on hatchery road tiles
+            // create traffic jams that block transporters trying to deliver energy.
             if (!mem.collecting && (worker.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0) === 0) {
                 const creepId = worker.creep?.id;
                 const inFlight = creepId ? (this.colony.logistics.incomingReservations.get(creepId) || 0) : 0;
@@ -204,8 +209,12 @@ export class WorkerOverlord extends Overlord {
                     const site = this.getBestConstructionSite();
                     if (site && worker.pos && !worker.pos.inRangeTo(site.pos, 3)) {
                         worker.travelTo(site.pos, 3);
+                    } else if (worker.pos && this.isInHatcheryZone(worker.pos)) {
+                        // No site to anchor toward AND we're blocking the hatchery.
+                        // Move to a parking zone so transporters can deliver unimpeded.
+                        this.parkAwayFromHatchery(worker);
                     }
-                    // If already close enough (or no site), stay still — do nothing, just anchor
+                    // If close enough to a site and not in hatchery zone, stay still
                     continue;
                 }
             }
@@ -240,7 +249,15 @@ export class WorkerOverlord extends Overlord {
                         worker.setTask(new WithdrawTask(container.id as Id<Structure>));
                     } else {
                         // Anchor to nearest container — use pre-hoisted anyContainers array (Fix #2)
-                        const anyContainer = worker.pos?.findClosestByRange(anyContainers);
+                        // Fix: Skip hatchery containers when fillers are active — workers anchoring
+                        // there compete with transporters for the same corridor tiles.
+                        const hasFillerCreeps = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
+                        const candidateContainers = hasFillerCreeps
+                            ? anyContainers.filter(c => !this.isInHatcheryZone(c.pos))
+                            : anyContainers;
+                        const anyContainer = worker.pos?.findClosestByRange(
+                            candidateContainers.length > 0 ? candidateContainers : anyContainers
+                        );
 
                         if (anyContainer) {
                             // Anchor to container position — do NOT issue travelTo; just hold still
@@ -482,5 +499,67 @@ export class WorkerOverlord extends Overlord {
         })[0];
 
         return this._bestSite;
+    }
+
+    // -----------------------------------------------------------------------
+    // Hatchery Congestion Avoidance
+    // -----------------------------------------------------------------------
+
+    /**
+     * Check if a position is within the hatchery congestion zone.
+     * The zone is defined as Chebyshev distance ≤ 3 from any spawn.
+     * This is the high-traffic area where transporters need clear access
+     * to deliver energy to spawns, extensions, and the hub container.
+     */
+    private isInHatcheryZone(pos: RoomPosition): boolean {
+        const room = this.colony.room;
+        if (!room) return false;
+
+        const spawns = room.find(FIND_MY_SPAWNS);
+        for (const spawn of spawns) {
+            if (pos.getRangeTo(spawn) <= 3) return true;
+        }
+
+        // Also check the anchor center (bunker core) if available
+        const anchor = (this.colony.memory as any).anchor as { x: number; y: number } | undefined;
+        if (anchor) {
+            const cheb = Math.max(Math.abs(pos.x - anchor.x), Math.abs(pos.y - anchor.y));
+            if (cheb <= 4) return true; // Within bunker inner ring
+        }
+
+        return false;
+    }
+
+    /**
+     * Move a worker to a parking zone outside the hatchery area.
+     * Called when the worker has no task and is idling in the hatchery
+     * congestion zone, blocking transporter traffic.
+     */
+    private parkAwayFromHatchery(worker: Worker): void {
+        const room = this.colony.room;
+        if (!room || !worker.pos) return;
+
+        const anchor = (this.colony.memory as any).anchor as { x: number; y: number } | undefined;
+        if (anchor) {
+            const zones = getParkingZones(room, anchor.x, anchor.y);
+            const staticCached = GlobalCache.get<{ matrix: CostMatrix }>(`matrix_static:${room.name}`);
+            const target = pickParkingZone(worker.pos, zones, staticCached?.matrix);
+            if (target) {
+                worker.travelTo(target, 0);
+                return;
+            }
+        }
+
+        // Fallback: flee away from the nearest spawn
+        const spawn = room.find(FIND_MY_SPAWNS)?.[0];
+        if (spawn) {
+            const dx = worker.pos.x - spawn.pos.x;
+            const dy = worker.pos.y - spawn.pos.y;
+            const mx = dx === 0 ? 1 : Math.sign(dx);
+            const my = dy === 0 ? 1 : Math.sign(dy);
+            const tx = Math.min(48, Math.max(1, worker.pos.x + mx * 5));
+            const ty = Math.min(48, Math.max(1, worker.pos.y + my * 5));
+            worker.travelTo(new RoomPosition(tx, ty, spawn.pos.roomName), 1);
+        }
     }
 }

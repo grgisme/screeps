@@ -89,6 +89,13 @@ export class Zerg {
     _expectedPos: RoomPosition | null = null; // Tracks Shove Drift
     _blockedPos: RoomPosition | null = null;  // Deep-stuck repath penalty
 
+    // ── Oscillation detection (Fix: swap-loop / ping-pong) ────────────
+    // Tracks the last 3 positions. If the creep alternates between two
+    // tiles for 3+ ticks (A→B→A or B→A→B), it's oscillating — not stuck
+    // in the _stuckCount sense, but making zero forward progress.
+    _posHistory: Array<{ x: number; y: number; roomName: string }> = [];
+    _oscillationCount = 0;
+
     constructor(creepName: string) {
         this.creepName = creepName;
     }
@@ -418,8 +425,14 @@ export class Zerg {
                 this._path.ticksToLive--;
             } else {
                 // We moved, but NOT along the expected path (we were shoved off-route!)
+                // A shove is still a delay — the creep made zero forward progress.
+                // Incrementing _stuckCount (instead of resetting to 0) ensures that
+                // repeatedly shoved creeps eventually trigger the deep-stuck repath,
+                // which penalizes the blocking tile and finds an alternate route.
+                // Without this, oscillating creeps reset to 0 every tick and the
+                // deep-stuck threshold (> 2) is never reached.
                 this._path = null;
-                this._stuckCount = 0;
+                this._stuckCount++;
             }
         } else if (this._lastPos && currentPos.isEqualTo(this._lastPos)) {
             this._stuckCount++;
@@ -428,6 +441,45 @@ export class Zerg {
         }
 
         this._lastPos = currentPos;
+
+        // ── Oscillation Detection (Fix: swap-loop / ping-pong) ──────────
+        // Track the last 3 positions. If the creep alternates between two
+        // tiles (A→B→A pattern), increment _oscillationCount. After 4 ticks
+        // of oscillation, force a repath that penalizes BOTH oscillation
+        // tiles, breaking the swap loop.
+        this._posHistory.push({ x: currentPos.x, y: currentPos.y, roomName: currentPos.roomName });
+        if (this._posHistory.length > 4) this._posHistory.shift();
+
+        if (this._posHistory.length >= 3) {
+            const h = this._posHistory;
+            const len = h.length;
+            // Check A→B→A pattern: position[-3] === position[-1] && position[-3] !== position[-2]
+            const cur = h[len - 1];
+            const prev = h[len - 2];
+            const prevPrev = h[len - 3];
+            const isOscillating = cur.x === prevPrev.x && cur.y === prevPrev.y &&
+                cur.roomName === prevPrev.roomName &&
+                (cur.x !== prev.x || cur.y !== prev.y || cur.roomName !== prev.roomName);
+
+            if (isOscillating) {
+                this._oscillationCount++;
+            } else {
+                this._oscillationCount = 0;
+            }
+
+            // After 2 oscillation cycles (4 ticks of A↔B), force repath
+            // penalizing the OTHER tile in the oscillation pair so PathFinder
+            // routes around the contested corridor entirely.
+            if (this._oscillationCount >= 2) {
+                // Penalize the tile we keep bouncing TO (prev = the "other" tile)
+                this._blockedPos = new RoomPosition(prev.x, prev.y, prev.roomName);
+                this._path = null;
+                this._stuckCount = 0;
+                this._oscillationCount = 0;
+                this._posHistory = [];
+                log.debug(`${this.creepName}: Oscillation detected at (${cur.x},${cur.y})↔(${prev.x},${prev.y}), repathing`);
+            }
+        }
 
         // ── Deep-Stuck Repath ──
         // Fires at stuckCount > 2 (after 3 consecutive no-move ticks).
