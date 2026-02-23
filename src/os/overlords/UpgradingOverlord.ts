@@ -24,6 +24,28 @@ export class UpgradingOverlord extends Overlord {
         return containers[0] ?? null;
     }
 
+    // ── Helper: enumerate valid upgrade standing tiles ─────────────────────────
+    // A valid tile is walkable, within range 1 of the container (withdraw reach)
+    // AND within range 3 of the controller (upgrade reach).
+    // Sorted by range to controller so the best spots come first.
+    private getUpgradeSlots(ctrlContainer: StructureContainer, controller: StructureController, room: Room): RoomPosition[] {
+        const terrain = room.getTerrain();
+        const slots: RoomPosition[] = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const x = ctrlContainer.pos.x + dx;
+                const y = ctrlContainer.pos.y + dy;
+                if (x < 1 || x > 48 || y < 1 || y > 48) continue;
+                if (terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+                const pos = new RoomPosition(x, y, room.name);
+                if (pos.getRangeTo(controller) <= 3) slots.push(pos);
+            }
+        }
+        // Best spots first (closest to controller = most upgrade ticks per move)
+        slots.sort((a, b) => a.getRangeTo(controller) - b.getRangeTo(controller));
+        return slots;
+    }
+
     init() {
         this.upgraders = this.zergs.filter(z => z.isAlive() && z.memory?.role === "upgrader");
 
@@ -54,13 +76,20 @@ export class UpgradingOverlord extends Overlord {
         const controller = room?.controller;
 
         // Find the controller container once per tick — even if empty.
-        // This is the trigger for switching to stationary container mode.
         const ctrlContainer = room ? this.findControllerContainer(room) : null;
+
+        // Pre-compute shared container-mode state (outside the loop — same for all upgraders)
+        const hasTransporters = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
+        const containerHasEnergy = (ctrlContainer?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0) > 0;
+        const upgradeSlots: RoomPosition[] = (ctrlContainer && controller && room)
+            ? this.getUpgradeSlots(ctrlContainer, controller, room)
+            : [];
 
         const activeMiners = this.colony.creeps.filter((c: any) => c.memory.role === "miner");
         const minedSourceIds = new Set(activeMiners.map((m: any) => m.memory.state?.siteId));
 
-        for (const upgrader of this.upgraders) {
+        for (let upgraderIdx = 0; upgraderIdx < this.upgraders.length; upgraderIdx++) {
+            const upgrader = this.upgraders[upgraderIdx];
             if (!upgrader.isAlive()) continue;
 
             // ── Priority 1: Link mode (RCL 5+) ──────────────────────────────────
@@ -86,21 +115,24 @@ export class UpgradingOverlord extends Overlord {
             // Engage if container has energy OR transporters exist to fill it.
             // Fall through to self-collect if container is empty AND no one can fill it
             // (colony collapse: dead transporters, empty container).
-            const hasTransporters = this.colony.creeps.some((c: any) => c.memory.role === "transporter");
-            const containerHasEnergy = (ctrlContainer?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0) > 0;
-
             if (ctrlContainer && controller && (containerHasEnergy || hasTransporters)) {
                 if (upgrader.task) upgrader.setTask(null);
 
-                // Must be in range 1 of container AND in range 3 of controller
+                // Assign a unique standing slot by upgrader index so they spread out.
+                const slots = upgradeSlots;
+                const mySlot = slots[upgraderIdx % Math.max(slots.length, 1)];
+
+                const onSlot = mySlot && (upgrader.pos?.isEqualTo(mySlot) ?? false);
                 const atContainer = upgrader.pos?.inRangeTo(ctrlContainer, 1) ?? false;
                 const atController = upgrader.pos?.inRangeTo(controller, 3) ?? false;
 
-                if (!atContainer || !atController) {
-                    // Walk to a spot that satisfies both constraints.
-                    // Targeting the container with range 1 guarantees controller range 3
-                    // for any well-placed container (within 2 of controller).
-                    upgrader.travelTo(ctrlContainer, 1);
+                if (!onSlot || !atContainer || !atController) {
+                    // Walk to assigned slot (satisfies range-1 container + range-3 controller)
+                    if (mySlot) {
+                        upgrader.travelTo(mySlot, 0);
+                    } else {
+                        upgrader.travelTo(ctrlContainer, 1);
+                    }
                     continue;
                 }
 
