@@ -84,6 +84,7 @@ export class BootstrappingOverlord extends Overlord {
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
                 bodyTemplate: [CARRY, MOVE],
+                maxEnergy: 100,
                 overlord: this,
                 name: `bootstrap_hauler_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
@@ -96,6 +97,7 @@ export class BootstrappingOverlord extends Overlord {
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
                 bodyTemplate: [WORK, MOVE],
+                maxEnergy: 150,
                 overlord: this,
                 name: `bootstrap_dropminer_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
@@ -105,6 +107,7 @@ export class BootstrappingOverlord extends Overlord {
                 this.colony.hatchery.enqueue({
                     priority: BOOTSTRAP_PRIORITY,
                     bodyTemplate: [CARRY, MOVE],
+                    maxEnergy: 100,
                     overlord: this,
                     name: `bootstrap_relay_${this.colony.name}_${Game.time}`,
                     memory: { role: "bootstrapper" }
@@ -116,6 +119,7 @@ export class BootstrappingOverlord extends Overlord {
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
                 bodyTemplate: [WORK, CARRY, MOVE],
+                maxEnergy: 200,
                 overlord: this,
                 name: `bootstrap_pioneer_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
@@ -127,6 +131,7 @@ export class BootstrappingOverlord extends Overlord {
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
                 bodyTemplate: [WORK, CARRY, MOVE],
+                maxEnergy: 200,
                 overlord: this,
                 name: `bootstrap_pioneer_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
