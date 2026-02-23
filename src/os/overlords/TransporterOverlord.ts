@@ -11,6 +11,7 @@ import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
 import { getParkingZones, pickParkingZone, getRampartTarget } from "../../utils/ParkingZones";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 const log = new Logger("TransporterOverlord");
 
@@ -45,6 +46,19 @@ export class TransporterOverlord extends Overlord {
             }
 
             if (transporter.task) continue;
+
+            // Skip re-assignment for transporters with a persisted in-flight task.
+            //
+            // Heap tasks start null every tick (V8 global reset resilience), so the
+            // check above only catches tasks assigned earlier in THIS tick's loop.
+            // Without this memory.task guard, the overlord re-evaluates every
+            // transporter each tick. If reservation weights shift mid-transit (common
+            // after another hauler completes a delivery), matchWithdraw/matchTransfer
+            // can return a different target, rerouting a hauler that was already
+            // halfway to its original destination — wasting the travel already done
+            // and causing collecting-state thrashing.
+            const _nativeCreep = transporter.creep;
+            if (_nativeCreep && !_nativeCreep.spawning && (_nativeCreep.memory as any).task) continue;
 
             const mem = transporter.memory as any;
 
@@ -122,8 +136,12 @@ export class TransporterOverlord extends Overlord {
                     // DT-based parking: pick a spacious dead-end outside the bunker.
                     // Random top-3 selection prevents all idle transporters clumping
                     // onto the single nearest tile.
+                    // Pass the static matrix so pickParkingZone can filter out tiles
+                    // that became blocked by a newly placed structure since the last
+                    // DT recompute (same-tick cache staleness window).
                     const zones = getParkingZones(room, anchor.x, anchor.y);
-                    const target = pickParkingZone(transporter.pos, zones);
+                    const staticCached = GlobalCache.get<{ matrix: CostMatrix }>(`matrix_static:${room.name}`);
+                    const target = pickParkingZone(transporter.pos, zones, staticCached?.matrix);
                     if (target) transporter.travelTo(target, 0);
                 } else {
                     // Bootstrap fallback (no anchor yet): flee spawn outward

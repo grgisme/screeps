@@ -26,7 +26,9 @@ export type ProcessFactory = (
 export const SchedulerMode = {
     /** bucket > 500 — all processes execute, burst CPU allowed */
     NORMAL: "NORMAL",
-    /** bucket < 500 — skip processes with priority > 2 */
+    /** bucket 300–500 — shed lowest-priority processes (priority > 4) */
+    DEGRADED: "DEGRADED",
+    /** bucket 100–300 — skip most non-essential processes (priority > 2) */
     SAFE: "SAFE",
     /** bucket < 100 — only priority 0 + kernel core */
     EMERGENCY: "EMERGENCY",
@@ -155,11 +157,32 @@ export class Kernel {
     /** Bucket above which burst CPU is allowed (softLimit = tickLimit * 0.95). */
     static readonly BUCKET_NORMAL = 500;
 
-    /** Bucket below which only emergency processes run. */
+    /**
+     * Bucket below which DEGRADED mode activates: shed non-essential extras
+     * (priority > 4) while keeping core colony logic intact. Provides a
+     * gradual ramp between NORMAL and the more aggressive SAFE cutoff.
+     */
+    static readonly BUCKET_DEGRADED = 300;
+
+    /** Bucket below which only core processes (priority ≤ 2) run. */
     private static readonly BUCKET_EMERGENCY = 100;
+
+    /** Maximum priority value allowed in Degraded Mode (sheds extras only). */
+    private static readonly DEGRADED_MODE_MAX_PRIORITY = 4;
 
     /** Maximum priority value allowed in Safe Mode (load shedding). */
     private static readonly SAFE_MODE_MAX_PRIORITY = 2;
+
+    /**
+     * Maximum CPU (ms) a single process may consume in one tick before being
+     * force-slept for 1 tick. Prevents a runaway process from starving all
+     * lower-priority work on the same tick.
+     *
+     * With a typical 20 ms tick limit, 5 ms = 25% of the budget for one process.
+     * Raise this if you have a legitimately expensive one-shot initialization
+     * process (e.g. min-cut computation), or lower it for tighter fairness.
+     */
+    static readonly PROCESS_CPU_TIMEOUT_MS = 5;
 
     // -----------------------------------------------------------------------
     // Process Registration (static)
@@ -327,8 +350,14 @@ export class Kernel {
 
         if (cpuBucket < Kernel.BUCKET_EMERGENCY) {
             this._schedulerMode = SchedulerMode.EMERGENCY;
-        } else if (cpuBucket < Kernel.BUCKET_NORMAL) {
+        } else if (cpuBucket < Kernel.BUCKET_DEGRADED) {
             this._schedulerMode = SchedulerMode.SAFE;
+        } else if (cpuBucket < Kernel.BUCKET_NORMAL) {
+            // DEGRADED: shed only the lowest-priority extras (scouts, construction
+            // planning, etc.) while keeping core logistics and defense alive.
+            // This intermediate tier prevents the abrupt jump from "everything runs"
+            // to "skip priority > 2", giving the bucket time to recover gradually.
+            this._schedulerMode = SchedulerMode.DEGRADED;
         } else {
             this._schedulerMode = SchedulerMode.NORMAL;
         }
@@ -393,6 +422,11 @@ export class Kernel {
             }
             if (this._schedulerMode === SchedulerMode.SAFE &&
                 priority > Kernel.SAFE_MODE_MAX_PRIORITY) {
+                this.recordBucketSkip(priority);
+                continue;
+            }
+            if (this._schedulerMode === SchedulerMode.DEGRADED &&
+                priority > Kernel.DEGRADED_MODE_MAX_PRIORITY) {
                 this.recordBucketSkip(priority);
                 continue;
             }
@@ -466,6 +500,25 @@ export class Kernel {
 
                 const existing = this._cpuProfile.get(process.processName) ?? 0;
                 this._cpuProfile.set(process.processName, existing + delta);
+
+                // Per-process CPU timeout: if this process consumed more than its
+                // per-tick budget, force-sleep it for one tick. This prevents a single
+                // slow process from starving all lower-priority processes on the same
+                // tick. The process wakes automatically next tick and resumes normally.
+                //
+                // Note: this fires AFTER the work is done — it cannot interrupt a
+                // synchronous run() call mid-way. Its purpose is to shed the process
+                // from the NEXT tick if it continues to over-spend, giving other
+                // buckets a fair chance. The CPU profile already records the overrun
+                // so operators can identify chronic offenders.
+                if (delta > Kernel.PROCESS_CPU_TIMEOUT_MS) {
+                    log.warning(
+                        `Process ${process.processName} (PID ${process.pid}) used ` +
+                        `${delta.toFixed(2)}ms (limit: ${Kernel.PROCESS_CPU_TIMEOUT_MS}ms). ` +
+                        `Force-sleeping 1 tick to yield to lower-priority processes.`
+                    );
+                    process.sleep(1);
+                }
             }
         }
 

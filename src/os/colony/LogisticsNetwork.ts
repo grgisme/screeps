@@ -333,7 +333,14 @@ export class LogisticsNetwork {
                 }
 
                 const distance = h.pos.getRangeTo(target.pos);
-                scored.push({ id: offerId as string, score: effectiveAmount / Math.max(1, distance) });
+                // Clamp the numerator to the hauler's own free capacity.
+                // Without this, a storage with 500 000 energy scores ~50 000x
+                // higher than a container with 1 000 energy at the same distance,
+                // pulling every hauler toward storage even when closer containers
+                // have plenty. The hauler can't carry more than its free capacity
+                // anyway, so extra energy beyond that provides no additional value.
+                const usableAmount = Math.min(effectiveAmount, h.store?.getFreeCapacity() ?? effectiveAmount);
+                scored.push({ id: offerId as string, score: usableAmount / Math.max(1, distance) });
             }
 
             scored.sort((a, b) => b.score - a.score);
@@ -342,6 +349,17 @@ export class LogisticsNetwork {
                 haulerMap.set(h.name, h);
             }
         }
+
+        // Compute average free capacity of the batch haulers so receiver slot counts
+        // reflect actual hauler sizes. A hardcoded 50 under-counts slots for large
+        // haulers (e.g. [CARRY×15] = 750 capacity) and over-counts for small ones,
+        // causing the stable match to send too many or too few haulers to each source.
+        const totalFreeCapacity = haulers.reduce(
+            (sum, h) => sum + (h.store?.getFreeCapacity() ?? 0), 0
+        );
+        const avgFreeCapacity = haulers.length > 0
+            ? Math.max(1, totalFreeCapacity / haulers.length)
+            : 50;
 
         // Build receivers: each offer can accept multiple haulers based on stored energy
         const receivers: MatchReceiver[] = [];
@@ -352,9 +370,9 @@ export class LogisticsNetwork {
             const effectiveAmount = this.getEffectiveAmount(offerId);
             if (effectiveAmount <= 0) continue;
 
-            // Capacity: how many haulers can withdraw simultaneously
-            // Each hauler takes ~50 energy, so capacity = ceil(amount / 50)
-            const cap = Math.max(1, Math.ceil(effectiveAmount / 50));
+            // Capacity: how many haulers can withdraw simultaneously.
+            // Use real average hauler free capacity — not a hardcoded constant.
+            const cap = Math.max(1, Math.ceil(effectiveAmount / avgFreeCapacity));
 
             receivers.push({
                 id: offerId as string,
@@ -407,6 +425,15 @@ export class LogisticsNetwork {
             }
         }
 
+        // Compute average carry of the loaded batch haulers so receiver slot counts
+        // reflect actual payload sizes rather than a hardcoded 50.
+        const totalUsedCapacity = haulers.reduce(
+            (sum, h) => sum + (h.store?.getUsedCapacity() ?? 0), 0
+        );
+        const avgUsedCapacity = haulers.length > 0
+            ? Math.max(1, totalUsedCapacity / haulers.length)
+            : 50;
+
         const receivers: MatchReceiver[] = [];
         for (const req of this.requesters) {
             const incoming = this.incomingReservations.get(req.targetId) || 0;
@@ -416,8 +443,9 @@ export class LogisticsNetwork {
             const target = Game.getObjectById(req.targetId);
             if (!target) continue;
 
-            // Capacity: how many haulers needed to fill the deficit
-            const cap = Math.max(1, Math.ceil(deficit / 50));
+            // Capacity: how many haulers needed to fill the deficit.
+            // Use real average hauler payload — not a hardcoded constant.
+            const cap = Math.max(1, Math.ceil(deficit / avgUsedCapacity));
 
             receivers.push({
                 id: req.targetId as string,
@@ -455,6 +483,25 @@ export class LogisticsNetwork {
         const matchedId = this._withdrawMatches?.get(zerg.name);
         if (matchedId) {
             const bestId = matchedId as Id<Structure | Resource>;
+
+            // Re-validate effective amount AFTER all prior reservations in this batch.
+            //
+            // The stable match uses pre-computed receiver capacities. Those capacities
+            // are based on effectiveAmount at batch-build time, but each successive
+            // matchWithdraw() call in the same tick adds to outgoingReservations.
+            // Without this check, the last hauler(s) matched to a source can be sent
+            // to pick up energy that has already been fully reserved by earlier haulers
+            // in the same batch — returning nearly empty from a wasted round trip.
+            const isWorker = (zerg.memory as any)?.role === "worker"
+                || (zerg.memory as any)?.role === "upgrader";
+            const threshold = isWorker ? 10 : 50;
+            if (this.getEffectiveAmount(bestId) <= threshold) {
+                // Source over-committed by prior reservations this tick — skip it.
+                // The hauler will fall through to the parking failsafe and retry
+                // next tick with a fresh, accurate effective amount.
+                return null;
+            }
+
             // Reserve: add zerg's free capacity to outgoing
             const freeCapacity = zerg.store?.getFreeCapacity() ?? 0;
             const current = this.outgoingReservations.get(bestId) || 0;
