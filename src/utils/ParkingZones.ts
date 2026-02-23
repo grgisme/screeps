@@ -56,12 +56,19 @@ export function getParkingZones(
 
     const dt = distanceTransform(room.name, staticMatrix);
 
+    // Terrain object needed to filter actual wall tiles from the candidate set.
+    // The DT treats structures (via staticMatrix) as obstacles but only marks
+    // terrain walls implicitly through zero-value DT cells. Computing terrain
+    // here is O(1) (cached by the engine) and gives us an explicit bit-mask check
+    // inside collectZones, which is cheaper than relying on DT alone.
+    const terrain = Game.map.getRoomTerrain(room.name);
+
     // ── Collect candidates at DT ≥ 3 outside the bunker radius ──
-    let zones = collectZones(dt, anchorX, anchorY, MIN_DT_PRIMARY);
+    let zones = collectZones(dt, terrain, anchorX, anchorY, MIN_DT_PRIMARY);
 
     // ── Cramped room fallback: loosen to DT ≥ 2 ──
     if (zones.length === 0) {
-        zones = collectZones(dt, anchorX, anchorY, MIN_DT_FALLBACK);
+        zones = collectZones(dt, terrain, anchorX, anchorY, MIN_DT_FALLBACK);
     }
 
     GlobalCache.set<ParkingZoneCache>(cacheKey, { structCount, zones });
@@ -77,17 +84,35 @@ export function getParkingZones(
  * then pick one at random. Spreading creeps across 3 distinct spots
  * eliminates the "idle pile" that blocks a single corridor tile.
  *
- * @param pos   The creep's current position.
- * @param zones The array returned by getParkingZones().
+ * Reachability guard: if a static cost matrix is supplied, zones where a
+ * structure was built after the last DT cache (matrix value ≥ 255) are
+ * filtered out before pool selection, preventing a transporter from
+ * heading to a tile that is now blocked.
+ *
+ * @param pos          The creep's current position.
+ * @param zones        The array returned by getParkingZones().
+ * @param staticMatrix Optional per-room cost matrix for structure checks.
  */
 export function pickParkingZone(
     pos: RoomPosition,
-    zones: RoomPosition[]
+    zones: RoomPosition[],
+    staticMatrix?: CostMatrix
 ): RoomPosition | null {
     if (zones.length === 0) return null;
 
+    // Filter out tiles blocked by structures built since the last DT recompute.
+    // The DT cache invalidates on structCount change, but on the SAME tick that a
+    // structure is placed the old cache is still served. The static matrix is
+    // updated immediately (same structCount trigger in TrafficManager/Zerg),
+    // so it catches newly blocked tiles that the cached DT would still allow.
+    const walkable = staticMatrix
+        ? zones.filter(z => staticMatrix.get(z.x, z.y) < 255)
+        : zones;
+
+    if (walkable.length === 0) return null;
+
     // Sort by Chebyshev range (no sqrt, cheap)
-    const sorted = zones
+    const sorted = walkable
         .map(z => ({ z, d: Math.max(Math.abs(z.x - pos.x), Math.abs(z.y - pos.y)) }))
         .sort((a, b) => a.d - b.d);
 
@@ -137,6 +162,7 @@ export function getRampartTarget(room: Room, pos: RoomPosition): RoomPosition | 
 // ── Internal helper ──
 function collectZones(
     dt: CostMatrix,
+    terrain: RoomTerrain,
     anchorX: number,
     anchorY: number,
     minDt: number
@@ -145,6 +171,12 @@ function collectZones(
 
     for (let x = 2; x < 48; x++) {
         for (let y = 2; y < 48; y++) {
+            // Explicit terrain wall check: the DT treats structures as obstacles
+            // but terrain walls may not always map to DT = 0 in every edge case
+            // (e.g. DT built from a staticMatrix that didn't include a swamp
+            // strip at the edge). A direct bit-mask check is O(1) and definitive.
+            if ((terrain.get(x, y) & TERRAIN_MASK_WALL) !== 0) continue;
+
             // Must be genuinely open (far from all walls and structures)
             if (dt.get(x, y) < minDt) continue;
 

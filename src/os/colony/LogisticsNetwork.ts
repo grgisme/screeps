@@ -333,7 +333,14 @@ export class LogisticsNetwork {
                 }
 
                 const distance = h.pos.getRangeTo(target.pos);
-                scored.push({ id: offerId as string, score: effectiveAmount / Math.max(1, distance) });
+                // Clamp the numerator to the hauler's own free capacity.
+                // Without this, a storage with 500 000 energy scores ~50 000x
+                // higher than a container with 1 000 energy at the same distance,
+                // pulling every hauler toward storage even when closer containers
+                // have plenty. The hauler can't carry more than its free capacity
+                // anyway, so extra energy beyond that provides no additional value.
+                const usableAmount = Math.min(effectiveAmount, h.store?.getFreeCapacity() ?? effectiveAmount);
+                scored.push({ id: offerId as string, score: usableAmount / Math.max(1, distance) });
             }
 
             scored.sort((a, b) => b.score - a.score);
@@ -476,6 +483,25 @@ export class LogisticsNetwork {
         const matchedId = this._withdrawMatches?.get(zerg.name);
         if (matchedId) {
             const bestId = matchedId as Id<Structure | Resource>;
+
+            // Re-validate effective amount AFTER all prior reservations in this batch.
+            //
+            // The stable match uses pre-computed receiver capacities. Those capacities
+            // are based on effectiveAmount at batch-build time, but each successive
+            // matchWithdraw() call in the same tick adds to outgoingReservations.
+            // Without this check, the last hauler(s) matched to a source can be sent
+            // to pick up energy that has already been fully reserved by earlier haulers
+            // in the same batch — returning nearly empty from a wasted round trip.
+            const isWorker = (zerg.memory as any)?.role === "worker"
+                || (zerg.memory as any)?.role === "upgrader";
+            const threshold = isWorker ? 10 : 50;
+            if (this.getEffectiveAmount(bestId) <= threshold) {
+                // Source over-committed by prior reservations this tick — skip it.
+                // The hauler will fall through to the parking failsafe and retry
+                // next tick with a fresh, accurate effective amount.
+                return null;
+            }
+
             // Reserve: add zerg's free capacity to outgoing
             const freeCapacity = zerg.store?.getFreeCapacity() ?? 0;
             const current = this.outgoingReservations.get(bestId) || 0;

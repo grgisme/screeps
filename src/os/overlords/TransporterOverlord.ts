@@ -11,6 +11,7 @@ import { TransferTask } from "../tasks/TransferTask";
 import { PickupTask } from "../tasks/PickupTask";
 import { Logger } from "../../utils/Logger";
 import { getParkingZones, pickParkingZone, getRampartTarget } from "../../utils/ParkingZones";
+import { GlobalCache } from "../../kernel/GlobalCache";
 
 const log = new Logger("TransporterOverlord");
 
@@ -135,8 +136,12 @@ export class TransporterOverlord extends Overlord {
                     // DT-based parking: pick a spacious dead-end outside the bunker.
                     // Random top-3 selection prevents all idle transporters clumping
                     // onto the single nearest tile.
+                    // Pass the static matrix so pickParkingZone can filter out tiles
+                    // that became blocked by a newly placed structure since the last
+                    // DT recompute (same-tick cache staleness window).
                     const zones = getParkingZones(room, anchor.x, anchor.y);
-                    const target = pickParkingZone(transporter.pos, zones);
+                    const staticCached = GlobalCache.get<{ matrix: CostMatrix }>(`matrix_static:${room.name}`);
+                    const target = pickParkingZone(transporter.pos, zones, staticCached?.matrix);
                     if (target) transporter.travelTo(target, 0);
                 } else {
                     // Bootstrap fallback (no anchor yet): flee spawn outward

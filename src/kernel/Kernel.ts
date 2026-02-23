@@ -26,7 +26,9 @@ export type ProcessFactory = (
 export const SchedulerMode = {
     /** bucket > 500 — all processes execute, burst CPU allowed */
     NORMAL: "NORMAL",
-    /** bucket < 500 — skip processes with priority > 2 */
+    /** bucket 300–500 — shed lowest-priority processes (priority > 4) */
+    DEGRADED: "DEGRADED",
+    /** bucket 100–300 — skip most non-essential processes (priority > 2) */
     SAFE: "SAFE",
     /** bucket < 100 — only priority 0 + kernel core */
     EMERGENCY: "EMERGENCY",
@@ -155,8 +157,18 @@ export class Kernel {
     /** Bucket above which burst CPU is allowed (softLimit = tickLimit * 0.95). */
     static readonly BUCKET_NORMAL = 500;
 
-    /** Bucket below which only emergency processes run. */
+    /**
+     * Bucket below which DEGRADED mode activates: shed non-essential extras
+     * (priority > 4) while keeping core colony logic intact. Provides a
+     * gradual ramp between NORMAL and the more aggressive SAFE cutoff.
+     */
+    static readonly BUCKET_DEGRADED = 300;
+
+    /** Bucket below which only core processes (priority ≤ 2) run. */
     private static readonly BUCKET_EMERGENCY = 100;
+
+    /** Maximum priority value allowed in Degraded Mode (sheds extras only). */
+    private static readonly DEGRADED_MODE_MAX_PRIORITY = 4;
 
     /** Maximum priority value allowed in Safe Mode (load shedding). */
     private static readonly SAFE_MODE_MAX_PRIORITY = 2;
@@ -338,8 +350,14 @@ export class Kernel {
 
         if (cpuBucket < Kernel.BUCKET_EMERGENCY) {
             this._schedulerMode = SchedulerMode.EMERGENCY;
-        } else if (cpuBucket < Kernel.BUCKET_NORMAL) {
+        } else if (cpuBucket < Kernel.BUCKET_DEGRADED) {
             this._schedulerMode = SchedulerMode.SAFE;
+        } else if (cpuBucket < Kernel.BUCKET_NORMAL) {
+            // DEGRADED: shed only the lowest-priority extras (scouts, construction
+            // planning, etc.) while keeping core logistics and defense alive.
+            // This intermediate tier prevents the abrupt jump from "everything runs"
+            // to "skip priority > 2", giving the bucket time to recover gradually.
+            this._schedulerMode = SchedulerMode.DEGRADED;
         } else {
             this._schedulerMode = SchedulerMode.NORMAL;
         }
@@ -404,6 +422,11 @@ export class Kernel {
             }
             if (this._schedulerMode === SchedulerMode.SAFE &&
                 priority > Kernel.SAFE_MODE_MAX_PRIORITY) {
+                this.recordBucketSkip(priority);
+                continue;
+            }
+            if (this._schedulerMode === SchedulerMode.DEGRADED &&
+                priority > Kernel.DEGRADED_MODE_MAX_PRIORITY) {
                 this.recordBucketSkip(priority);
                 continue;
             }
