@@ -129,13 +129,44 @@ export class WorkerOverlord extends Overlord {
             filter: (s: Source) => !minedSourceIds.has(s.id)
         }) || [];
 
-        const damagedStructures = room?.find(FIND_STRUCTURES, {
+        // ── Rampart Repair Budget Gate ──────────────────────────────────────
+        // Below RAMPART_REPAIR_GATE energy in storage: skip rampart repair entirely.
+        // Above gate: sliding-scale target HP = max(50k, min(storageLevel/10, rclCap)).
+        // This prevents workers from draining economy on rampart hardening during
+        // the critical RCL 3→4 push when every unit of energy matters.
+        const storage = room?.storage;
+        const storageLevel = storage?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
+        const RAMPART_REPAIR_GATE = 50_000;
+        const repairRamparts = storageLevel >= RAMPART_REPAIR_GATE;
+        // RCL-keyed engine hard-caps for rampart HP
+        const RCL_RAMPART_HARDCAP: Partial<Record<number, number>> = {
+            2: 300_000, 3: 1_000_000, 4: 3_000_000,
+            5: 10_000_000, 6: 30_000_000, 7: 100_000_000, 8: 300_000_000
+        };
+        const rclLevel = room?.controller?.level ?? 0;
+        const rampartHardcap = RCL_RAMPART_HARDCAP[rclLevel] ?? 1_000_000;
+        // e.g. 500k storage → 50k target hits; 1M → 100k; 10M → 1M (capped at rclCap)
+        const rampartTargetHits = repairRamparts
+            ? Math.max(50_000, Math.min(storageLevel / 10, rampartHardcap))
+            : 0;
+
+        // Non-rampart emergency repairs: structures < 50% HP (exclude walls & ramparts)
+        const damagedNonRamparts = room?.find(FIND_STRUCTURES, {
             filter: (s: Structure) => {
                 if (s.structureType === STRUCTURE_WALL) return false;
-                if (s.structureType === STRUCTURE_RAMPART) return s.hits < 10000;
+                if (s.structureType === STRUCTURE_RAMPART) return false;
                 return s.hits < s.hitsMax * 0.5;
             }
         }) || [];
+
+        // Rampart hardening: only when storage gate is met, sorted lowest HP first
+        // so the most vulnerable section of the perimeter is always hardened first.
+        const damagedRamparts = repairRamparts
+            ? (room?.find(FIND_STRUCTURES, {
+                filter: (s: Structure) =>
+                    s.structureType === STRUCTURE_RAMPART && s.hits < rampartTargetHits
+            }) || []).sort((a, b) => a.hits - b.hits)
+            : [];
 
         const filledContainers = room?.find(FIND_STRUCTURES, {
             filter: (s: Structure) =>
@@ -300,12 +331,22 @@ export class WorkerOverlord extends Overlord {
                     }
                 }
 
-                // 1. Emergency repairs — use pre-hoisted damagedStructures array (Fix #2)
-                const damaged = worker.pos?.findClosestByRange(damagedStructures);
-                if (damaged) {
-                    // Apply the barrier threshold to prevent 300M HP rampart deadlock
-                    const task = new RepairTask(damaged.id);
-                    task.settings.targetHits = damaged.structureType === STRUCTURE_RAMPART ? 15000 : damaged.hitsMax;
+                // 1a. Emergency repairs — non-rampart structures under 50% HP (closest by range)
+                const closestDamaged = worker.pos?.findClosestByRange(damagedNonRamparts);
+                if (closestDamaged) {
+                    const task = new RepairTask(closestDamaged.id);
+                    task.settings.targetHits = closestDamaged.hitsMax;
+                    worker.setTask(task);
+                    continue;
+                }
+
+                // 1b. Rampart hardening — lowest HP first (global priority, budget-gated)
+                // damagedRamparts is pre-sorted ascending by hits; [0] is always most urgent.
+                // targetHits = sliding scale so workers don't try to reach max HP in one shot.
+                if (damagedRamparts.length > 0) {
+                    const target = damagedRamparts[0];
+                    const task = new RepairTask(target.id);
+                    task.settings.targetHits = rampartTargetHits;
                     worker.setTask(task);
                     continue;
                 }

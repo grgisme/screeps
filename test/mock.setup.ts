@@ -98,6 +98,10 @@
 (globalThis as any).FIND_MY_CREEPS = 102;
 (globalThis as any).FIND_CREEPS = 101;
 (globalThis as any).FIND_MY_CONSTRUCTION_SITES = 113;
+(globalThis as any).FIND_EXIT_TOP = 1;
+(globalThis as any).FIND_EXIT_RIGHT = 3;
+(globalThis as any).FIND_EXIT_BOTTOM = 5;
+(globalThis as any).FIND_EXIT_LEFT = 7;
 
 (globalThis as any).STRUCTURE_SPAWN = "spawn";
 (globalThis as any).STRUCTURE_EXTENSION = "extension";

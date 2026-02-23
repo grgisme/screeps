@@ -2,7 +2,7 @@ import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { CombatZerg } from "../zerg/CombatZerg";
 import { TrafficManager } from "../infrastructure/TrafficManager";
-import { Logger } from "../../utils/Logger";
+import { Logger, LogLevel } from "../../utils/Logger";
 
 const log = new Logger("DefenseOverlord");
 
@@ -74,6 +74,19 @@ export class DefenseOverlord extends Overlord {
         return 600 - (range - 5) * 30;
     }
 
+    /**
+     * Role priority for tower targeting:
+     *   0 = Healer  (must die first — negates all tower DPS if alive)
+     *   1 = Ranged  (next threat after healers)
+     *   2 = Melee   (lowest priority)
+     * Sorted ascending so lower-numbered roles are targeted first.
+     */
+    private getHostilePriority(hostile: Creep): number {
+        if (hostile.body.some(p => p.type === HEAL && p.hits > 0)) return 0;
+        if (hostile.body.some(p => p.type === RANGED_ATTACK && p.hits > 0)) return 1;
+        return 2;
+    }
+
     // ── Dynamic Body Scaling ─────────────────────────────────────────────
 
     private getDefenderBody(capacity: number): BodyPartConstant[] {
@@ -120,8 +133,13 @@ export class DefenseOverlord extends Overlord {
             }
             Memory.rooms[room.name].dangerUntil = Game.time + 100;
 
-            // Spawn defenders (cap at 2)
-            if (this.defenders.length < 2) {
+            // Spawn defenders — cap rises from 2 → 4 when in sustained HOLD FIRE
+            // (healer-protected squad that towers can't kill — need more melees to engage)
+            const holdFireSince = (Memory.rooms[room.name] as any).holdFireSince as number | undefined;
+            const holdFireTicks = holdFireSince !== undefined ? Game.time - holdFireSince : 0;
+            const defenderCap = holdFireTicks >= 5 ? 4 : 2;
+
+            if (this.defenders.length < defenderCap) {
                 const capacity = room.energyCapacityAvailable;
                 this.colony.hatchery.enqueue({
                     priority: 100,
@@ -136,6 +154,41 @@ export class DefenseOverlord extends Overlord {
                 delete Memory.rooms[room.name].isDangerous;
                 delete Memory.rooms[room.name].dangerUntil;
                 log.info(`Room ${room.name} is safe.`);
+            }
+        }
+
+        // ── Predictive Pre-Spawn (Invader Wave Anticipation) ─────────────────
+        // NPC Invaders spawn approximately every 100,000 energy harvested.
+        // At 90k into a wave we are 10k ticks away from the trigger (at 10 e/t)
+        // — enough time to spawn and position a defender before they arrive.
+        //
+        // Wave index = floor(lifetime / 100k).
+        // We pre-spawn once per wave: when the in-wave position >= 90k AND we
+        // haven't already pre-spawned for this wave (lastPreDefenseWave < wave).
+        const WAVE_SIZE = 100_000;
+        const PREWARN_AT = 90_000; // start of the 10k-tick alert window
+        const lifetime = this.colony.memory.energyHarvestedLifetime ?? 0;
+        const wave = Math.floor(lifetime / WAVE_SIZE);
+        const intoWave = lifetime % WAVE_SIZE;
+        const lastPreWave = this.colony.memory.lastPreDefenseWave ?? -1;
+        const hostilesFree = (room.find(FIND_HOSTILE_CREEPS).length === 0);
+
+        if (intoWave >= PREWARN_AT && wave > lastPreWave && hostilesFree) {
+            this.colony.memory.lastPreDefenseWave = wave;
+
+            const capacity = room.energyCapacityAvailable;
+            const alreadyGot = this.defenders.length >= 1;
+            if (!alreadyGot) {
+                log.alert(`pre-defense-${room.name}`,
+                    `Wave ${wave + 1} approaching (${lifetime.toLocaleString()} mined). Pre-spawning defender.`,
+                    LogLevel.WARNING);
+                this.colony.hatchery.enqueue({
+                    priority: 95, // Below active invader response (100), above normal economy
+                    bodyTemplate: this.getDefenderBody(capacity),
+                    overlord: this,
+                    name: `predefender_w${wave}_${Game.time}`,
+                    memory: { role: "defender" }
+                });
             }
         }
     }
@@ -211,8 +264,14 @@ export class DefenseOverlord extends Overlord {
             if (towers.length > 0) {
                 let fired = false;
 
-                // Iterate ALL hostiles and apply TOUGH Math
-                for (const target of hostiles) {
+                // Sort by role priority (healer → ranged → melee) before killability check.
+                // Without sorting a killable melee near the spawn would be targeted while
+                // a distant healer keeps the whole squad alive tick after tick.
+                const sortedHostiles = [...hostiles].sort(
+                    (a, b) => this.getHostilePriority(a) - this.getHostilePriority(b)
+                );
+
+                for (const target of sortedHostiles) {
                     const rawDpt = towers.reduce((sum, t) => sum + this.calculateTowerDamage(t, target.pos), 0);
                     const toughMult = this.calculateEnemyToughMultiplier(target);
                     const effectiveDpt = rawDpt * toughMult;
@@ -226,7 +285,16 @@ export class DefenseOverlord extends Overlord {
                 }
 
                 if (!fired) {
-                    log.warning(`HOLD FIRE in ${room.name}: Enemies out-healing effective DPT.`);
+                    // HOLD FIRE: enemies out-heal our effective DPS.
+                    // Track how long we've been unable to kill anything — after 5 ticks
+                    // the surge cap in init() kicks in and requests extra defenders.
+                    if (!(Memory.rooms[room.name] as any).holdFireSince) {
+                        (Memory.rooms[room.name] as any).holdFireSince = Game.time;
+                        log.warning(`HOLD FIRE in ${room.name}: Enemies out-healing effective DPT. Escalation clock started.`);
+                    }
+                } else {
+                    // Successful kill — clear the escalation clock
+                    delete (Memory.rooms[room.name] as any).holdFireSince;
                 }
             }
         } else if (towers.length > 0) {

@@ -2,6 +2,7 @@ import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { Zerg } from "../zerg/Zerg";
 import { Logger } from "../../utils/Logger";
+import { scoreRoom } from "../../utils/RoomScorer";
 
 const log = new Logger("ScoutOverlord");
 
@@ -34,6 +35,20 @@ export class ScoutOverlord extends Overlord {
             if (!scout.isAlive() || scout.task) continue;
             if (scout.room?.name !== this.targetRoom) {
                 scout.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
+            } else {
+                // Scout has arrived — score and cache the room data
+                const result = scoreRoom(this.targetRoom);
+                if (result) {
+                    if (!Memory.rooms) Memory.rooms = {};
+                    if (!Memory.rooms[this.targetRoom]) Memory.rooms[this.targetRoom] = {} as any;
+                    (Memory.rooms[this.targetRoom] as any).scoutScore = result.score;
+                    (Memory.rooms[this.targetRoom] as any).scoutSources = result.sourceCount;
+                    log.info(
+                        `Scout report for ${this.targetRoom}: ` +
+                        `sources=${result.sourceCount}, swamp=${(result.swampRatio * 100).toFixed(0)}%, ` +
+                        `exits=${result.exitCount}, score=${result.score}`
+                    );
+                }
             }
         }
     }

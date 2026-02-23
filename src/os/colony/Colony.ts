@@ -30,6 +30,7 @@ import { GuardDirective } from "../directives/GuardDirective";
 import { AttackDirective } from "../directives/AttackDirective";
 import { ColonizeDirective } from "../directives/ColonizeDirective";
 import { Logger } from "../../utils/Logger";
+import { rankRooms } from "../../utils/RoomScorer";
 
 const log = new Logger("Colony");
 
@@ -42,6 +43,16 @@ export interface ColonyMemory {
     lastBlackoutClearTick?: number;
     /** Set by GlobalManager when another colony needs energy rescue. */
     rescueTarget?: string;
+    /**
+     * Lifetime energy harvested estimate (WORK parts × 2 per tick, summed).
+     * Used to predict when the next NPC Invader wave will occur (~every 100k mined).
+     */
+    energyHarvestedLifetime?: number;
+    /**
+     * Last 100k-cycle wave index for which a pre-emptive defender was spawned.
+     * Prevents re-spawning on every tick while still inside the 90k–100k alert window.
+     */
+    lastPreDefenseWave?: number;
 }
 
 export interface ColonyState {
@@ -328,6 +339,24 @@ export class Colony {
         if (this.linkNetwork) {
             this.linkNetwork.init();
             this.linkNetwork.run();
+        }
+
+        // ── Expansion Intelligence — log room rankings every 2000 ticks ───────
+        // Reads scoutScore values cached by ScoutOverlord when scouts report in.
+        // This is informational only — expansion remains manual via 'claim:' flags.
+        if (Game.time % 2000 === 0 && Memory.rooms) {
+            const scoredRooms = Object.entries(Memory.rooms)
+                .filter(([, rm]) => (rm as any).scoutScore !== undefined)
+                .map(([name]) => name);
+
+            const ranked = rankRooms(scoredRooms);
+            if (ranked.length > 0) {
+                const summary = ranked
+                    .slice(0, 5)
+                    .map(r => `${r.roomName}(${r.sourceCount}src,score=${r.score})`)
+                    .join(', ');
+                log.info(`[${this.name}] Expansion candidates: ${summary}`);
+            }
         }
     }
 

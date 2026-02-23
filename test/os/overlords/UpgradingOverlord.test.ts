@@ -52,10 +52,10 @@ describe("UpgradingOverlord", () => {
     });
 
     it("should spawn maintenance upgrader if Storage exists", () => {
-        // Setup storage with some energy
+        // Storage must be > 100k to pass the new hard floor gate
         room.storage = {
             pos: { x: 25, y: 25, roomName: "W1N1" },
-            store: { energy: 20000, getUsedCapacity: () => 20000 }
+            store: { energy: 120000, getUsedCapacity: () => 120000 }
         } as any;
         (room as any).controller = {
             ticksToDowngrade: 10000,
@@ -86,10 +86,10 @@ describe("UpgradingOverlord", () => {
     });
 
     it("should scale up to 3 upgraders if Rich", () => {
-        // Setup rich storage
+        // 150k is above the 100k hard floor — spawning remains enabled
         room.storage = {
             pos: { x: 25, y: 25, roomName: "W1N1" },
-            store: { energy: 150000, getUsedCapacity: () => 150000 } // > 100k
+            store: { energy: 150000, getUsedCapacity: () => 150000 }
         } as any;
         (room as any).controller = { ticksToDowngrade: 10000, pos: { findInRange: () => [] } };
 

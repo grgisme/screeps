@@ -71,9 +71,23 @@ export class RemoteMiningOverlord extends Overlord {
     private handleSpawning(site: MiningSite): void {
         const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
 
+        // ── Remote Mining Energy Gate ────────────────────────────────────────
+        // Remote mining drains home-room transport capacity. Gate spawning on
+        // storage level so we never fund remote ops at the expense of core
+        // infrastructure (miners, transporters, spawn refill).
+        //
+        //   < 50k energy: skip all remote spawning entirely
+        //  50k–75k energy: only spawn the miner (preserve income, skip haulers)
+        //   ≥ 75k energy: full remote ops — miners + haulers
+        const homeStorage = this.colony.room?.storage;
+        const storageLevel = homeStorage?.store?.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
+        const hasStorage = !!homeStorage;
+        const allowMiner = !hasStorage || storageLevel >= 50_000;
+        const allowHauler = !hasStorage || storageLevel >= 75_000;
+
         // 1. Exact 5-WORK Math + 1 CARRY for Static Repair
         const siteMiners = this.miners.filter(m => (m.memory as any)?.state?.siteId === site.sourceId);
-        if (siteMiners.length < 1) {
+        if (allowMiner && siteMiners.length < 1) {
             let minerBody: BodyPartConstant[] = [WORK, WORK, MOVE, MOVE];
             if (capacity >= 800) {
                 minerBody = [WORK, WORK, WORK, WORK, WORK, WORK, CARRY, MOVE, MOVE, MOVE]; // 6 WORK for unreserved catchup
@@ -96,7 +110,7 @@ export class RemoteMiningOverlord extends Overlord {
             .filter(h => (h.memory as any)?.state?.siteId === site.sourceId)
             .reduce((sum, h) => sum + (h.store?.getCapacity() ?? 0), 0);
 
-        if (currentPower < powerNeeded) {
+        if (allowHauler && currentPower < powerNeeded) {
             let haulerBody: BodyPartConstant[] = [WORK, CARRY, CARRY, MOVE, MOVE];
 
             if (capacity >= 450) {

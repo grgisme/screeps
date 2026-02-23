@@ -247,7 +247,15 @@ export class UpgradingOverlord extends Overlord {
                 ? Math.min(energyCap, 350) // [WORK, WORK, WORK, CARRY, MOVE] = 350
                 : Math.min(energyCap, 300); // [WORK, WORK, CARRY, MOVE] = 300
 
-            if (effectiveEnergy > tCrit + upgraderCost) {
+            // Hard floor: never spawn upgraders unless there is a meaningful reserve.
+            // This prevents the tCrit formula from allowing an upgrader spawn with only
+            // 1,500 energy in storage (e.g. 2 miners at 600e each + 300e upgrader cost).
+            // Exception: downgradeImminent overrides this floor (handled after the block).
+            const UPGRADER_STORAGE_FLOOR = 100_000;
+            if (storage.store.energy < UPGRADER_STORAGE_FLOOR) {
+                // Floor not met — only bypass if downgrade is already imminent
+                // (handled by `if (downgradeImminent) shouldSpawn = true` below)
+            } else if (effectiveEnergy > tCrit + upgraderCost) {
                 shouldSpawn = true;
             }
         } else if (hasContainers && room.energyAvailable > room.energyCapacityAvailable * 0.9 && this.colony.creeps.length > 2) {

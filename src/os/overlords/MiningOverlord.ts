@@ -43,6 +43,19 @@ export class MiningOverlord extends Overlord {
 
         this.miners = this.zergs.filter(z => (z.memory as any)?.role === "miner") as Miner[];
 
+        // ── Harvest Accounting (Invader Wave Predictor) ───────────────────────
+        // Each WORK part harvests 2 energy/tick at a fully-saturated source.
+        // Accumulate into ColonyMemory so DefenseOverlord can predict the ~100k
+        // invader spawn threshold and pre-emptively deploy a defender.
+        const harvestedThisTick = this.miners.reduce((sum, m) => {
+            const workParts = m.creep?.getActiveBodyparts(WORK) ?? 0;
+            return sum + workParts * 2;
+        }, 0);
+        if (harvestedThisTick > 0) {
+            this.colony.memory.energyHarvestedLifetime =
+                (this.colony.memory.energyHarvestedLifetime ?? 0) + harvestedThisTick;
+        }
+
         for (const site of this.sites) {
             this.handleSpawning(site);
         }
