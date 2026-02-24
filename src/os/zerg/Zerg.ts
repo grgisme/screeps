@@ -566,6 +566,10 @@ export class Zerg {
                 roomCallback: (roomName) => {
                     // Enforce broadphase corridor
                     if (allowedRooms && !allowedRooms.has(roomName)) return false;
+                    // Hostile room avoidance — route around rooms flagged by DefenseOverlord
+                    // or RemoteMiningOverlord. Applies to ALL creeps crossing room boundaries,
+                    // not just those directly managed by the overlord that set the flag.
+                    if (Memory.rooms?.[roomName]?.isDangerous) return false;
                     const room = Game.rooms[roomName];
                     if (!room) return false;
 
