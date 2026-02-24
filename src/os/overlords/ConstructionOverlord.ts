@@ -50,25 +50,37 @@ export class ConstructionOverlord extends Overlord {
         const anchorPos = new RoomPosition(anchor.x, anchor.y, this.colony.name);
         const rcl = this.colony.room?.controller?.level || 0;
 
-        // 4. Place structures
-        this.checkBunker(anchorPos, rcl, budget);
-
-        // 5. Controller Container (RCL 2+)
+        // 4. Source Containers — HIGHEST priority at RCL 2+.
+        //    Placed before hub/ctrl containers and before extensions because:
+        //    source container → miner can top up → transporter can withdraw →
+        //    the entire energy pipeline depends on these existing first.
+        //    ConstructionOverlord is the sole authority for construction sites;
+        //    MiningOverlord never calls createConstructionSite.
         if (rcl >= 2 && budget.count > 0) {
-            this.checkControllerContainer(budget);
+            this.checkSourceContainers(budget);
         }
 
-        // 6. Hub Container (RCL 2+, pre-Link) — at BunkerLayout.hubPos
+        // 5. Hub Container (RCL 2+, pre-Link) — filler's energy supply.
+        //    Comes before controller container: filler feeds spawn/extensions
+        //    directly, so hub container unblocks spawn throughput sooner.
         if (rcl >= 2 && rcl < 5 && budget.count > 0) {
             this.checkHubContainer(budget);
         }
 
-        // 7. Hub Container → Link swap at RCL 5+
+        // 6. Controller Container (RCL 2+)
+        if (rcl >= 2 && budget.count > 0) {
+            this.checkControllerContainer(budget);
+        }
+
+        // 7. Bunker layout (extensions, spawns, towers, …)
+        this.checkBunker(anchorPos, rcl, budget);
+
+        // 8. Hub Container → Link swap at RCL 5+
         if (rcl >= 5) {
             this.cleanupHubContainer();
         }
 
-        // 8. Roads (RCL 2+ — after core infrastructure is placed)
+        // 9. Roads (RCL 2+ — after core infrastructure is placed)
         if (rcl >= 2 && budget.count > 0) {
             this.checkRoads(anchorPos, rcl, budget);
         }
@@ -351,16 +363,18 @@ export class ConstructionOverlord extends Overlord {
 
         const layoutStructures = BunkerLayout.structures as Partial<Record<StructureConstant, any[]>>;
 
-        // Sort structural placement by absolute priority
+        // Sort structural placement by absolute priority.
+        // Containers intentionally rank above extensions: source/hub containers
+        // unlock the energy pipeline before the colony can use more extensions.
         const BUILD_PRIORITY: Partial<Record<StructureConstant, number>> = {
             [STRUCTURE_SPAWN]: 1,
             [STRUCTURE_TOWER]: 2,
-            [STRUCTURE_EXTENSION]: 3,
-            [STRUCTURE_STORAGE]: 4,
-            [STRUCTURE_TERMINAL]: 5,
-            [STRUCTURE_LINK]: 6,
-            [STRUCTURE_LAB]: 7,
-            [STRUCTURE_CONTAINER]: 8,
+            [STRUCTURE_CONTAINER]: 3,
+            [STRUCTURE_EXTENSION]: 4,
+            [STRUCTURE_STORAGE]: 5,
+            [STRUCTURE_TERMINAL]: 6,
+            [STRUCTURE_LINK]: 7,
+            [STRUCTURE_LAB]: 8,
             [STRUCTURE_ROAD]: 9,
             [STRUCTURE_RAMPART]: 10,
             [STRUCTURE_WALL]: 11,
@@ -489,7 +503,104 @@ export class ConstructionOverlord extends Overlord {
     }
 
     /**
+     * Place a container adjacent to each energy source (range 1-2).
+     *
+     * This is the HIGHEST priority container at RCL 2 because the source
+     * container is the foundation of the drop-mining energy pipeline:
+     *   miner drops on container → transporter withdraws → fills spawn/extensions
+     *
+     * Tile selection: PathFind from anchor toward source, pick the first tile
+     * on that path within range 2 of the source. This places the container
+     * exactly on the hauler's natural route — no wasted travel for either miner
+     * or transporter.
+     *
+     * Skips sources that already have a container or site within range 2.
+     * ConstructionOverlord is the sole authority for construction sites —
+     * MiningOverlord never calls createConstructionSite.
+     */
+    private checkSourceContainers(budget: { count: number }): void {
+        const room = this.colony.room;
+        if (!room) return;
+
+        const anchor = this.colony.memory.anchor;
+        const anchorPos = anchor
+            ? new RoomPosition(anchor.x, anchor.y, room.name)
+            : room.find(FIND_MY_SPAWNS)?.[0]?.pos;
+        if (!anchorPos) return;
+
+        const sources = room.find(FIND_SOURCES);
+
+        for (const source of sources) {
+            if (budget.count <= 0) return;
+
+            // Skip if a container already exists within range 2
+            const nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 2, {
+                filter: (s: Structure) => s.structureType === STRUCTURE_CONTAINER
+            });
+            if (nearbyContainer.length > 0) continue;
+
+            // Skip if a construction site already exists within range 2
+            const nearbyCSite = source.pos.findInRange(FIND_MY_CONSTRUCTION_SITES, 2, {
+                filter: (s: ConstructionSite) => s.structureType === STRUCTURE_CONTAINER
+            });
+            if (nearbyCSite.length > 0) continue;
+
+            // PathFind from anchor toward source — tile on hauler route
+            const path = PathFinder.search(anchorPos, { pos: source.pos, range: 1 }, {
+                plainCost: 2,
+                swampCost: 5,
+                roomCallback: (roomName) => {
+                    if (roomName !== room.name) return false;
+                    const cm = new PathFinder.CostMatrix();
+                    room.find(FIND_STRUCTURES).forEach(s => {
+                        if (s.structureType === STRUCTURE_ROAD) {
+                            cm.set(s.pos.x, s.pos.y, 1);
+                        } else if (s.structureType !== STRUCTURE_CONTAINER &&
+                            s.structureType !== STRUCTURE_RAMPART) {
+                            cm.set(s.pos.x, s.pos.y, 255);
+                        }
+                    });
+                    return cm;
+                }
+            });
+
+            // Walk backwards from source end of path — pick last tile within range 2
+            let placed = false;
+            for (let i = path.path.length - 1; i >= 0; i--) {
+                const pos = path.path[i];
+                if (pos.getRangeTo(source.pos) > 2) continue;
+                if (pos.getRangeTo(source.pos) < 1) continue;
+
+                // Verify walkable and unblocked
+                const terrain = Game.map.getRoomTerrain(room.name).get(pos.x, pos.y);
+                if (terrain === TERRAIN_MASK_WALL) continue;
+
+                const blocked = pos.lookFor(LOOK_STRUCTURES)
+                    .some((s: Structure) => s.structureType !== STRUCTURE_ROAD &&
+                        s.structureType !== STRUCTURE_RAMPART);
+                if (blocked) continue;
+
+                const alreadySite = pos.lookFor(LOOK_CONSTRUCTION_SITES).length > 0;
+                if (alreadySite) continue;
+
+                const result = pos.createConstructionSite(STRUCTURE_CONTAINER);
+                if (result === OK) {
+                    log.info(`Architect: Placed Source Container at ${pos.x},${pos.y} (range ${pos.getRangeTo(source.pos)} from source ${source.id})`);
+                    budget.count--;
+                    placed = true;
+                    break;
+                }
+            }
+
+            if (!placed) {
+                log.warning(`Architect: Could not place Source Container near source ${source.id} at ${source.pos.x},${source.pos.y}`);
+            }
+        }
+    }
+
+    /**
      * Place a container within 2 tiles of the controller for upgrader energy supply.
+
      * Picks the tile on the path from controller to the nearest source container
      * (optimal for hauler routes). Skips if a container already exists nearby.
      */
