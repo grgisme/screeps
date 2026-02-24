@@ -162,47 +162,62 @@ export class ConstructionOverlord extends Overlord {
     /**
      * Reverse-anchor: derive the bunker anchor from an existing spawn position.
      *
-     * For each blueprint spawn offset, compute `anchor = spawn − offset` and
-     * test whether the full 13×13 footprint fits without hitting walls or the
-     * room border.  Returns the first valid anchor, or the first-offset fallback
-     * if none pass the fit check.
+     * Scores all blueprint spawn slots (anchor = spawn − offset) by wall-hit
+     * count within the 13×13 footprint and in-bounds status.  Returns the
+     * best in-bounds candidate (fewest wall hits).  Returns null only when
+     * every candidate is out-of-bounds — planRoom() will fall through to the
+     * Distance Transform scan in that case.
      */
     private reverseAnchorFromSpawn(room: Room, spawn: StructureSpawn): RoomPosition | null {
         const spawnOffsets = BunkerLayout.structures[STRUCTURE_SPAWN] ?? [];
+        if (spawnOffsets.length === 0) return null;
 
-        for (const offset of spawnOffsets) {
+        // Score every spawn slot
+        const candidates = spawnOffsets.map(offset => {
             const ax = spawn.pos.x - offset.x;
             const ay = spawn.pos.y - offset.y;
-            if (this.canBlueprintFit(room.name, ax, ay)) {
-                return new RoomPosition(ax, ay, room.name);
-            }
+            const score = this.scoreBlueprintFit(room.name, ax, ay);
+            return { ax, ay, offset, ...score };
+        });
+
+        // Prefer in-bounds, then fewest wall hits
+        const inBounds = candidates.filter(c => !c.outOfBounds);
+        if (inBounds.length === 0) {
+            // Every candidate is out-of-bounds — signal planRoom() to use DT scan
+            log.warning(`Reverse-anchor: all ${candidates.length} spawn-slot anchors are out-of-bounds for spawn at (${spawn.pos.x},${spawn.pos.y}) — falling through to DT scan`);
+            return null;
         }
 
-        // Fallback: use first offset even if the fit check failed, so the
-        // planner at least produces some anchor rather than looping forever.
-        if (spawnOffsets.length > 0) {
-            const off = spawnOffsets[0];
-            log.warning(`Reverse-anchor fallback: using offset (${off.x},${off.y}) without fit validation`);
-            return new RoomPosition(spawn.pos.x - off.x, spawn.pos.y - off.y, room.name);
+        inBounds.sort((a, b) => a.wallHits - b.wallHits);
+        const best = inBounds[0];
+
+        if (best.wallHits > 0) {
+            log.warning(`Reverse-anchor: best anchor (${best.ax},${best.ay}) has ${best.wallHits} wall conflict(s) — using it anyway`);
         }
-        return null;
+
+        return new RoomPosition(best.ax, best.ay, room.name);
     }
 
     /**
-     * Returns true when a 13×13 bunker centered at (ax, ay) fits within the
-     * safe playfield (7-tile border) and the footprint contains no wall tiles.
+     * Scores how well a 13×13 bunker centered at (ax, ay) fits the room.
+     *
+     * - `outOfBounds`: true when the anchor is outside the safe 7-tile border
+     *   (ax/ay not in [7,42]).  In this case wallHits is not computed.
+     * - `wallHits`: count of wall tiles in the 13×13 footprint (dx/dy ±6).
+     *   Zero = perfect fit.
      */
-    private canBlueprintFit(roomName: string, ax: number, ay: number): boolean {
-        // Require a 7-tile margin from all room edges (radius 6 + 1 buffer)
-        if (ax < 7 || ax > 42 || ay < 7 || ay > 42) return false;
-
+    private scoreBlueprintFit(roomName: string, ax: number, ay: number): { outOfBounds: boolean; wallHits: number } {
+        if (ax < 7 || ax > 42 || ay < 7 || ay > 42) {
+            return { outOfBounds: true, wallHits: 0 };
+        }
         const terrain = Game.map.getRoomTerrain(roomName);
+        let wallHits = 0;
         for (let dx = -6; dx <= 6; dx++) {
             for (let dy = -6; dy <= 6; dy++) {
-                if (terrain.get(ax + dx, ay + dy) === TERRAIN_MASK_WALL) return false;
+                if (terrain.get(ax + dx, ay + dy) === TERRAIN_MASK_WALL) wallHits++;
             }
         }
-        return true;
+        return { outOfBounds: false, wallHits };
     }
 
     // ========================================================================
@@ -253,8 +268,10 @@ export class ConstructionOverlord extends Overlord {
             const isRampart = type === STRUCTURE_RAMPART;
 
             for (const rel of positions as Array<{ x: number, y: number }>) {
+                const ax = anchorPos.x + rel.x;
+                const ay = anchorPos.y + rel.y;
+                if (ax < 1 || ax > 48 || ay < 1 || ay > 48) continue;
                 const pos = BunkerLayout.getPos(anchorPos, rel);
-                if (pos.x < 1 || pos.x > 48 || pos.y < 1 || pos.y > 48) continue;
 
                 if (isRampart) {
                     // Ramparts: subtle border squares
@@ -667,6 +684,9 @@ export class ConstructionOverlord extends Overlord {
         for (const type of Object.keys(layoutStructures) as StructureConstant[]) {
             const coords = layoutStructures[type] || [];
             for (const rel of coords) {
+                const ax = anchor.x + rel.x;
+                const ay = anchor.y + rel.y;
+                if (ax < 0 || ax > 49 || ay < 0 || ay > 49) continue;
                 const pos = BunkerLayout.getPos(anchor, rel);
                 const key = `${pos.x},${pos.y}`;
                 if (!expectedAt.has(key)) expectedAt.set(key, new Set());
@@ -677,10 +697,14 @@ export class ConstructionOverlord extends Overlord {
         // Hub container is expected at hubPos for RCL 2-4
         {
             const hubCoord = BunkerLayout.hubPos;
-            const hubAbsPos = BunkerLayout.getPos(anchor, hubCoord);
-            const hubKey = `${hubAbsPos.x},${hubAbsPos.y}`;
-            if (!expectedAt.has(hubKey)) expectedAt.set(hubKey, new Set());
-            expectedAt.get(hubKey)!.add(STRUCTURE_CONTAINER);
+            const hax = anchor.x + hubCoord.x;
+            const hay = anchor.y + hubCoord.y;
+            if (hax >= 0 && hax <= 49 && hay >= 0 && hay <= 49) {
+                const hubAbsPos = BunkerLayout.getPos(anchor, hubCoord);
+                const hubKey = `${hubAbsPos.x},${hubAbsPos.y}`;
+                if (!expectedAt.has(hubKey)) expectedAt.set(hubKey, new Set());
+                expectedAt.get(hubKey)!.add(STRUCTURE_CONTAINER);
+            }
         }
 
         // Scan all structures in the room
@@ -740,6 +764,9 @@ export class ConstructionOverlord extends Overlord {
         for (const [typeStr, positions] of Object.entries(layoutStructures)) {
             if (typeStr === STRUCTURE_RAMPART || typeStr === STRUCTURE_ROAD) continue;
             for (const rel of positions as Array<{ x: number; y: number }>) {
+                const ax = anchor.x + rel.x;
+                const ay = anchor.y + rel.y;
+                if (ax < 0 || ax > 49 || ay < 0 || ay > 49) continue;
                 const pos = BunkerLayout.getPos(anchor, rel);
                 protectedPositions.push({ x: pos.x, y: pos.y });
             }

@@ -19,6 +19,30 @@ import { PathInflationGuard } from "./kernel/PathInflationGuard";
 const log = new Logger("OS");
 
 // -------------------------------------------------------------------------
+// Season Mode — flip to true before each Season launch
+// -------------------------------------------------------------------------
+// Season rules differ from the persistent world:
+//   • Fixed 100 CPU budget regardless of GCL (Game.cpu.limit returns 20 at GCL 1 — wrong)
+//   • No market (Game.market calls throw errors)
+//   • Score-resource collection mechanic instead of GCL/GPL
+//   • Typically 1 spawn per room hard cap (verify per season announcement)
+//
+// All subsystems that read Game.cpu.limit or call Game.market should gate on
+// SEASON_MODE to avoid incorrect bucket thresholds and market errors.
+// -------------------------------------------------------------------------
+export const SEASON_MODE = false;          // ← flip to true before season launch
+export const SEASON_CPU_CAP = 100;         // Season fixed allocation (persistent = Game.cpu.limit)
+export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
+
+// Allow runtime toggle from the Screeps console for testing
+(global as any).season = {
+    enable: () => { (Memory as any).seasonModeOverride = true; return "Season mode ENABLED (takes effect next tick)"; },
+    disable: () => { (Memory as any).seasonModeOverride = false; return "Season mode DISABLED"; },
+    status: () => `SEASON_MODE=${SEASON_MODE} | EFFECTIVE_CPU_CAP=${EFFECTIVE_CPU_CAP}`,
+};
+
+
+// -------------------------------------------------------------------------
 // Console Commands — exposed on global for the Screeps console
 // -------------------------------------------------------------------------
 

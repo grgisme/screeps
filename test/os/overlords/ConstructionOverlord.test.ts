@@ -58,10 +58,10 @@ function makeOverlord(roomName = "W1N1"): {
 }
 
 // ---------------------------------------------------------------------------
-// canBlueprintFit — low-level helper tests
+// scoreBlueprintFit — low-level helper tests
 // ---------------------------------------------------------------------------
 
-describe("ConstructionOverlord — canBlueprintFit", () => {
+describe("ConstructionOverlord — scoreBlueprintFit", () => {
     let overlord: ConstructionOverlord;
 
     beforeEach(() => {
@@ -72,35 +72,40 @@ describe("ConstructionOverlord — canBlueprintFit", () => {
         ({ overlord } = makeOverlord());
     });
 
-    it("should accept a clear anchor at the center of a room", () => {
-        const result = (overlord as any).canBlueprintFit("W1N1", 25, 25);
-        expect(result).to.be.true;
+    it("should return wallHits=0 and outOfBounds=false for a clear center anchor", () => {
+        const result = (overlord as any).scoreBlueprintFit("W1N1", 25, 25);
+        expect(result.outOfBounds).to.be.false;
+        expect(result.wallHits).to.equal(0);
     });
 
-    it("should reject when anchor is too close to the left/top border (< 7)", () => {
-        expect((overlord as any).canBlueprintFit("W1N1", 6, 25)).to.be.false;
-        expect((overlord as any).canBlueprintFit("W1N1", 25, 6)).to.be.false;
+    it("should return outOfBounds=true when anchor is too close to the left/top border (< 7)", () => {
+        expect((overlord as any).scoreBlueprintFit("W1N1", 6, 25).outOfBounds).to.be.true;
+        expect((overlord as any).scoreBlueprintFit("W1N1", 25, 6).outOfBounds).to.be.true;
     });
 
-    it("should reject when anchor is too close to the right/bottom border (> 42)", () => {
-        expect((overlord as any).canBlueprintFit("W1N1", 43, 25)).to.be.false;
-        expect((overlord as any).canBlueprintFit("W1N1", 25, 43)).to.be.false;
+    it("should return outOfBounds=true when anchor is too close to the right/bottom border (> 42)", () => {
+        expect((overlord as any).scoreBlueprintFit("W1N1", 43, 25).outOfBounds).to.be.true;
+        expect((overlord as any).scoreBlueprintFit("W1N1", 25, 43).outOfBounds).to.be.true;
     });
 
-    it("should reject when a wall tile falls inside the 13×13 footprint", () => {
+    it("should count wall tiles inside the 13×13 footprint", () => {
         // Wall exactly at the border of the footprint (anchor ± 6)
         (global as any).Game.map.getRoomTerrain = (_name: string) => ({
             get: (x: number, y: number) => (x === 25 + 6 && y === 25) ? TERRAIN_MASK_WALL : 0
         });
-        expect((overlord as any).canBlueprintFit("W1N1", 25, 25)).to.be.false;
+        const result = (overlord as any).scoreBlueprintFit("W1N1", 25, 25);
+        expect(result.outOfBounds).to.be.false;
+        expect(result.wallHits).to.equal(1);
     });
 
-    it("should accept when walls are just outside the footprint", () => {
+    it("should report wallHits=0 when walls are just outside the footprint", () => {
         // Wall at radius 7 — outside the 13×13 area
         (global as any).Game.map.getRoomTerrain = (_name: string) => ({
             get: (x: number, y: number) => (x === 25 + 7 && y === 25) ? TERRAIN_MASK_WALL : 0
         });
-        expect((overlord as any).canBlueprintFit("W1N1", 25, 25)).to.be.true;
+        const result = (overlord as any).scoreBlueprintFit("W1N1", 25, 25);
+        expect(result.outOfBounds).to.be.false;
+        expect(result.wallHits).to.equal(0);
     });
 });
 
@@ -138,7 +143,7 @@ describe("ConstructionOverlord — reverseAnchorFromSpawn", () => {
         expect(validAlignment, `anchor (${result.x},${result.y}) must align spawn (${spawnX},${spawnY}) to a blueprint spawn slot`).to.be.true;
     });
 
-    it("should return a valid fit anchor (passes canBlueprintFit) for each blueprint spawn position", () => {
+    it("should return a valid fit anchor (passes scoreBlueprintFit) for each blueprint spawn position", () => {
         // For each spawn offset, place the spawn there and confirm the returned anchor passes fit
         for (const offset of spawnOffsets) {
             const spawnX = 25 + offset.x;
@@ -150,26 +155,54 @@ describe("ConstructionOverlord — reverseAnchorFromSpawn", () => {
 
             expect(result).to.not.be.null;
             // The returned anchor must pass the fit check (no walls, in bounds)
-            const fits = (overlord as any).canBlueprintFit(ROOM, result.x, result.y);
-            expect(fits, `anchor for spawn at (${spawnX},${spawnY}) should pass fit check but got anchor (${result.x},${result.y})`).to.be.true;
+            const score = (overlord as any).scoreBlueprintFit(ROOM, result.x, result.y);
+            expect(!score.outOfBounds && score.wallHits === 0,
+                `anchor for spawn at (${spawnX},${spawnY}) should pass fit check but got anchor (${result.x},${result.y})`).to.be.true;
         }
     });
 
-    it("should return fallback when no offset produces a passing fit (all-wall terrain)", () => {
-        // All terrain is walls — no fit will pass
+    it("should return null when all spawn-slot anchors are out-of-bounds (all-wall terrain)", () => {
+        // All terrain is walls — every anchor will be in-bounds BUT all-wall.
+        // The best in-bounds candidate has wallHits > 0, but is still returned
+        // (graceful degradation). To force out-of-bounds we place the spawn
+        // right at the corner so all derived anchors fall outside [7,42].
+        // Spawn at (5,5) with offsets {-1,2},{2,2},{0,-2} gives anchors
+        // (6,3),(3,3),(5,7) — (6,3) OOB, (3,3) OOB, (5,7) OOB (x=5 < 7).
         (global as any).Game.map.getRoomTerrain = (_name: string) => ({
-            get: (_x: number, _y: number) => TERRAIN_MASK_WALL
+            get: (_x: number, _y: number) => 0 // plain — not the issue here
+        });
+
+        const { overlord, room } = makeOverlord(ROOM);
+        const spawn = makeSpawn(5, 5, ROOM); // All offsets → out-of-bounds anchors
+        const result: any = (overlord as any).reverseAnchorFromSpawn(room, spawn);
+
+        // All 3 candidates go out-of-bounds → returns null → planRoom falls to DT
+        expect(result).to.be.null;
+    });
+
+    it("should pick the candidate with the fewest wall hits when multiple are in-bounds", () => {
+        // Use a mid-room spawn and inject a single wall that falls ONLY inside
+        // the footprint for offset[1] (anchor1), leaving anchor0 and anchor2 clean.
+        // offset[0]={x:-1,y:2} anchor0=(26,23), offset[1]={x:2,y:2} anchor1=(23,23), offset[2]={x:0,y:-2} anchor2=(25,27)
+        // Footprints (±6): anchor0 = x[20,32] y[17,29]; anchor1 = x[17,29] y[17,29]; anchor2 = x[19,31] y[21,33]
+        // A wall at (17, 23) is inside anchor1's footprint (x=17 ∈ [17,29]) but OUTSIDE anchor0 (x=17 < 20)
+        // and OUTSIDE anchor2 (x=17 < 19).
+        const wallX = 17, wallY = 23;
+
+        (global as any).Game.map.getRoomTerrain = (_name: string) => ({
+            get: (x: number, y: number): number =>
+                (x === wallX && y === wallY) ? TERRAIN_MASK_WALL : 0
         });
 
         const { overlord, room } = makeOverlord(ROOM);
         const spawn = makeSpawn(25, 25, ROOM);
         const result: any = (overlord as any).reverseAnchorFromSpawn(room, spawn);
 
-        // Should still return something (fallback to first offset)
+        // anchor1 has 1 wall hit; anchor0 and anchor2 have 0 — scorer picks either of the zero-hit candidates
         expect(result).to.not.be.null;
-        const off0 = spawnOffsets[0];
-        expect(result.x).to.equal(25 - off0.x);
-        expect(result.y).to.equal(25 - off0.y);
+        const score = (overlord as any).scoreBlueprintFit(ROOM, result.x, result.y);
+        expect(score.outOfBounds).to.be.false;
+        expect(score.wallHits).to.equal(0); // Best candidate has zero wall conflicts
     });
 
     it("the Math: anchor = spawn - offset is correct for the first blueprint spawn slot", () => {
@@ -231,8 +264,8 @@ describe("ConstructionOverlord — planRoom() branch selection", () => {
         (overlord as any).planRoom();
 
         const { x, y } = colony.memory.anchor;
-        const fits = (overlord as any).canBlueprintFit(ROOM, x, y);
-        expect(fits).to.be.true;
+        const score = (overlord as any).scoreBlueprintFit(ROOM, x, y);
+        expect(!score.outOfBounds && score.wallHits === 0).to.be.true;
     });
 
     it("should skip reverse-anchor when empire has 2+ spawns (use DT path)", () => {
