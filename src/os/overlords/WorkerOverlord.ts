@@ -253,8 +253,11 @@ export class WorkerOverlord extends Overlord {
             if (mem.collecting) {
                 // Collecting energy — fill up completely before working
 
-                // 1. LogisticsNetwork matching (polymorphic)
-                const targetId = this.colony.logistics.matchWithdraw(worker);
+                // 1. LogisticsNetwork matching — MUST pass [worker] as the batch so
+                // ensureWithdrawBatch() runs and the worker gets matched to drops,
+                // tombstones, ruins, and containers. Without the batch array,
+                // _withdrawMatches is never populated and matchWithdraw always returns null.
+                const targetId = this.colony.logistics.matchWithdraw(worker, [worker]);
                 if (targetId) {
                     const target = Game.getObjectById(targetId);
                     if (target && 'amount' in target) {
