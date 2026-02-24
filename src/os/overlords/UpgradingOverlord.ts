@@ -208,7 +208,24 @@ export class UpgradingOverlord extends Overlord {
         const hasContainers = this.colony.logistics.offerIds.length > 0;
         const isRCL8 = controller.level === 8;
 
-        if (!downgradeImminent && !hasStorage && !hasContainers && !isRCL8) {
+        // ── Polymorphic Shift Gate ──────────────────────────────────────────
+        //
+        // Shift upgraders to workers ONLY when there is no structural energy
+        // pathway to the controller AND downgrade is not imminent.
+        //
+        // WRONG gate (previous): `!hasContainers` (= `offerIds.length === 0`)
+        //   offerIds is a transient, per-tick count. It's 0 whenever the
+        //   logistics network has nothing to offer at that exact tick, which
+        //   happens constantly at RCL2 (container just placed, drops depleted,
+        //   transporter mid-trip). This caused upgraders to be permanently
+        //   re-shifted to workers milliseconds after spawning.
+        //
+        // CORRECT gate: check for STRUCTURAL presence of energy infrastructure
+        //   (storage or a controller container), which is persistent across
+        //   ticks. A container exists even when empty and waiting to be filled.
+        const hasEnergyInfrastructure = hasStorage || (room ? this.findControllerContainer(room) !== null : false);
+
+        if (!downgradeImminent && !hasEnergyInfrastructure && !isRCL8) {
             if (this.upgraders.length > 0) {
                 for (const u of this.upgraders) {
                     log.warning(`Polymorphic shift: Re-tasking gated upgrader ${u.name} to worker`);
