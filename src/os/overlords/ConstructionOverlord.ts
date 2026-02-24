@@ -34,16 +34,28 @@ export class ConstructionOverlord extends Overlord {
             this.drawBunkerPlan();
         }
 
-        // 2. Global Guard: yield 0 CPU while workers are busy
+        // 2. Dynamic per-room site budget — scales with global construction site headroom.
+        //    Screeps global cap: 100 sites across all rooms.
+        //    With 1 room and ~0 sites used, allow 10 per room so source containers,
+        //    hub container, and extensions all get placed in a single check cycle.
+        //    Shrinks automatically as more rooms/sites are active so no single room
+        //    hogs capacity from the rest of the empire.
+        const globalSites = Object.keys(Game.constructionSites).length;
+        const globalRemaining = 100 - globalSites;
+        const maxSites = globalRemaining >= 80 ? 10
+            : globalRemaining >= 60 ? 7
+                : globalRemaining >= 40 ? 5
+                    : 3;
+
         const activeSites = this.colony.room?.find(FIND_MY_CONSTRUCTION_SITES).length ?? 0;
-        if (activeSites >= 3) return;
+        if (activeSites >= maxSites) return;
 
         // Only run periodically or on RCL change
         if (Game.time % this.checkFrequency !== 0 && !this.colony.state.rclChanged) {
             return;
         }
 
-        const budget = { count: 3 - activeSites };
+        const budget = { count: maxSites - activeSites };
 
         // 3. Parse anchor and RCL
         const anchor = this.colony.memory.anchor;
