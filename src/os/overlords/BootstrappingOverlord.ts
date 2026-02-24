@@ -32,6 +32,8 @@ import { HarvestTask } from "../tasks/HarvestTask";
 import { PickupTask } from "../tasks/PickupTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
+import { BuildTask } from "../tasks/BuildTask";
+import { UpgradeTask } from "../tasks/UpgradeTask";
 import { Logger } from "../../utils/Logger";
 import { MovePriority } from "../infrastructure/MovePriority";
 
@@ -207,15 +209,19 @@ export class BootstrappingOverlord extends Overlord {
                     continue;
                 }
 
-                // 5. Harvest directly — [WORK, CARRY, MOVE] pioneer bodies only
+                // 5. Harvest directly via task system — inject EMERGENCY priority so
+                // HarvestTask.run() uses EMERGENCY for travelTo every tick.
+                // This is the clean fix for Issue #77 (Task Priority Erasure):
+                // rather than bypassing the task abstraction, we inject the priority
+                // into task.settings so the task propagates it to TrafficManager.
                 if (creep.getActiveBodyparts(WORK) > 0) {
                     const source = bootstrapper.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
                     if (source) {
-                        bootstrapper.setTask(new HarvestTask(source.id));
-                        // Also call travelTo directly this tick — on the first tick after spawn
-                        // the path cache is cold, and relying solely on Zerg.run() / HarvestTask.run()
-                        // can produce a 0-length path if the static matrix is stale. Calling travelTo
-                        // here guarantees TrafficManager receives the move intent regardless.
+                        const harvestTask = new HarvestTask(source.id);
+                        harvestTask.settings.movePriority = MovePriority.EMERGENCY;
+                        bootstrapper.setTask(harvestTask);
+                        // Prime the path cache on the first tick — guarantees TrafficManager
+                        // receives the EMERGENCY intent even before the task's first run().
                         if (!bootstrapper.pos?.inRangeTo(source, 1)) {
                             bootstrapper.travelTo(source, 1, MovePriority.EMERGENCY);
                         }
@@ -278,15 +284,25 @@ export class BootstrappingOverlord extends Overlord {
                 if (transferTarget) {
                     bootstrapper.setTask(new TransferTask(transferTarget.id as Id<Structure>));
                 } else {
-                    // Spawn/extensions are full — store in storage or drop at spawn
+                    // Spawn/extensions are full — waterfall cascade: store → build → upgrade
+                    // (Issue #78: old code parked the creep here, stalling at RCL 1 forever)
                     const storage = creep.room.storage;
                     if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                        // 1. Dump into storage if available
                         bootstrapper.setTask(new TransferTask(storage.id as Id<Structure>));
                     } else {
-                        // All full — rest near spawn
-                        const spawn = this.colony.hatchery.spawns[0];
-                        if (spawn && bootstrapper.pos && !bootstrapper.pos.inRangeTo(spawn, 3)) {
-                            bootstrapper.travelTo(spawn, 3, MovePriority.EMERGENCY);
+                        // 2. Build the nearest construction site (extensions, containers, etc.)
+                        const site = creep.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
+                        if (site) {
+                            bootstrapper.setTask(new BuildTask(site.id));
+                        } else {
+                            // 3. Upgrade controller as final fallback — pushes RCL forward
+                            const controller = creep.room.controller;
+                            if (controller && controller.my) {
+                                bootstrapper.setTask(new UpgradeTask(controller.id));
+                            }
+                            // If none of the above apply, the creep is idle — this is fine;
+                            // it will re-evaluate next tick once conditions change.
                         }
                     }
                 }

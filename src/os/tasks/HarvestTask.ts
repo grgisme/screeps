@@ -4,6 +4,7 @@
 
 import { ITask, TaskMemory, TaskSettings } from "./ITask";
 import type { Zerg } from "../zerg/Zerg";
+import { MovePriority } from "../infrastructure/MovePriority";
 
 /**
  * HarvestTask directs a Zerg to harvest energy from a specific Source.
@@ -15,6 +16,11 @@ import type { Zerg } from "../zerg/Zerg";
  *
  * **Serializable:** `serialize()` produces a JSON-safe `TaskMemory`
  * that survives global resets via `CreepMemory.task`.
+ *
+ * **Priority-aware:** `settings.movePriority` can be injected by the
+ * assigning Overlord (e.g. `MovePriority.EMERGENCY` for bootstrappers)
+ * so EMERGENCY traffic rights are preserved every tick without bypassing
+ * the Task abstraction. If not set, defaults to `MovePriority.LOW`.
  */
 export class HarvestTask implements ITask {
     readonly name = "Harvest";
@@ -63,6 +69,8 @@ export class HarvestTask implements ITask {
         }
 
         if (zerg.pos && zerg.pos.inRangeTo(source, this.settings.workRange)) {
+            // Use the Zerg wrapper — preserves hasWorkIntent lock so no other
+            // system can issue a conflicting work-pipeline action this tick.
             const result = zerg.harvest(source);
             // Only abort on *fatal* errors. Transient errors (BUSY, TIRED,
             // NOT_ENOUGH_RESOURCES) must NOT kill the task — they resolve
@@ -76,7 +84,10 @@ export class HarvestTask implements ITask {
             }
             return false; // Keep harvesting (OK, BUSY, TIRED, etc.)
         } else {
-            zerg.travelTo(source, this.settings.targetRange);
+            // Respect the priority injected by the assigning Overlord.
+            // Bootstrappers inject EMERGENCY; regular creeps get LOW by default.
+            const priority = this.settings.movePriority ?? MovePriority.LOW;
+            zerg.travelTo(source, this.settings.targetRange, priority);
             return false;
         }
     }

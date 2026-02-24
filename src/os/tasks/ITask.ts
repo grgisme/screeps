@@ -38,6 +38,14 @@ export interface TaskSettings {
 
     /** Custom HP threshold — task completes when target hits reach this value. */
     targetHits?: number;
+
+    /**
+     * Movement priority injected by the assigning Overlord.
+     * When set, the task uses this instead of its default (LOW).
+     * Allows emergency overlords to preserve EMERGENCY traffic rights
+     * without bypassing the Task abstraction. (Issue #77)
+     */
+    movePriority?: number;
 }
 
 // -------------------------------------------------------------------------

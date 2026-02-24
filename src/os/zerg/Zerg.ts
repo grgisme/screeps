@@ -25,6 +25,7 @@ import { UpgradeTask } from "../tasks/UpgradeTask";
 import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
 import { ReserveTask } from "../tasks/ReserveTask";
+import { DismantleTask } from "../tasks/DismantleTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
 import { MovePriority } from "../infrastructure/MovePriority";
 import { Logger } from "../../utils/Logger";
@@ -177,27 +178,37 @@ export class Zerg {
      * after a global reset wiped the heap).
      */
     private deserializeTask(taskMem: TaskMemory): ITask | null {
+        let task: ITask | null = null;
         switch (taskMem.name) {
             case "Harvest":
-                return new HarvestTask(taskMem.targetId as Id<Source>);
+                task = new HarvestTask(taskMem.targetId as Id<Source>); break;
             case "Withdraw":
-                return new WithdrawTask(taskMem.targetId as Id<Structure | Tombstone | Ruin>);
+                task = new WithdrawTask(taskMem.targetId as Id<Structure | Tombstone | Ruin>); break;
             case "Transfer":
-                return new TransferTask(taskMem.targetId as Id<Structure | Creep>);
+                task = new TransferTask(taskMem.targetId as Id<Structure | Creep>); break;
             case "Pickup":
-                return new PickupTask(taskMem.targetId as Id<Resource>);
+                task = new PickupTask(taskMem.targetId as Id<Resource>); break;
             case "Upgrade":
-                return new UpgradeTask(taskMem.targetId as Id<StructureController>);
+                task = new UpgradeTask(taskMem.targetId as Id<StructureController>); break;
             case "Build":
-                return new BuildTask(taskMem.targetId as Id<ConstructionSite>);
+                task = new BuildTask(taskMem.targetId as Id<ConstructionSite>); break;
             case "Repair":
-                return new RepairTask(taskMem.targetId as Id<Structure>);
+                task = new RepairTask(taskMem.targetId as Id<Structure>); break;
             case "Reserve":
-                return new ReserveTask(taskMem.targetId as Id<StructureController>);
+                task = new ReserveTask(taskMem.targetId as Id<StructureController>); break;
+            case "Dismantle":
+                task = new DismantleTask(taskMem.targetId as Id<Structure>); break;
             default:
                 log.warning(`Unknown task type "${taskMem.name}" — clearing`);
                 return null;
         }
+        // Rehydrate custom settings (e.g. movePriority injected by overlord,
+        // targetHits in RepairTask, oneShot in TransferTask) so they survive
+        // global resets without reverting to constructor defaults.
+        if (task && taskMem.settings) {
+            task.settings = Object.assign(task.settings, taskMem.settings);
+        }
+        return task;
     }
 
     // -----------------------------------------------------------------------
