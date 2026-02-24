@@ -198,7 +198,16 @@ export class BootstrappingOverlord extends Overlord {
                     continue;
                 }
 
-                // 3. Check containers with energy
+                // 3. Check ruins with energy (enemy spawn ruins, abandoned structures, etc.)
+                const ruin = bootstrapper.pos?.findClosestByRange(FIND_RUINS, {
+                    filter: (r: Ruin) => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+                });
+                if (ruin) {
+                    bootstrapper.setTask(new WithdrawTask(ruin.id as Id<Ruin>));
+                    continue;
+                }
+
+                // 4. Check containers with energy
                 const container = bootstrapper.pos?.findClosestByRange(FIND_STRUCTURES, {
                     filter: (s: Structure) =>
                         s.structureType === STRUCTURE_CONTAINER &&
@@ -208,6 +217,7 @@ export class BootstrappingOverlord extends Overlord {
                     bootstrapper.setTask(new WithdrawTask(container.id as Id<Structure>));
                     continue;
                 }
+
 
                 // 4. Harvest directly — [WORK, CARRY, MOVE] pioneer or [WORK, MOVE] drop-miner bodies only
                 if (creep.getActiveBodyparts(WORK) > 0) {
