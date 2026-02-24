@@ -151,9 +151,14 @@ export class BootstrappingOverlord extends Overlord {
             // ── State Machine: pure energy relay ─────────────────────────────
             const energy = creep.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0;
             const freeCapacity = creep.store.getFreeCapacity(RESOURCE_ENERGY) ?? 0;
+            const storeCapacity = creep.store.getCapacity() ?? 0;
 
             if (energy === 0) mem.collecting = true;
-            if (freeCapacity === 0) mem.collecting = false;
+            // Guard: only flip to Working when the creep actually has CARRY parts and
+            // is full. For 0-CARRY bodies (e.g. [WORK,MOVE]) freeCapacity is always 0
+            // even though the creep has no store — without this guard they instantly
+            // enter Working phase and softlock transferring 0 energy. (Issue #76)
+            if (storeCapacity > 0 && freeCapacity === 0) mem.collecting = false;
 
             if (bootstrapper.task) {
                 // Let the task system execute — this zerg is already mid-task

@@ -206,6 +206,47 @@ describe("BootstrappingOverlord", () => {
 
     // ── run() tests ─────────────────────────────────────────────────────────
 
+    it("should NOT flip 0-CARRY creep from collecting to Working phase (issue #76)", () => {
+        // Simulate a [WORK, MOVE] drop-miner with no CARRY — getCapacity() === 0
+        const zeroCarryCreep = {
+            name: "bootstrap_dropminer_W1N1_1",
+            spawning: false,
+            store: {
+                getUsedCapacity: () => 0,
+                getFreeCapacity: () => 0,   // always 0 for 0-CARRY
+                getCapacity: () => 0    // 0-CARRY creep has no store
+            },
+            getActiveBodyparts: (part: BodyPartConstant) => part === WORK ? 1 : 0,
+            room: room,
+            say: () => { }
+        } as unknown as Creep;
+
+        (globalThis as any).Game.creeps["bootstrap_dropminer_W1N1_1"] = zeroCarryCreep;
+
+        const mockZerg: any = {
+            name: "bootstrap_dropminer_W1N1_1",
+            isAlive: () => true,
+            get creep() { return zeroCarryCreep; },
+            get pos() { return { inRangeTo: () => false, findClosestByRange: () => null }; },
+            get memory() { return (zeroCarryCreep as any)._mem; },
+            task: null,
+            setTask: function (t: any) { this.task = t; },
+            travelTo: () => { }
+        };
+
+        (zeroCarryCreep as any)._mem = { _overlord: "bootstrapping", collecting: true };
+
+        const overlord = new BootstrappingOverlord(mockColony);
+        (overlord as any)._zergs = [mockZerg];
+        (overlord as any)._zergsTick = Game.time;
+        overlord.bootstrappers = [mockZerg];
+
+        overlord.run();
+
+        // The creep should still be in collecting mode — not flipped to Working
+        expect((zeroCarryCreep as any)._mem.collecting).to.equal(true);
+    });
+
     it("should issue TransferTask to spawn (index 0 of refillOrder) when loaded", () => {
         // Set up a bootstrapper with full energy
         const creepMock = {
@@ -213,7 +254,8 @@ describe("BootstrappingOverlord", () => {
             spawning: false,
             store: {
                 getUsedCapacity: () => 50,
-                getFreeCapacity: () => 0
+                getFreeCapacity: () => 0,
+                getCapacity: () => 50  // [WORK,CARRY,MOVE] pioneer — has store
             },
             getActiveBodyparts: (part: BodyPartConstant) => part === WORK ? 1 : 0,
             room: room,
