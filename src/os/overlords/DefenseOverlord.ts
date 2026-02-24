@@ -303,12 +303,22 @@ export class DefenseOverlord extends Overlord {
             // 2. Safe Mode Fail-Safe (Pathfinding Threat Detection)
             // ────────────────────────────────────────────────────────────
             const spawns = room.find(FIND_MY_SPAWNS);
-            const dangerousHostiles = hostiles.filter(h =>
-                h.owner.username !== "Invader" &&
+
+            // T1.1 — Split threat classes so NPC invaders with ATTACK/WORK
+            // are also included in the breach check (previously excluded).
+            // Pure-ranged NPC invaders stay excluded — towers can handle them
+            // and they never breach walls.
+            const playerThreat = hostiles.filter(h =>
+                h.owner.username !== "Invader" && h.owner.username !== "Source Keeper" &&
                 (h.getActiveBodyparts(ATTACK) > 0 ||
                     h.getActiveBodyparts(RANGED_ATTACK) > 0 ||
                     h.getActiveBodyparts(WORK) > 0)
             );
+            const npcThreat = hostiles.filter(h =>
+                h.owner.username === "Invader" &&
+                (h.getActiveBodyparts(ATTACK) > 0 || h.getActiveBodyparts(WORK) > 0)
+            );
+            const dangerousHostiles = [...playerThreat, ...npcThreat];
 
             let pathBreached = false;
             if (spawns.length > 0 && dangerousHostiles.length > 0) {
@@ -318,18 +328,51 @@ export class DefenseOverlord extends Overlord {
                     if (s.structureType === STRUCTURE_RAMPART && (s as OwnedStructure).my) cm.set(s.pos.x, s.pos.y, 255);
                     if (s.structureType === STRUCTURE_WALL) cm.set(s.pos.x, s.pos.y, 255);
                 });
-
                 const path = PathFinder.search(spawns[0].pos, dangerousHostiles.map(h => ({ pos: h.pos, range: 1 })), {
                     maxOps: 2000,
                     roomCallback: () => cm
                 });
-
                 if (!path.incomplete) pathBreached = true;
             }
 
-            if (pathBreached && room.controller && room.controller.safeModeAvailable > 0 && !room.controller.safeMode && !room.controller.safeModeCooldown) {
-                room.controller.activateSafeMode();
+            const ctrl = room.controller;
+
+            // T1.3 — Last-charge conservation: don't burn the only safe mode
+            // charge on an NPC wave that towers can still handle.
+            const shouldUseSafeMode = (reason: 'breach' | 'hp_threshold'): boolean => {
+                if (!ctrl || ctrl.safeModeAvailable === 0 || ctrl.safeMode || ctrl.safeModeCooldown) return false;
+                if (ctrl.safeModeAvailable === 1 && reason === 'breach') {
+                    const allNpc = dangerousHostiles.every(h =>
+                        h.owner.username === "Invader" || h.owner.username === "Source Keeper"
+                    );
+                    if (allNpc && this.towerIds.length > 0) {
+                        log.warning(`Conserving last safe mode charge — NPC wave with towers still active.`);
+                        return false;
+                    }
+                }
+                return true;
+            };
+
+            if (pathBreached && shouldUseSafeMode('breach')) {
+                ctrl!.activateSafeMode();
                 log.error(`CRITICAL BREACH! Safe mode activated in ${room.name} due to Pathfinding Threat!`);
+            }
+
+            // T1.2 — Critical structure HP% trigger: ranged attackers outside
+            // ramparts can kill storage/terminal without ever breaching walls.
+            // Fire if any critical structure drops below 30% HP.
+            if (!pathBreached && dangerousHostiles.length > 0 && shouldUseSafeMode('hp_threshold')) {
+                const CRITICAL_TYPES: StructureConstant[] = [
+                    STRUCTURE_SPAWN, STRUCTURE_STORAGE, STRUCTURE_TERMINAL, STRUCTURE_TOWER
+                ];
+                const damaged = room.find(FIND_MY_STRUCTURES).find(s =>
+                    CRITICAL_TYPES.includes(s.structureType) &&
+                    s.hits / s.hitsMax < 0.30
+                );
+                if (damaged) {
+                    ctrl!.activateSafeMode();
+                    log.error(`CRITICAL STRUCTURE: ${damaged.structureType} at ${Math.round(damaged.hits / damaged.hitsMax * 100)}% HP! Safe mode activated in ${room.name}.`);
+                }
             }
 
             // ────────────────────────────────────────────────────────────
