@@ -26,6 +26,7 @@ import { BuildTask } from "../tasks/BuildTask";
 import { RepairTask } from "../tasks/RepairTask";
 import { ReserveTask } from "../tasks/ReserveTask";
 import { TrafficManager } from "../infrastructure/TrafficManager";
+import { MovePriority } from "../infrastructure/MovePriority";
 import { Logger } from "../../utils/Logger";
 import { GlobalCache } from "../../kernel/GlobalCache";
 import { getPositionAtDirection } from "../../utils/RoomPosition";
@@ -384,7 +385,7 @@ export class Zerg {
      * Move to a target using cached pathing and TrafficManager.
      * Path caching is heap-safe (serialized direction strings + primitives).
      */
-    travelTo(target: RoomPosition | { pos: RoomPosition } | undefined | null, range = 1, priority = 1): void {
+    travelTo(target: RoomPosition | { pos: RoomPosition } | undefined | null, range = 1, priority: number = MovePriority.LOW): void {
         if (!target) return; // FIX 1: Prevent fatal TypeError if Overlord passes undefined containerPos
 
         const creep = this.creep;
@@ -407,7 +408,7 @@ export class Zerg {
             const dy = currentPos.y === 0 ? 1 : currentPos.y === 49 ? -1 : 0;
             const stepIn = new RoomPosition(currentPos.x + dx, currentPos.y + dy, currentPos.roomName);
             this._path = null;
-            TrafficManager.register(this, currentPos.getDirectionTo(stepIn), priority + 10);
+            TrafficManager.register(this, currentPos.getDirectionTo(stepIn), priority + MovePriority.EMERGENCY_BOOST);
             return;
         }
 
@@ -659,6 +660,32 @@ export class Zerg {
             curr = next;
         }
         return result;
+    }
+
+    /**
+     * Pre-fill the path cache from a POI-cached direction string.
+     *
+     * Called by overlords **before** `travelTo()` to skip `PathFinder.search`
+     * on the first tick after a global reset. On subsequent ticks `_path` is
+     * already populated, so this is a zero-cost no-op.
+     *
+     * @param path Serialized direction string from `MiningSite.cachedReturnPath`
+     *             or `cachedOutboundPath`.
+     * @param targetPos The RoomPosition this path leads to (used as cache key).
+     * @param ticksToLive How many steps remain (typically `site.distance`).
+     */
+    seedPath(path: string | null, targetPos: RoomPosition | undefined | null, ticksToLive: number): void {
+        // No-op guards: don't overwrite a live path, don't seed with empty data
+        if (this._path !== null) return;
+        if (!path || path.length === 0) return;
+        if (!targetPos) return;
+
+        this._path = {
+            path,
+            step: 0,
+            target: targetPos.toString(),
+            ticksToLive,
+        };
     }
 
     // -----------------------------------------------------------------------

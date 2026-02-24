@@ -28,14 +28,13 @@ import { PickupTask } from "../tasks/PickupTask";
 import { TransferTask } from "../tasks/TransferTask";
 import { WithdrawTask } from "../tasks/WithdrawTask";
 import { Logger } from "../../utils/Logger";
+import { MovePriority } from "../infrastructure/MovePriority";
 
 const log = new Logger("BootstrappingOverlord");
 
-/** Priority used for all bootstrapper spawn requests — must outbid everything. */
+/** Spawn-queue priority — must outbid all other overlords during a blackout. */
 const BOOTSTRAP_PRIORITY = 999;
 
-/** travelTo priority — ensures bipartite matching shoves idle creeps aside. */
-const SHOVE_PRIORITY = 100;
 
 export class BootstrappingOverlord extends Overlord {
     bootstrappers: Zerg[] = [];
@@ -204,7 +203,7 @@ export class BootstrappingOverlord extends Overlord {
                         // can produce a 0-length path if the static matrix is stale. Calling travelTo
                         // here guarantees TrafficManager receives the move intent regardless.
                         if (!bootstrapper.pos?.inRangeTo(source, 1)) {
-                            bootstrapper.travelTo(source, 1, SHOVE_PRIORITY);
+                            bootstrapper.travelTo(source, 1, MovePriority.EMERGENCY);
                         }
                         continue;
                     }
@@ -263,7 +262,7 @@ export class BootstrappingOverlord extends Overlord {
                         // All full — rest near spawn
                         const spawn = this.colony.hatchery.spawns[0];
                         if (spawn && bootstrapper.pos && !bootstrapper.pos.inRangeTo(spawn, 3)) {
-                            bootstrapper.travelTo(spawn, 3, SHOVE_PRIORITY);
+                            bootstrapper.travelTo(spawn, 3, MovePriority.EMERGENCY);
                         }
                     }
                 }

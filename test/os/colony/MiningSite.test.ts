@@ -41,12 +41,15 @@ describe("MiningSite", () => {
             }
         };
 
-        // Mock PathFinder
+        // Mock PathFinder — returns 10-step paths with incrementing X positions
+        // so getDirectionTo() produces real direction characters (RIGHT = 3).
+        const makePath = (startX: number, startY: number, roomName: string, steps = 10) =>
+            Array.from({ length: steps }, (_, i) => new RoomPosition(startX + i + 1, startY, roomName));
+
         (globalThis as any).PathFinder = {
-            search: (_origin: RoomPosition, _goal: any) => {
-                // Mock a distance of 10
+            search: (origin: RoomPosition, _goal: any) => {
                 return {
-                    path: new Array(10).fill(new RoomPosition(0, 0, "W1N1")),
+                    path: makePath(origin.x, origin.y, origin.roomName),
                     incomplete: false
                 };
             },
@@ -83,6 +86,13 @@ describe("MiningSite", () => {
 
         expect(site.distance).to.equal(10);
         expect(power).to.equal(200);
+        // POI path cache: both paths should be serialized direction strings
+        expect(site.cachedReturnPath).to.be.a('string').and.have.length(10);
+        expect(site.cachedOutboundPath).to.be.a('string').and.have.length(10);
+        // invalidatePaths() should clear both
+        site.invalidatePaths();
+        expect(site.cachedReturnPath).to.be.null;
+        expect(site.cachedOutboundPath).to.be.null;
     });
 
     it("should handle unreserved room power calculation", () => {

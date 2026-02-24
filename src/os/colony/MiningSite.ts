@@ -33,6 +33,21 @@ export class MiningSite {
     distance: number = 0;
 
     /**
+     * Serialized direction strings for the hauling route (heap-cached).
+     *
+     * Populated once in `calculateDistance()` and shared across all haulers
+     * assigned to this site. On global reset, overlords call `zerg.seedPath()`
+     * with these strings to skip per-creep `PathFinder.search` calls.
+     *
+     * - `cachedReturnPath`:  containerPos → storage  (loaded hauler going home)
+     * - `cachedOutboundPath`: storage → containerPos  (empty hauler going to collect)
+     *
+     * Both are `null` until the first successful `calculateDistance()` run.
+     */
+    cachedReturnPath: string | null = null;
+    cachedOutboundPath: string | null = null;
+
+    /**
      * Route terrain analysis (cached in heap — calculated once).
      * roadCoverage: 0.0–1.0 ratio of road tiles along the hauling route.
      * hasSwamp: true if any non-road swamp tile exists on the route.
@@ -94,6 +109,9 @@ export class MiningSite {
 
         // Recalculate container position every refresh — roads/structures may have changed
         this.calculateContainerPos();
+        // Invalidate cached paths whenever the container position may have shifted.
+        // calculateDistance() below will repopulate them for this refresh cycle.
+        this.invalidatePaths();
 
         // 1. Validate existing container is at the optimal position
         //    (path may have changed after roads were built)
@@ -157,10 +175,9 @@ export class MiningSite {
             this.linkId = undefined;
         }
 
-        // 4. Recalculate distance and route terrain if not yet computed
-        if (this.distance === 0) {
-            this.calculateDistance();
-        }
+        // 4. Recalculate distance and cached paths if not yet computed
+        //    (invalidatePaths() above cleared them, so always recalculate here)
+        this.calculateDistance();
 
         // 5. Recalculate route terrain (roads may have been built since last check)
         this.calculateRouteTerrain();
@@ -218,15 +235,53 @@ export class MiningSite {
         const dropoff = room.storage || room.find(FIND_MY_SPAWNS)?.[0];
         if (!dropoff || !this.containerPos) return;
 
-        const path = PathFinder.search(this.containerPos, { pos: dropoff.pos, range: 1 });
+        // ── Return path: containerPos → storage (loaded hauler going home) ──
+        const returnPath = PathFinder.search(this.containerPos, { pos: dropoff.pos, range: 1 });
 
         // Fallback to a linear distance heuristic if the path is incomplete/blocked
-        if (path.incomplete) {
+        if (returnPath.incomplete) {
             this.distance = Math.round(this.containerPos.getRangeTo(dropoff.pos) * 1.5);
             if (this.distance === 0) this.distance = 10; // Safe minimum
+            this.cachedReturnPath = null; // Can't cache an incomplete path
         } else {
-            this.distance = path.path.length;
+            this.distance = returnPath.path.length;
+            // Serialize and cache the return path direction string.
+            // All haulers for this site share this string via seedPath() — eliminates
+            // N × PathFinder.search calls on global reset.
+            this.cachedReturnPath = this.serializePath(this.containerPos, returnPath.path);
         }
+
+        // ── Outbound path: storage → containerPos (empty hauler going to collect) ──
+        const outPath = PathFinder.search(dropoff.pos, { pos: this.containerPos, range: 1 });
+        this.cachedOutboundPath = (!outPath.incomplete && outPath.path.length > 0)
+            ? this.serializePath(dropoff.pos, outPath.path)
+            : null;
+    }
+
+    /**
+     * Clear both cached path strings.
+     * Called when `containerPos` changes (structure added/removed) so haulers
+     * don't follow a stale route toward a position that no longer exists.
+     */
+    invalidatePaths(): void {
+        this.cachedReturnPath = null;
+        this.cachedOutboundPath = null;
+    }
+
+    /**
+     * Serialize a `RoomPosition[]` path to a compact direction string.
+     * Each character is the `DirectionConstant` digit from one step to the next.
+     * Identical in semantics to `Zerg.serializePath()` — kept local to avoid
+     * importing Zerg into MiningSite (avoids circular references).
+     */
+    private serializePath(startPos: RoomPosition, path: RoomPosition[]): string {
+        let result = "";
+        let curr = startPos;
+        for (const next of path) {
+            result += curr.getDirectionTo(next);
+            curr = next;
+        }
+        return result;
     }
 
     /**

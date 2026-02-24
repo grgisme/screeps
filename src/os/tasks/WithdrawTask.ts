@@ -4,6 +4,7 @@
 
 import { ITask, TaskMemory, TaskSettings } from "./ITask";
 import type { Zerg } from "../zerg/Zerg";
+import { MovePriority } from "../infrastructure/MovePriority";
 
 /**
  * WithdrawTask directs a Zerg to withdraw energy from a target structure.
@@ -90,9 +91,9 @@ export class WithdrawTask implements ITask {
             if (result === OK) return true;
             return false;
         } else {
-            // Fix #4: Transporters get priority 10 — right-of-way over idle creeps.
+            // Fix #4: Transporters get HIGH priority — right-of-way over idle creeps.
             const isTransporter = (zerg.memory as any)?.role === "transporter";
-            const travelPriority = isTransporter ? 10 : 1;
+            const travelPriority = isTransporter ? MovePriority.HIGH : MovePriority.LOW;
             zerg.travelTo(target, this.settings.targetRange, travelPriority);
             return false;
         }

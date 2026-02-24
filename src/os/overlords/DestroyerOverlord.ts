@@ -3,6 +3,7 @@ import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { CombatZerg } from "../zerg/CombatZerg";
 import { TrafficManager } from "../infrastructure/TrafficManager";
+import { MovePriority } from "../infrastructure/MovePriority";
 import { Logger } from "../../utils/Logger";
 
 const log = new Logger("DestroyerOverlord");
@@ -121,10 +122,10 @@ export class DestroyerOverlord extends Overlord {
                             { flee: true, roomCallback: () => new PathFinder.CostMatrix() }
                         );
                         if (path.path.length > 0) {
-                            TrafficManager.register(destroyer, destroyer.pos.getDirectionTo(path.path[0])!, 1);
+                            TrafficManager.register(destroyer, destroyer.pos.getDirectionTo(path.path[0])!, MovePriority.COMBAT);
                         }
                     } else if (range > (isRanged ? 3 : 1)) {
-                        destroyer.travelTo(target.pos);
+                        destroyer.travelTo(target.pos, 1, MovePriority.COMBAT);
                     }
                 }
             } else {

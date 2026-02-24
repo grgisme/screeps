@@ -2,6 +2,7 @@ import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { CombatZerg } from "../zerg/CombatZerg";
 import { TrafficManager } from "../infrastructure/TrafficManager";
+import { MovePriority } from "../infrastructure/MovePriority";
 import { Logger, LogLevel } from "../../utils/Logger";
 
 const log = new Logger("DefenseOverlord");
@@ -422,9 +423,9 @@ export class DefenseOverlord extends Overlord {
                         { pos: target.pos, range: 4 },
                         { flee: true, roomCallback: () => new PathFinder.CostMatrix() }
                     );
-                    if (path.path.length > 0) TrafficManager.register(defender, defender.pos.getDirectionTo(path.path[0])!, 1);
+                    if (path.path.length > 0) TrafficManager.register(defender, defender.pos.getDirectionTo(path.path[0])!, MovePriority.COMBAT);
                 } else if (range > (isRanged ? 3 : 1)) {
-                    defender.travelTo(target.pos);
+                    defender.travelTo(target.pos, 1, MovePriority.COMBAT);
                 }
             } else {
                 // Idle: rally near storage or spawn

@@ -50,6 +50,18 @@ describe("Overlord Control Pattern", () => {
         // Mock energy
         (room as any).energyAvailable = 600;
         (room as any).energyCapacityAvailable = 600;
+
+        // Mock PathFinder — needed by MiningSite.calculateDistance() which now always
+        // runs in refreshStructureIds(). Returns a trivial 5-step path.
+        const fakePath = Array.from({ length: 5 }, (_, i) => new RoomPosition(i + 1, 10, "W1N1"));
+        (globalThis as any).PathFinder = {
+            search: () => ({ path: fakePath, incomplete: false }),
+            CostMatrix: class {
+                set() { }
+                get() { return 0; }
+                clone() { return this; }
+            }
+        };
     });
 
     describe("Colony", () => {
@@ -88,6 +100,7 @@ describe("Overlord Control Pattern", () => {
             // Mock storage so MiningOverlord.handleSpawning spawn gate passes
             (room as any).storage = {
                 id: "storage1",
+                pos: new RoomPosition(5, 5, "W1N1"),
                 store: { getUsedCapacity: () => 50000, getFreeCapacity: () => 950000 }
             };
 

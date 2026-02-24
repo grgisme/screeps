@@ -220,6 +220,9 @@ export class RemoteMiningOverlord extends Overlord {
                         hauler.setTask(new WithdrawTask(bestTomb.id as Id<Tombstone>));
                     } else if (site?.containerId) {
                         // ── Priority 2: Container ────────────────────────────────────────
+                        // Seed the outbound path so the hauler navigates to the container
+                        // without calling PathFinder.search on global reset.
+                        hauler.seedPath(site.cachedOutboundPath, site.containerPos, site.distance);
                         hauler.setTask(new WithdrawTask(site.containerId));
                     } else if (site?.source) {
                         // ── Priority 3: Dropped energy on the ground ────────────────────
@@ -239,7 +242,13 @@ export class RemoteMiningOverlord extends Overlord {
                 }
 
                 const dropoff = this.colony.room?.storage || this.colony.room?.find(FIND_MY_SPAWNS)?.[0];
-                if (dropoff) hauler.setTask(new TransferTask(dropoff.id as Id<Structure | Creep>));
+                if (dropoff) {
+                    // Seed the return path so the hauler heads home without calling
+                    // PathFinder.search on global reset. The cached path was computed
+                    // by MiningSite.calculateDistance() and is shared across all haulers.
+                    hauler.seedPath(site?.cachedReturnPath ?? null, dropoff.pos, site?.distance ?? 0);
+                    hauler.setTask(new TransferTask(dropoff.id as Id<Structure | Creep>));
+                }
             }
         }
     }

@@ -4,6 +4,7 @@
 
 import { ITask, TaskMemory, TaskSettings } from "./ITask";
 import type { Zerg } from "../zerg/Zerg";
+import { MovePriority } from "../infrastructure/MovePriority";
 
 /**
  * TransferTask directs a Zerg to transfer energy to a target structure.
@@ -72,10 +73,10 @@ export class TransferTask implements ITask {
             if (result === OK) return true;
             return false;
         } else {
-            // Fix #4: Transporters get priority 10 — right-of-way in corridors.
-            // Workers transferring to spawn get default 1 (they yield to haulers).
+            // Fix #4: Transporters get HIGH priority — right-of-way in corridors.
+            // Workers transferring to spawn get LOW (they yield to haulers).
             const isTransporter = (zerg.memory as any)?.role === "transporter";
-            const travelPriority = isTransporter ? 10 : 1;
+            const travelPriority = isTransporter ? MovePriority.HIGH : MovePriority.LOW;
             zerg.travelTo(target, this.settings.targetRange, travelPriority);
             return false;
         }
