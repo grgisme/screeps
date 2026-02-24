@@ -56,11 +56,27 @@ export class BootstrappingOverlord extends Overlord {
         const spawns = this.colony.hatchery.spawns;
         if (spawns.length === 0) return;
 
-        // Already have a bootstrapper alive or actively spawning — don't double-enqueue
-        if (this.bootstrappers.length > 0) return;
-        if (spawns.some(s => s.spawning && s.spawning.name.startsWith("bootstrap_"))) return;
+        // Already have a bootstrapper alive or actively spawning — don't double-enqueue.
+        // EXCEPTION: if every alive bootstrapper is a pure hauler (no WORK parts) AND
+        // there's nothing in the room to collect, they're deadlocked — the hauler needs
+        // a miner to produce drops but nothing will ever spawn one. Allow a pioneer.
+        const spawningBootstrap = spawns.some(s => s.spawning && s.spawning.name.startsWith("bootstrap_"));
+        if (spawningBootstrap) return;
 
-        log.warning(`${this.colony.name}: CRITICAL BLACKOUT — BootstrappingOverlord activating.`);
+        if (this.bootstrappers.length > 0) {
+            const bufferNow = this._findBufferEnergy(room);
+            const allCarryOnly = this.bootstrappers.every(z => {
+                const c = z.creep;
+                return c !== undefined && c.getActiveBodyparts(WORK) === 0;
+            });
+            // If at least one bootstrapper can harvest, or there's energy to collect, don't interfere
+            if (!allCarryOnly || bufferNow) return;
+            // All alive bootstrappers are CARRY-only AND nothing to collect → allow pioneer spawn-through
+            log.warning(`${this.colony.name}: All bootstrappers are CARRY-only with no collectable energy — spawning pioneer to unblock.`);
+        } else {
+            log.warning(`${this.colony.name}: CRITICAL BLACKOUT — BootstrappingOverlord activating.`);
+        }
+
 
         // ── Step 8: 25-Tile Morphology Split ────────────────────────────────
         // If the nearest harvestable source is > 25 tiles away, a single
