@@ -677,12 +677,24 @@ export class Zerg {
 
     /**
      * Serialize array of positions to direction string (e.g. "123").
+     *
+     * Skips 0-direction steps: PathFinder occasionally returns the creep's
+     * current tile as a path step (e.g. when already within targetRange but
+     * the range check in travelTo didn't catch it). `getDirectionTo(self)`
+     * returns 0, which:
+     *   1. Makes `if (direction)` falsy — TrafficManager.register never fires
+     *   2. Makes `expectedPos === currentPos` — stuckCount resets to 0 every tick
+     *   3. Creates an infinite loop: step increments but the creep never moves
+     * Discarding 0-direction steps ensures every byte in the path is a real move.
      */
     private serializePath(startPos: RoomPosition, path: RoomPosition[]): string {
         let result = "";
         let curr = startPos;
         for (const next of path) {
-            result += curr.getDirectionTo(next);
+            const dir = curr.getDirectionTo(next) as number;
+            if (dir !== 0) {   // Skip degenerate same-tile steps
+                result += dir;
+            }
             curr = next;
         }
         return result;
