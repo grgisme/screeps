@@ -112,9 +112,132 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     GlobalCache.clear();
     (global as any)._heap = undefined;
     // Fix #2: Removed dead reference to ColonyProcess.colonies (static registry
-    // no longer exists — colonies are tracked by the Kernel's process table).
+    // no longer exists — colonies are tracked by the Kernel's process table).\
     return "🔄 Bot reset complete. Fresh bootstrap will run next tick.";
 };
+
+/**
+ * Dump diagnostic info for a named creep.
+ *
+ * Usage from the Screeps console:
+ *   inspectCreep("bootstrap_hauler_W22S38_123456")
+ *
+ * Reports: position • body • store • overlord • task • path cache •
+ *          stuck/oscillation counters • fatigue • nearby sources •
+ *          logistics reservations • pending TrafficManager intent.
+ */
+(global as any).inspectCreep = (name: string): string => {
+    const creep = Game.creeps[name];
+    if (!creep) {
+        // Check if it's dead but still in Memory
+        const mem = Memory.creeps?.[name];
+        if (mem) return `❌ Creep "${name}" is dead (Memory still exists: ${JSON.stringify(mem)})`;
+        return `❌ Creep "${name}" not found in Game.creeps or Memory.`;
+    }
+
+    const lines: string[] = [];
+    lines.push(`═══════════════════ inspectCreep("${name}") ═══════════════════`);
+
+    // ── 1. Identity & Position ─────────────────────────────────────────────
+    lines.push(`📍 POS:     (${creep.pos.x},${creep.pos.y}) in ${creep.pos.roomName} | TTL: ${creep.ticksToLive ?? "spawning"}`);
+    lines.push(`💀 BODY:    ${creep.body.map(p => p.type[0].toUpperCase()).join('')}`);
+    lines.push(`📦 STORE:   energy=${creep.store.getUsedCapacity(RESOURCE_ENERGY)}/${creep.store.getCapacity(RESOURCE_ENERGY)} | fatigue=${creep.fatigue}`);
+
+    // ── 2. Memory snap ────────────────────────────────────────────────────
+    const mem = creep.memory as any;
+    lines.push(`🧠 MEMORY:  role=${mem.role ?? "?"} | colony=${mem.colony ?? "?"} | overlord=${mem._overlord ?? "none"} | collecting=${mem.collecting ?? "?"}`);
+
+    // ── 3. Task ───────────────────────────────────────────────────────────
+    if (mem.task) {
+        const t = mem.task;
+        const targetObj = t.targetId ? Game.getObjectById(t.targetId) : null;
+        const targetDesc = targetObj
+            ? `${(targetObj as any).structureType ?? (targetObj as any).resourceType ?? "obj"} @ (${(targetObj as any).pos?.x},${(targetObj as any).pos?.y})`
+            : `id=${t.targetId ?? "none"} (MISSING — target may be dead)`;
+        lines.push(`📋 TASK:    ${t.name} → ${targetDesc}`);
+    } else {
+        lines.push(`📋 TASK:    none`);
+    }
+
+    // ── 4. Zerg heap state (path, stuck, oscillation) ────────────────────
+    // Colony.zergs is a Map — find the right colony from Memory
+    const colonyName: string = mem.colony;
+    let zerg: any = null;
+    if (colonyName) {
+        // Kernel processes aren't on global, but ColonyProcess saves colony on heap via GlobalCache
+        // Colonies register Zergs lazily — look up if already registered
+        const colonyProcesses = (global as any).__kernel?.getProcessesByName?.("colony") ?? [];
+        for (const proc of colonyProcesses) {
+            if ((proc as any).colonyName === colonyName) {
+                const colony = (proc as any).colony;
+                if (colony) zerg = colony.zergs?.get(name);
+                break;
+            }
+        }
+    }
+
+    if (zerg) {
+        const path = zerg._path;
+        lines.push(`🛣️  PATH:    ${path
+            ? `step=${path.step}/${path.path.length} ttl=${path.ticksToLive} target=${path.target}`
+            : "no cached path"
+            }`);
+        lines.push(`😵 STUCK:   stuckCount=${zerg._stuckCount} | oscillationCount=${zerg._oscillationCount}`);
+        lines.push(`🚧 BLOCKED: blockedPos=${zerg._blockedPos ? `(${zerg._blockedPos.x},${zerg._blockedPos.y})` : "none"}`);
+        lines.push(`📜 HIST:    posHistory=${JSON.stringify(zerg._posHistory ?? [])}`);
+    } else {
+        lines.push(`🛣️  PATH:    Zerg not in heap (global reset wipe? colony="${colonyName ?? "unknown"}")`);
+    }
+
+    // ── 5. Surroundings — nearby sources ─────────────────────────────────
+    const nearSources = creep.pos.findInRange(FIND_SOURCES, 5) as Source[];
+    const nearActive = creep.pos.findInRange(FIND_SOURCES_ACTIVE, 5) as Source[];
+    lines.push(`⛏️  SOURCES: ${nearSources.length} in range 5 (${nearActive.length} active) — ${nearSources.map(s => `(${s.pos.x},${s.pos.y}) E=${s.energy}/${s.energyCapacity}`).join(" | ") || "none"
+        }`);
+
+    // ── 6. Logistics reservations ─────────────────────────────────────────
+    if (colonyName && zerg) {
+        const colonyProcesses2 = (global as any).__kernel?.getProcessesByName?.("colony") ?? [];
+        for (const proc of colonyProcesses2) {
+            if ((proc as any).colonyName === colonyName) {
+                const colony = (proc as any).colony;
+                if (colony?.logistics) {
+                    const net = colony.logistics;
+                    const incoming = net.incomingReservations?.get(name) ?? 0;
+                    const outgoing = net.outgoingReservations?.get(name) ?? 0;
+                    const offerCount = net.offerIds?.length ?? 0;
+                    const requestCount = net.requesters?.length ?? 0;
+                    lines.push(`📊 LOGISTICS: incoming=${incoming} outgoing=${outgoing} | offers=${offerCount} requests=${requestCount}`);
+                }
+                break;
+            }
+        }
+    } else {
+        lines.push(`📊 LOGISTICS: colony not in heap`);
+    }
+
+    // ── 7. TrafficManager — pending move intent ───────────────────────────
+    // intents is cleared each tick after run(), so this only works if
+    // inspectCreep() is called during the tick (e.g. from a flag/console hook)
+    // In practice from console it reads last-tick state from heap.
+    const DIR_NAMES: Record<number, string> = {
+        1: "TOP", 2: "TOP_RIGHT", 3: "RIGHT", 4: "BOTTOM_RIGHT",
+        5: "BOTTOM", 6: "BOTTOM_LEFT", 7: "LEFT", 8: "TOP_LEFT"
+    };
+    const intents: any[] = (TrafficManager as any).intents ?? [];
+    const myIntent = intents.find((i: any) => i.zerg?.name === name);
+    if (myIntent) {
+        lines.push(`🚦 TRAFFIC: dir=${DIR_NAMES[myIntent.direction] ?? myIntent.direction} priority=${myIntent.priority}`);
+    } else {
+        lines.push(`🚦 TRAFFIC: no pending move intent (already resolved this tick or idle)`);
+    }
+
+    lines.push(`═══════════════════════════════════════════════════════════════`);
+    const report = lines.join("\n");
+    console.log(report);
+    return report;
+};
+
 
 // -------------------------------------------------------------------------
 // Register ALL process factories (must happen before deserialization)
@@ -228,6 +351,9 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
     // --- 3. Prune stale colony processes (handles respawn) ---
     pruneStaleColonies(kernel);
+
+    // Expose kernel for console debug tools (inspectCreep etc.)
+    (global as any).__kernel = kernel;
 
     // --- 4. Global Manager — spawn colony processes for owned rooms ---
     GlobalManager.init(kernel);
