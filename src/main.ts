@@ -114,6 +114,27 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     return "🔄 Bot reset complete. Fresh bootstrap will run next tick.";
 };
 
+/**
+ * Force the orphan adoption cycle to run immediately on all colonies.
+ * Normally runs every 50 ticks automatically.
+ * Usage: adoptOrphans()
+ */
+(global as any).adoptOrphans = (): string => {
+    const kernel = (global as any).__kernel;
+    if (!kernel) return "❌ Kernel not on global — wait one tick and try again.";
+    const procs = kernel.getProcessesByName("colony") as any[];
+    if (procs.length === 0) return "❌ No colony processes found.";
+    let total = 0;
+    for (const proc of procs) {
+        const colony = proc.colony;
+        if (colony) {
+            (colony as any).adoptOrphans();
+            total++;
+        }
+    }
+    return `✅ Adoption cycle forced on ${total} colony/colonies.`;
+};
+
 
 /**
  * Dump diagnostic info for a named creep.
@@ -194,19 +215,42 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     lines.push(`⛏️  SOURCES: ${nearSources.length} in range 5 (${nearActive.length} active) — ${nearSources.map(s => `(${s.pos.x},${s.pos.y}) E=${s.energy}/${s.energyCapacity}`).join(" | ") || "none"
         }`);
 
-    // ── 6. Logistics reservations ─────────────────────────────────────────
-    if (colonyName && zerg) {
+    // ── 6. Logistics state ────────────────────────────────────────────────
+    if (colonyName) {
         const colonyProcesses2 = (global as any).__kernel?.getProcessesByName?.("colony") ?? [];
         for (const proc of colonyProcesses2) {
             if ((proc as any).colonyName === colonyName) {
                 const colony = (proc as any).colony;
                 if (colony?.logistics) {
                     const net = colony.logistics;
-                    const incoming = net.incomingReservations?.get(name) ?? 0;
-                    const outgoing = net.outgoingReservations?.get(name) ?? 0;
-                    const offerCount = net.offerIds?.length ?? 0;
-                    const requestCount = net.requesters?.length ?? 0;
-                    lines.push(`📊 LOGISTICS: incoming=${incoming} outgoing=${outgoing} | offers=${offerCount} requests=${requestCount}`);
+                    const inRes = net.incomingReservations?.get(name) ?? 0;
+                    const outRes = net.outgoingReservations?.get(name) ?? 0;
+                    const offerIds: string[] = net.offerIds ?? [];
+                    const requests: any[] = net.requesters ?? [];
+                    lines.push(`📊 LOGISTICS: self-incoming=${inRes} self-outgoing=${outRes}`);
+
+                    // Show each offer with raw and effective amounts
+                    if (offerIds.length === 0) {
+                        lines.push(`   OFFERS:   none registered`);
+                    } else {
+                        for (const oid of offerIds) {
+                            const obj = Game.getObjectById(oid as Id<any>);
+                            const raw = obj ? (('store' in obj ? (obj as any).store[RESOURCE_ENERGY] : ('amount' in obj ? (obj as any).amount : 0))) : "MISSING";
+                            const eff = typeof raw === "number" ? (raw + (net.incomingReservations?.get(oid) ?? 0) - (net.outgoingReservations?.get(oid) ?? 0)) : "?";
+                            const type = obj ? (('structureType' in obj) ? (obj as any).structureType : ('amount' in obj ? "drop" : "tomb/ruin")) : "dead";
+                            lines.push(`   OFFER:    ${type} raw=${raw} eff=${eff} [${oid.slice(-6)}]`);
+                        }
+                    }
+                    // Show requests summary
+                    if (requests.length === 0) {
+                        lines.push(`   REQUESTS: none registered`);
+                    } else {
+                        for (const r of requests) {
+                            const incoming = net.incomingReservations?.get(r.targetId) ?? 0;
+                            const deficit = r.amount - incoming;
+                            lines.push(`   REQUEST:  pri=${r.priority} deficit=${deficit}/${r.amount} [${r.targetId.slice(-6)}]`);
+                        }
+                    }
                 }
                 break;
             }
@@ -216,9 +260,6 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     }
 
     // ── 7. TrafficManager — pending move intent ───────────────────────────
-    // intents is cleared each tick after run(), so this only works if
-    // inspectCreep() is called during the tick (e.g. from a flag/console hook)
-    // In practice from console it reads last-tick state from heap.
     const DIR_NAMES: Record<number, string> = {
         1: "TOP", 2: "TOP_RIGHT", 3: "RIGHT", 4: "BOTTOM_RIGHT",
         5: "BOTTOM", 6: "BOTTOM_LEFT", 7: "LEFT", 8: "TOP_LEFT"
@@ -236,6 +277,7 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     console.log(report);
     return report;
 };
+
 
 
 // -------------------------------------------------------------------------

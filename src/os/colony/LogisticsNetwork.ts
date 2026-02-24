@@ -361,14 +361,19 @@ export class LogisticsNetwork {
 
         for (const h of haulers) {
             if (!h.pos) continue;
-            const isWorker = (h.memory as any)?.role === "worker" || (h.memory as any)?.role === "upgrader";
-            const threshold = isWorker ? 10 : 50;
+            // Post-match validation threshold (used in matchWithdraw re-check):
+            // workers tolerate lower amounts (10), transporters need 50+ to make the trip worthwhile.
+            // For batch BUILDING we use threshold=1 — the Gale-Shapley match itself will
+            // prefer high-energy sources via scoring. Using the same 50 threshold here
+            // causes the hauler to build zero preferences when all offers are slightly
+            // over-reserved by batch-mates, leaving it unmatched even though energy exists.
+            const BUILD_THRESHOLD = 1;
 
             // Rank offers by score descending
             const scored: { id: string; score: number }[] = [];
             for (const offerId of this.offerIds) {
                 const effectiveAmount = this.getEffectiveAmount(offerId);
-                if (effectiveAmount <= threshold) continue;
+                if (effectiveAmount <= BUILD_THRESHOLD) continue;
 
                 const target = Game.getObjectById(offerId);
                 if (!target) continue;
