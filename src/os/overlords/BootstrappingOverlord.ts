@@ -290,8 +290,10 @@ export class BootstrappingOverlord extends Overlord {
                     if (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                         // 1. Dump into storage if available
                         bootstrapper.setTask(new TransferTask(storage.id as Id<Structure>));
-                    } else {
-                        // 2. Build the nearest construction site (extensions, containers, etc.)
+                    } else if (creep.getActiveBodyparts(WORK) > 0) {
+                        // 2. Build/upgrade — WORK parts required.
+                        // [CARRY, MOVE] Hauler bootstrappers have NO WORK parts and MUST NOT
+                        // reach this branch — BuildTask would loop forever with ERR_NO_BODYPART.
                         const site = creep.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
                         if (site) {
                             bootstrapper.setTask(new BuildTask(site.id));
@@ -301,9 +303,11 @@ export class BootstrappingOverlord extends Overlord {
                             if (controller && controller.my) {
                                 bootstrapper.setTask(new UpgradeTask(controller.id));
                             }
-                            // If none of the above apply, the creep is idle — this is fine;
-                            // it will re-evaluate next tick once conditions change.
                         }
+                    } else {
+                        // No-WORK hauler with nowhere to deliver — reset to collecting so it
+                        // picks up from the drops and tries again next delivery cycle.
+                        mem.collecting = true;
                     }
                 }
             }
