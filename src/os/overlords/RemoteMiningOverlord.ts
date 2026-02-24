@@ -40,10 +40,78 @@ export class RemoteMiningOverlord extends Overlord {
                 Memory.rooms[room.name].isDangerous = true;
             }
             Memory.rooms[room.name].dangerUntil = Game.time + 100;
+
+            // T1.7 — Dynamic Invader Counter-Body
+            // Spawn a counter-creep matched to the actual hostile body composition.
+            // One counter per remote room; counter self-expires when danger clears.
+            const hasCounter = this.zergs.some(
+                z => z.isAlive() && (z.memory as any)?.role === "counter" && (z.memory as any)?.targetRoom === this.targetRoom
+            );
+            if (!hasCounter) {
+                const capacity = this.colony.room?.energyCapacityAvailable ?? 300;
+                const hasHeal = hostiles.some(h => h.body.some(p => p.type === HEAL));
+                const hasAttack = hostiles.some(h => h.body.some(p => p.type === ATTACK));
+                const hasRanged = hostiles.some(h => h.body.some(p => p.type === RANGED_ATTACK));
+
+                let counterBody: BodyPartConstant[];
+                let reason: string;
+
+                if (hasAttack && hasHeal) {
+                    // Melee + healer pair — need high sustained DPS at range
+                    counterBody = [RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
+                        RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE];
+                    reason = "melee+healer → heavy ranged";
+                } else if (hasRanged && !hasAttack) {
+                    // Ranged only — rush in close where ranged attack is less effective
+                    counterBody = [ATTACK, ATTACK, ATTACK, ATTACK, MOVE, MOVE, MOVE, MOVE];
+                    reason = "ranged-only → melee rusher";
+                } else {
+                    // Pure melee — stay at range 3 and kite
+                    counterBody = [RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,
+                        MOVE, MOVE, MOVE, MOVE];
+                    reason = "melee → ranged kiter";
+                }
+
+                // Only spawn if room can actually afford the body
+                const bodyCost = counterBody.reduce((s, p) => s + BODYPART_COST[p], 0);
+                if (capacity >= bodyCost) {
+                    log.alert(`counter-${this.targetRoom}`, `Spawning counter (${reason}) for ${this.targetRoom}.`);
+                    this.colony.hatchery.enqueue({
+                        priority: 200,
+                        bodyTemplate: counterBody,
+                        overlord: this,
+                        name: `counter_${this.targetRoom}_${Game.time}`,
+                        memory: { role: "counter", targetRoom: this.targetRoom }
+                    });
+                }
+            }
             return;
         } else if (Memory.rooms[room.name].isDangerous && Game.time > (Memory.rooms[room.name].dangerUntil || 0)) {
             delete Memory.rooms[room.name].isDangerous;
             delete Memory.rooms[room.name].dangerUntil;
+        }
+
+        // T1.6 — InvaderCore Detection & Cleanup
+        // Cores reserve the controller for Invaders, blocking our reservation.
+        // Spawn a Cleaner (WORK ×5, MOVE ×5) using dismantle() — 50× more
+        // efficient than attack() against structures. Suspend all mining while
+        // the core is alive (reservation is invalid anyway).
+        const cores = room.find(FIND_HOSTILE_STRUCTURES, {
+            filter: (s: Structure) => (s as any).structureType === STRUCTURE_INVADER_CORE
+        });
+        if (cores.length > 0) {
+            const hasCleaner = this.zergs.some(z => z.isAlive() && (z.memory as any)?.role === "cleaner");
+            if (!hasCleaner) {
+                log.alert(`core-${this.targetRoom}`, `InvaderCore detected in ${this.targetRoom}! Spawning Cleaner.`);
+                this.colony.hatchery.enqueue({
+                    priority: 150,
+                    bodyTemplate: [WORK, WORK, WORK, WORK, WORK, MOVE, MOVE, MOVE, MOVE, MOVE],
+                    overlord: this,
+                    name: `cleaner_${this.targetRoom}_${Game.time}`,
+                    memory: { role: "cleaner", targetRoom: this.targetRoom }
+                });
+            }
+            return; // Suspend normal mining until core is gone
         }
 
         if (this.sites.length === 0) {
@@ -57,6 +125,28 @@ export class RemoteMiningOverlord extends Overlord {
 
         for (const site of this.sites) {
             site.refreshStructureIds();
+
+            // T1.5 — EPT Profitability Gate
+            // Skip spawning for sites where body cost exceeds energy income.
+            // Re-evaluate every 5000 ticks in case roads are built or distance changes.
+            const roomMem = Memory.rooms[this.targetRoom] as any;
+            const unprofitableUntil = roomMem?.unprofitableUntil ?? 0;
+            if (unprofitableUntil > Game.time) continue; // Suspended
+
+            if (site.distance > 0 && Game.time % 500 === 0) {
+                const minerCostPerTick = 700 / 1500;  // ~worst-case miner body / creep lifetime
+                const haulerCostPerTick = 450 / 1500; // ~worst-case hauler body / creep lifetime
+                const eptGross = room.controller?.reservation ? 10 : 5; // reserved = 3000 cap
+                const eptNet = eptGross - minerCostPerTick - haulerCostPerTick;
+
+                if (site.distance > 150 && eptNet < 3) {
+                    log.warning(`Remote site ${site.sourceId.slice(-4)} in ${this.targetRoom} is unprofitable (dist=${site.distance}, eptNet=${eptNet.toFixed(1)}). Suspending for 5000 ticks.`);
+                    if (!Memory.rooms[this.targetRoom]) Memory.rooms[this.targetRoom] = {} as any;
+                    (Memory.rooms[this.targetRoom] as any).unprofitableUntil = Game.time + 5000;
+                    continue;
+                }
+            }
+
             this.handleSpawning(site);
         }
     }
@@ -137,6 +227,66 @@ export class RemoteMiningOverlord extends Overlord {
     run(): void {
         const isDangerous = Memory.rooms[this.targetRoom]?.isDangerous;
         const fallbackPos = this.colony.room?.storage?.pos || this.colony.room?.find(FIND_MY_SPAWNS)?.[0]?.pos;
+
+        // T1.6 — Cleaner micro: travel to target room and dismantle InvaderCore
+        const cleaners = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "cleaner");
+        for (const cleaner of cleaners) {
+            if (!cleaner.isAlive()) continue;
+            if (cleaner.room?.name !== this.targetRoom) {
+                cleaner.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
+                continue;
+            }
+            const core = cleaner.room.find(FIND_HOSTILE_STRUCTURES, {
+                filter: (s: Structure) => (s as any).structureType === STRUCTURE_INVADER_CORE
+            })[0];
+            if (core) {
+                if (cleaner.pos?.isNearTo(core.pos)) {
+                    cleaner.dismantle(core as any);
+                } else {
+                    cleaner.travelTo(core.pos, 1);
+                }
+            }
+            // Core gone — cleaner idles until it expires naturally
+        }
+
+        // T1.7 — Counter-creep micro: travel to target room and engage hostiles
+        const counters = this.zergs.filter(z => z.isAlive() && (z.memory as any)?.role === "counter");
+        for (const counter of counters) {
+            if (!counter.isAlive()) continue;
+            if (counter.room?.name !== this.targetRoom) {
+                counter.travelTo(new RoomPosition(25, 25, this.targetRoom), 20);
+                continue;
+            }
+            const room = Game.rooms[this.targetRoom];
+            const hostiles = room?.find(FIND_HOSTILE_CREEPS) ?? [];
+            if (hostiles.length === 0) {
+                // Room clear — idle at home until TTL
+                if (fallbackPos) counter.travelTo(fallbackPos, 3);
+                continue;
+            }
+            // Prioritize healers (they sustain the squad), then highest-threat
+            const target = hostiles.sort((a, b) => {
+                const aHeal = a.getActiveBodyparts(HEAL);
+                const bHeal = b.getActiveBodyparts(HEAL);
+                if (aHeal !== bHeal) return bHeal - aHeal;
+                return b.getActiveBodyparts(ATTACK) + b.getActiveBodyparts(RANGED_ATTACK)
+                    - (a.getActiveBodyparts(ATTACK) + a.getActiveBodyparts(RANGED_ATTACK));
+            })[0];
+
+            const hasRanged = (counter.creep?.getActiveBodyparts(RANGED_ATTACK) ?? 0) > 0;
+            const hasAttack = (counter.creep?.getActiveBodyparts(ATTACK) ?? 0) > 0;
+            const dist = counter.pos?.getRangeTo(target.pos) ?? 99;
+
+            if (hasRanged && dist > 3) {
+                counter.travelTo(target.pos, 3);
+            } else if (hasRanged) {
+                counter.rangedAttack(target);
+                if (dist < 3) counter.travelTo(target.pos, 3); // maintain range
+            } else if (hasAttack) {
+                if (dist > 1) counter.travelTo(target.pos, 1);
+                else counter.attack(target);
+            }
+        }
 
         for (const miner of this.miners) {
             if (!miner.isAlive() || miner.task) continue;

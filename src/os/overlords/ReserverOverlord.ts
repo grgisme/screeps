@@ -26,10 +26,26 @@ export class ReserverOverlord extends Overlord {
         if (this.reservers.length > 0) return;
 
         const room = Game.rooms[this.targetRoom];
-        if (!room || !room.controller) return;
 
-        const reservation = room.controller.reservation;
-        const ticksToEnd = reservation ? reservation.ticksToEnd : 0;
+        // T1.4 — Blind Reservation Fallback:
+        // When the reserver room isn't visible this tick, read the last-known
+        // ticksToEnd from Memory (written whenever we DO have vision).
+        // Without this, init() returns 0 silently and the reservation expires.
+        let ticksToEnd = 0;
+        if (room?.controller) {
+            ticksToEnd = room.controller.reservation?.ticksToEnd ?? 0;
+            // Persist for future blind ticks
+            if (!Memory.rooms) Memory.rooms = {};
+            if (!Memory.rooms[this.targetRoom]) Memory.rooms[this.targetRoom] = {} as any;
+            (Memory.rooms[this.targetRoom] as any).reservationTicksToEnd = ticksToEnd;
+        } else {
+            // No vision — fall back to last known value
+            ticksToEnd = (Memory.rooms?.[this.targetRoom] as any)?.reservationTicksToEnd ?? 0;
+            // Decrement the cached value each tick we're blind so it stays accurate
+            if (Memory.rooms?.[this.targetRoom] && (Memory.rooms[this.targetRoom] as any).reservationTicksToEnd > 0) {
+                (Memory.rooms[this.targetRoom] as any).reservationTicksToEnd -= 1;
+            }
+        }
 
         if (ticksToEnd < this.getThreshold()) {
             log.info(`Reservation low in ${this.targetRoom}: ${ticksToEnd} < ${this.getThreshold()}. Requesting reserver.`);
