@@ -111,10 +111,9 @@ export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
     // Nuke heap
     GlobalCache.clear();
     (global as any)._heap = undefined;
-    // Fix #2: Removed dead reference to ColonyProcess.colonies (static registry
-    // no longer exists — colonies are tracked by the Kernel's process table).\
     return "🔄 Bot reset complete. Fresh bootstrap will run next tick.";
 };
+
 
 /**
  * Dump diagnostic info for a named creep.

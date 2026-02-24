@@ -245,6 +245,15 @@ export class Colony {
             }
         }
 
+        // ── Orphan Adoption ──────────────────────────────────────────────────
+        // Every 50 ticks scan all room creeps for orphans — creeps whose memory
+        // has lost their colony or _overlord assignment (e.g. after resetBot(),
+        // a global reset with a stale heap, or a Hatchery mis-stamp).
+        // Re-assign them to the best matching overlord based on body parts.
+        if (Game.time % 50 === 17 && this.room) {
+            this.adoptOrphans();
+        }
+
         // ── Step 7: Inter-Colony Rescue Dispatch ─────────────────────────────
         // GlobalManager.run() sets memory.rescueTarget when a nearby colony
         // enters prolonged blackout. We enqueue a large CARRY transporter here
@@ -357,6 +366,94 @@ export class Colony {
                     .join(', ');
                 log.info(`[${this.name}] Expansion candidates: ${summary}`);
             }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Orphan Adoption — Subreaper
+    // -----------------------------------------------------------------------
+
+    /**
+     * Scan for creeps in this room whose memory is blank or whose overlord
+     * assignment is missing. Re-stamp their memory with colony + overlord +
+     * role based on their body part composition so the correct overlord can
+     * adopt them on the next tick.
+     *
+     * Body heuristic (in priority order):
+     *   ATTACK / RANGED_ATTACK / TOUGH  → defense
+     *   Majority WORK (≥ CARRY+MOVE)   → mining  (bootstrapping if tiny 1W body)
+     *   Majority CARRY, no WORK         → bootstrapping (if tiny ≤50 cap) else transporter
+     *   Otherwise                       → worker
+     */
+    private adoptOrphans(): void {
+        const room = this.room;
+        if (!room) return;
+
+        const allRoomCreeps = room.find(FIND_MY_CREEPS);
+        let adopted = 0;
+
+        for (const creep of allRoomCreeps) {
+            const mem = creep.memory as any;
+
+            // Only touch creeps with no colony OR no overlord assignment
+            if (mem.colony && mem._overlord) continue;
+
+            // Count body parts
+            let work = 0, carry = 0, move = 0, attack = 0, ranged = 0, tough = 0, heal = 0;
+            for (const part of creep.body) {
+                if (part.type === WORK) work++;
+                else if (part.type === CARRY) carry++;
+                else if (part.type === MOVE) move++;
+                else if (part.type === ATTACK) attack++;
+                else if (part.type === RANGED_ATTACK) ranged++;
+                else if (part.type === TOUGH) tough++;
+                else if (part.type === HEAL) heal++;
+            }
+
+            let overlordId: string;
+            let role: string;
+
+            if (attack > 0 || ranged > 0 || (tough > 0 && heal > 0)) {
+                overlordId = "defense";
+                role = "defender";
+            } else if (work > 0 && work >= carry) {
+                // Majority-WORK → miner, unless it's a tiny 1W pioneer → bootstrapper
+                if (work === 1 && carry >= 1) {
+                    overlordId = "bootstrapping";
+                    role = "bootstrapper";
+                } else {
+                    overlordId = "mining";
+                    role = "miner";
+                }
+            } else if (carry > 0 && work === 0) {
+                // Pure CARRY — tiny (≤50 cap) = bootstrapper hauler, larger = transporter
+                const cap = creep.store.getCapacity(RESOURCE_ENERGY) ?? 0;
+                if (cap <= 50) {
+                    overlordId = "bootstrapping";
+                    role = "bootstrapper";
+                } else {
+                    overlordId = "transporter";
+                    role = "transporter";
+                }
+            } else {
+                overlordId = "worker";
+                role = "worker";
+            }
+
+            // Stamp memory
+            mem.colony = this.name;
+            mem._overlord = overlordId;
+            mem.role = role;
+
+            // Register as a Zerg so the overlord's zergs getter picks it up
+            this.registerZerg(creep);
+
+            log.warning(`Adopted orphan ${creep.name} as ${role} → ${overlordId}`);
+            adopted++;
+        }
+
+        if (adopted > 0) {
+            log.warning(`${this.name}: Adopted ${adopted} orphan creep(s) this scan.`);
         }
     }
 
