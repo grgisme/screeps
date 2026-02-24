@@ -265,23 +265,40 @@ export class WorkerOverlord extends Overlord {
                     continue;
                 }
 
-                // 2. Peasant Mode fallback — harvest directly from source
+                // 2. Peasant Mode fallback — harvest directly from source.
+                // Cap: max 1 worker per source to prevent adjacency contention.
+                // Build a map of how many workers already claimed each source this tick.
+                const claimedSourceCounts = new Map<string, number>();
+                for (const w of this.workers) {
+                    if (w === worker) continue;
+                    const taskMem = (w.memory as any)?.task;
+                    if (taskMem?.name === "Harvest") {
+                        claimedSourceCounts.set(taskMem.targetId,
+                            (claimedSourceCounts.get(taskMem.targetId) ?? 0) + 1);
+                    }
+                }
 
-                // Miner Deference: use pre-hoisted activeSources array (Fix #2)
-                const source = worker.pos?.findClosestByRange(activeSources);
+                // Max workers per source = number of open adjacent tiles, capped at 1 for now
+                // (one dedicated harvester per source avoids all adjacency fights).
+                const availableSources = activeSources.filter(s => {
+                    const claimed = claimedSourceCounts.get(s.id) ?? 0;
+                    return claimed < 1;
+                });
+
+                const source = worker.pos?.findClosestByRange(
+                    availableSources.length > 0 ? availableSources : activeSources
+                );
 
                 if (source) {
                     worker.setTask(new HarvestTask(source.id));
                 } else {
-                    // All sources have miners — use pre-hoisted filledContainers array (Fix #2)
+                    // All sources have miners or workers — use pre-hoisted filledContainers array
                     const container = worker.pos?.findClosestByRange(filledContainers);
 
                     if (container) {
                         worker.setTask(new WithdrawTask(container.id as Id<Structure>));
                     } else {
-                        // Anchor to nearest container — use pre-hoisted anyContainers array (Fix #2)
-                        // Fix: Skip hatchery containers when fillers are active — workers anchoring
-                        // there compete with transporters for the same corridor tiles.
+                        // Anchor to nearest container
                         const hasFillerCreeps = this.colony.creeps.some(c => (c.memory as any)?.role === "filler");
                         const candidateContainers = hasFillerCreeps
                             ? anyContainers.filter(c => !this.isInHatcheryZone(c.pos))
@@ -291,13 +308,11 @@ export class WorkerOverlord extends Overlord {
                         );
 
                         if (anyContainer) {
-                            // Anchor to container position — do NOT issue travelTo; just hold still
                             if (worker.pos && !worker.pos.inRangeTo(anyContainer, 1)) {
                                 worker.travelTo(anyContainer, 1);
                             }
-                            // else: already adjacent — stay put, remain a static sink
                         } else {
-                            // Last resort: share a mined source rather than idle
+                            // Last resort: share ANY active source (all preferred slots taken)
                             const anySource = worker.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
                             if (anySource) {
                                 worker.setTask(new HarvestTask(anySource.id));
@@ -305,6 +320,7 @@ export class WorkerOverlord extends Overlord {
                         }
                     }
                 }
+
             } else {
                 // Has energy — work priority cascade
 
