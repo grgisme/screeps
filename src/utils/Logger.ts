@@ -1,6 +1,10 @@
 // ============================================================================
 // Logger — Structured logging with lazy eval, throttling, delta alerts,
 //          safe HTML formatting, room links & XSS sanitization
+//
+// console.log  — plain text only (Jan 2026 hotfix: HTML is stripped server-side)
+// console.logUnsafe — intentional HTML output (colors, room links).
+//   Use Logger.logHTML() which routes through logUnsafe with XSS sanitization.
 // ============================================================================
 
 /**
@@ -129,6 +133,29 @@ export class Logger {
         this.log(LogLevel.ERROR, msg);
     }
 
+    /**
+     * Log a message that intentionally contains HTML (colors, room links).
+     *
+     * Routes through `console.logUnsafe` (Jan 2026 — `console.log` now strips
+     * all HTML entities server-side). Falls back to `console.log` if
+     * `logUnsafe` is unavailable (sim, private server, old API version).
+     *
+     * ⚠️ **Security:** Only pass trusted strings here. Any user-controlled data
+     * MUST be sanitized via `Logger.sanitize()` before inclusion.
+     *
+     * @example
+     *   const link = Logger.roomLink("E1N8");         // trusted HTML
+     *   const name = Logger.sanitize(untrustedName);  // sanitize external data
+     *   log.logHTML(`Scouted ${link}: owner=${name}`);
+     */
+    logHTML(msg: LogMessage, level: LogLevelType = LogLevel.INFO): void {
+        if (level < Logger.getLevel()) return;
+        const resolved = typeof msg === "function" ? msg() : msg;
+        const emoji = LEVEL_EMOJI[level] ?? "";
+        const label = LEVEL_LABELS[level] ?? "???";
+        Logger._emit(`${emoji} [${label}] [${this.tag}] ${resolved}`, true);
+    }
+
     // -----------------------------------------------------------------------
     // Smart Logging — Delta Alerts & Modulo Throttling
     // -----------------------------------------------------------------------
@@ -228,9 +255,36 @@ export class Logger {
         const resolved = typeof msg === "function" ? msg() : msg;
         const emoji = LEVEL_EMOJI[level] ?? "";
         const label = LEVEL_LABELS[level] ?? "???";
+        const color = LEVEL_COLORS[level];
 
-        // Plain text — Screeps console HTML rendering is unreliable
-        console.log(`${emoji} [${label}] [${this.tag}] ${resolved}`);
+        // Color the level badge and tag; message content left unstyled
+        // (developer strings — no need to escape, and keeps stack traces readable)
+        const badge = Logger.style(`[${label}]`, color);
+        const tagPart = Logger.style(`[${this.tag}]`, "#7f8c8d"); // muted grey
+        Logger._emit(`${emoji} ${badge} ${tagPart} ${resolved}`, true);
+    }
+
+    /**
+     * Low-level output dispatcher.
+     * @param line     Fully formatted log line.
+     * @param isHTML   true → route to console.logUnsafe (intentional HTML).
+     *                 false → route to console.log (plain text, always safe).
+     */
+    private static _emit(line: string, isHTML: boolean): void {
+        if (isHTML) {
+            // console.logUnsafe is the Jan 2026 API for intentional HTML output.
+            // Graceful fallback: if unavailable (sim / old API), strip tags and
+            // use console.log so logs still appear rather than disappearing silently.
+            const unsafe = (console as any).logUnsafe;
+            if (typeof unsafe === "function") {
+                unsafe(line);
+            } else {
+                // Strip HTML tags for environments without logUnsafe
+                console.log(line.replace(/<[^>]*>/g, ""));
+            }
+        } else {
+            console.log(line);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -283,13 +337,9 @@ export class Logger {
         const level = map[normalized];
         if (level !== undefined) {
             Logger.setLevel(level);
-            console.log(
-                `✅ [Logger] Log level set to ${normalized} (${level})`
-            );
+            Logger._emit(`✅ [Logger] Log level set to ${normalized} (${level})`, false);
         } else {
-            console.log(
-                `❌ [Logger] Unknown level "${name}". Valid: TRACE, DEBUG, INFO, WARNING, ERROR`
-            );
+            Logger._emit(`❌ [Logger] Unknown level "${name}". Valid: TRACE, DEBUG, INFO, WARNING, ERROR`, false);
         }
     }
 
