@@ -502,10 +502,16 @@ export class Zerg {
                 const blockedDir = parseInt(this._path.path[this._path.step], 10) as DirectionConstant;
                 const blockedTarget = getPositionAtDirection(currentPos, blockedDir);
 
-                // Never penalize the destination tile.
-                // If we are queued behind another miner at the workstation, penalizing
-                // their tile causes PathFinder to return a 0-length path, dropping all intents.
-                const isFinalStep = this._path.step >= this._path.path.length - 1;
+                // Miners: never penalize the workstation tile (the container they MUST stand on).
+                // If a miner is queued behind another miner, penalizing the container tile
+                // causes PathFinder to return a 0-length path, breaking all path intents.
+                //
+                // Non-miners (transporters, workers, etc.): always penalize the blocking tile,
+                // even on the final step. A transporter on a 1-step path has isFinalStep=true
+                // for EVERY tick it's stuck, so without this role check blockedPos is NEVER
+                // set and the same broken path is recomputed forever. (500-tick deadlock)
+                const isMiner = this.creep?.memory.role === "miner";
+                const isFinalStep = isMiner && this._path.step >= this._path.path.length - 1;
 
                 if (blockedTarget && !blockedTarget.isEqualTo(currentPos) && !isFinalStep) {
                     this._blockedPos = blockedTarget;
