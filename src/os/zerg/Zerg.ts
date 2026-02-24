@@ -29,6 +29,7 @@ import { TrafficManager } from "../infrastructure/TrafficManager";
 import { MovePriority } from "../infrastructure/MovePriority";
 import { Logger } from "../../utils/Logger";
 import { GlobalCache } from "../../kernel/GlobalCache";
+import { PathInflationGuard } from "../../kernel/PathInflationGuard";
 import { getPositionAtDirection } from "../../utils/RoomPosition";
 
 const log = new Logger("Zerg");
@@ -527,6 +528,16 @@ export class Zerg {
 
         // ── Road-Aware Pathfinding with Static/Dynamic CostMatrix ──
         if (!this._path) {
+            // ── Staggered Inflation Guard (post-reset CPU spike prevention) ──
+            // On the first RAMP_TICKS ticks after a global reset, limit the number
+            // of PathFinder.search calls to K per tick (K scales with bucket).
+            // Creeps that don't get a budget slot idle for one tick and retry next
+            // tick with a fresh (typically larger) budget.
+            // Creeps that were seeded via seedPath() already have _path set and
+            // never reach this block.
+            if (!PathInflationGuard.canInflate()) {
+                return; // Idle this tick — budget exhausted, retry next tick
+            }
             // ── Broadphase Corridor Routing ──
             // Use Game.map.findRoute to build a room corridor for inter-room
             // travel. This prevents PathFinder from flood-filling into

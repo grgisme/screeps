@@ -14,6 +14,7 @@ import { SCRIPT_VERSION, SCRIPT_SUMMARY } from "./version";
 import { TrafficManager } from "./os/infrastructure/TrafficManager";
 import { GlobalManager } from "./kernel/GlobalManager";
 import { SegmentManager } from "./kernel/memory/SegmentManager";
+import { PathInflationGuard } from "./kernel/PathInflationGuard";
 
 const log = new Logger("OS");
 
@@ -209,6 +210,12 @@ export const loop = ErrorMapper.wrapLoop(() => {
 
     // --- 5. Ensure profiler process exists ---
     ensureProfiler(kernel);
+
+    // --- 5b. Staggered Path Inflation Guard ---
+    // Must run BEFORE kernel.run() so the per-tick budget is ready when
+    // Zerg.travelTo() calls canInflate(). On reset ticks, informs the guard
+    // so it opens the ramp window.
+    PathInflationGuard.tick(isReset);
 
     // --- 6. Run the scheduler ---
     kernel.run();
