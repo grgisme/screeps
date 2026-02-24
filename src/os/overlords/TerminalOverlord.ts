@@ -1,7 +1,7 @@
 import { Overlord } from "./Overlord";
 import type { Colony } from "../colony/Colony";
 import { Logger } from "../../utils/Logger";
-import { SEASON_MODE } from "../../main";
+import { SEASON_MODE } from "../../constants";
 
 const log = new Logger("TerminalOverlord");
 

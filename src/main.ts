@@ -15,6 +15,7 @@ import { TrafficManager } from "./os/infrastructure/TrafficManager";
 import { GlobalManager } from "./kernel/GlobalManager";
 import { SegmentManager } from "./kernel/memory/SegmentManager";
 import { PathInflationGuard } from "./kernel/PathInflationGuard";
+import { SEASON_MODE, EFFECTIVE_CPU_CAP } from "./constants";
 
 const log = new Logger("OS");
 
@@ -30,9 +31,9 @@ const log = new Logger("OS");
 // All subsystems that read Game.cpu.limit or call Game.market should gate on
 // SEASON_MODE to avoid incorrect bucket thresholds and market errors.
 // -------------------------------------------------------------------------
-export const SEASON_MODE = false;          // ← flip to true before season launch
-export const SEASON_CPU_CAP = 100;         // Season fixed allocation (persistent = Game.cpu.limit)
-export const EFFECTIVE_CPU_CAP = SEASON_MODE ? SEASON_CPU_CAP : Game.cpu.limit;
+// SEASON_MODE and related CPU constants live in constants.ts to avoid circular
+// imports (TerminalOverlord was importing SEASON_MODE from main.ts, creating a cycle).
+export { SEASON_MODE, SEASON_CPU_CAP, EFFECTIVE_CPU_CAP } from "./constants";
 
 // Allow runtime toggle from the Screeps console for testing
 (global as any).season = {
