@@ -102,6 +102,9 @@
 (globalThis as any).FIND_EXIT_RIGHT = 3;
 (globalThis as any).FIND_EXIT_BOTTOM = 5;
 (globalThis as any).FIND_EXIT_LEFT = 7;
+(globalThis as any).FIND_EXIT = 10;
+(globalThis as any).FIND_HOSTILE_STRUCTURES = 114;
+(globalThis as any).FIND_CONSTRUCTION_SITES = 116;
 
 (globalThis as any).STRUCTURE_SPAWN = "spawn";
 (globalThis as any).STRUCTURE_EXTENSION = "extension";
