@@ -90,7 +90,14 @@ export class Hatchery {
         // workers to fill the spawn queue rather than one expensive creep that could
         // create a secondary blackout if killed by a stray invader.
         let effectiveRequest = { ...request, name };
-        if (this.colony.state?.isRecovering && request.priority < 999 && !request.maxEnergy) {
+        // Spawn Governor: clamp non-essential creeps to 400e during post-blackout recovery
+        // so cheap, redundant workers fill the queue instead of one expensive creep.
+        // Miners are exempt: they are critical-path to generating energy and exiting
+        // recovery. Capping miners at 400e drops the spawn request entirely when
+        // energyCapacityAvailable=450 (grow() returns [] for a 450e template with a 400e cap).
+        const isMinerRequest = (request.memory?.role === "miner") ||
+            (request.name?.startsWith("miner_") ?? false);
+        if (this.colony.state?.isRecovering && request.priority < 999 && !request.maxEnergy && !isMinerRequest) {
             effectiveRequest.maxEnergy = 400;
             log.debug(() => `Recovery mode: clamping ${name} to 400e (cap was ${this.colony.room?.energyCapacityAvailable ?? '?'})`);
         }
