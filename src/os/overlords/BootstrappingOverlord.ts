@@ -216,7 +216,17 @@ export class BootstrappingOverlord extends Overlord {
                         bootstrapper.setTask(new PickupTask(dropped.id as Id<Resource>));
                         continue;
                     }
-                    creep.say("⚠️ no src");
+                    // Nothing to pick up. If we're carrying something, deposit it now.
+                    if (energy > 0) {
+                        mem.collecting = false;
+                        continue;
+                    }
+                    // Empty-handed with nothing to pick up — wait near the closest source
+                    // so we're already positioned when miners start dropping energy.
+                    const waitSrc = bootstrapper.pos?.findClosestByRange(FIND_SOURCES);
+                    if (waitSrc && bootstrapper.pos && !bootstrapper.pos.inRangeTo(waitSrc, 2)) {
+                        bootstrapper.travelTo(waitSrc, 2, MovePriority.EMERGENCY);
+                    }
                 }
             } else {
                 // ── Working Phase (Protocol Layer 3: Deterministic Routing) ───
