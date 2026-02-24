@@ -57,6 +57,19 @@ export class Hatchery {
         return GlobalCache.rehydrate("pendingSpawns", () => new Set<string>());
     }
 
+    /**
+     * Returns true if any committed (spawnCreep returned OK) spawn whose name
+     * starts with "bootstrap_" is still pending in the GlobalCache phase-I set.
+     * Used by BootstrappingOverlord to avoid re-enqueueing while a bootstrapper
+     * spawn is committed but the physical spawn slot is not yet showing s.spawning.
+     */
+    hasPendingBootstrapper(): boolean {
+        for (const name of this.pendingSpawns) {
+            if (name.startsWith("bootstrap_")) return true;
+        }
+        return false;
+    }
+
     refresh(): void {
         const room = this.colony.room;
         if (!room) return;

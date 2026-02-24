@@ -6,8 +6,13 @@
 //
 // Protocol Layer 2 — Conditional Morphology Selector:
 //   If "buffer energy" exists (tombstones, drops, containers), spawn a cheap
-//   [CARRY, MOVE] Hauler at 100 energy. Otherwise wait for [WORK, CARRY, MOVE]
-//   Pioneer at 200 energy. Never waste ticks waiting for wrong body.
+//   [CARRY, MOVE] Hauler at 100 energy. Otherwise spawn a scaled Omni-Pioneer
+//   [WORK, CARRY, MOVE]×N up to available energy.
+//
+//   NOTE: Split morphology (Drop-Miner + Relay Hauler for >25-tile sources) was
+//   removed in Issue #75. Partial-spawn deadlock meant the Relay Hauler was never
+//   enqueued once a bootstrapper was alive, leaving the Miner mining to the ground
+//   forever. Omni-Pioneers self-harvest and don't have this coupling failure.
 //
 // Protocol Layer 3 — Deterministic Routing:
 //   Bootstrappers iterate colony.refillOrder (spawn always at [0]) to find
@@ -35,6 +40,18 @@ const log = new Logger("BootstrappingOverlord");
 /** Spawn-queue priority — must outbid all other overlords during a blackout. */
 const BOOTSTRAP_PRIORITY = 999;
 
+/**
+ * Generates a scaled [WORK, CARRY, MOVE] body from available energy.
+ * Minimum 1 triad (200e), maximum 16 triads (3200e).
+ * Returns empty array when energy < 200 (caller should still enqueue at maxEnergy:200).
+ */
+function generateBootstrapBody(energy: number): BodyPartConstant[] {
+    const triads = Math.min(Math.floor(energy / 200), 16);
+    const body: BodyPartConstant[] = [];
+    for (let i = 0; i < triads; i++) body.push(WORK, CARRY, MOVE);
+    return body;
+}
+
 
 export class BootstrappingOverlord extends Overlord {
     bootstrappers: Zerg[] = [];
@@ -56,12 +73,19 @@ export class BootstrappingOverlord extends Overlord {
         const spawns = this.colony.hatchery.spawns;
         if (spawns.length === 0) return;
 
-        // Already have a bootstrapper alive or actively spawning — don't double-enqueue.
+        // Already have a bootstrapper alive, actively spawning, or committed in the
+        // GlobalCache pending-spawn set — don't double-enqueue.
+        //
+        // Three layers of guard (ordered cheapest-to-check first):
+        //   1. s.spawning            — spawn slot is physically busy with a bootstrap creep
+        //   2. hasPendingBootstrapper() — spawnCreep returned OK but physical slot not yet
+        //                              visible (closes the one-tick race window, Issue #73)
+        //
         // EXCEPTION: if every alive bootstrapper is a pure hauler (no WORK parts) AND
-        // there's nothing in the room to collect, they're deadlocked — the hauler needs
-        // a miner to produce drops but nothing will ever spawn one. Allow a pioneer.
+        // there's nothing in the room to collect, they're deadlocked — allow a pioneer.
         const spawningBootstrap = spawns.some(s => s.spawning && s.spawning.name.startsWith("bootstrap_"));
-        if (spawningBootstrap) return;
+        const pendingBootstrap = this.colony.hatchery.hasPendingBootstrapper();
+        if (spawningBootstrap || pendingBootstrap) return;
 
         if (this.bootstrappers.length > 0) {
             const bufferNow = this._findBufferEnergy(room);
@@ -77,24 +101,11 @@ export class BootstrappingOverlord extends Overlord {
             log.warning(`${this.colony.name}: CRITICAL BLACKOUT — BootstrappingOverlord activating.`);
         }
 
-
-        // ── Step 8: 25-Tile Morphology Split ────────────────────────────────
-        // If the nearest harvestable source is > 25 tiles away, a single
-        // [WORK,CARRY,MOVE] pioneer spends more time walking than harvesting.
-        // Splitting into a drop-miner + relay hauler achieves higher energy/tick.
-        const miningOverlord = this.colony.overlords.find(o => (o as any).sites !== undefined) as any;
-        const miningSites: Array<{ distance: number }> = miningOverlord?.sites ?? [];
-        // distance===0 means MiningSite hasn't computed the route yet — skip those
-        const knownDistances = miningSites.map((s: { distance: number }) => s.distance).filter(d => d > 0);
-        const closestDistance = knownDistances.length > 0 ? Math.min(...knownDistances) : 0;
-        // Only split when we have a confirmed long-haul path (known > 25 tiles)
-        const longHaul = closestDistance > 25;
-
         // ── Protocol Layer 2: Conditional Morphology Selector ────────────────
         const bufferEnergy = this._findBufferEnergy(room);
 
         if (bufferEnergy && room.energyAvailable >= 100) {
-            // Pre-processed energy available: 100-energy Hauler is faster
+            // Pre-processed energy available: 100-energy Hauler is faster to spawn
             log.warning(`${this.colony.name}: Buffer energy found. Enqueuing [CARRY, MOVE] Hauler.`);
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
@@ -104,49 +115,22 @@ export class BootstrappingOverlord extends Overlord {
                 name: `bootstrap_hauler_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
             });
-        } else if (longHaul && room.energyAvailable >= 150) {
-            // Step 8: Long haul — drop-miner stays at source, relay hauler ferries energy.
-            // A [WORK,MOVE] miner at the source + [CARRY,MOVE] relay beats a slow pioneer.
-            log.warning(`${this.colony.name}: Long-haul source (${closestDistance} tiles). Enqueuing split morphology.`);
-            // Drop-miner: harvests and drops in place
-            this.colony.hatchery.enqueue({
-                priority: BOOTSTRAP_PRIORITY,
-                bodyTemplate: [WORK, MOVE],
-                maxEnergy: 150,
-                overlord: this,
-                name: `bootstrap_dropminer_${this.colony.name}_${Game.time}`,
-                memory: { role: "bootstrapper" }
-            });
-            // Relay hauler: follows the drop-miner (spawns if we have 100 more energy)
-            if (room.energyAvailable >= 250) {
-                this.colony.hatchery.enqueue({
-                    priority: BOOTSTRAP_PRIORITY,
-                    bodyTemplate: [CARRY, MOVE],
-                    maxEnergy: 100,
-                    overlord: this,
-                    name: `bootstrap_relay_${this.colony.name}_${Game.time}`,
-                    memory: { role: "bootstrapper" }
-                });
-            }
-        } else if (room.energyAvailable >= 200 || room.energyAvailable >= 100 && bufferEnergy) {
-            // No pre-processed energy: wait for Pioneer body
-            log.warning(`${this.colony.name}: No buffer energy. Enqueuing [WORK, CARRY, MOVE] Pioneer.`);
-            this.colony.hatchery.enqueue({
-                priority: BOOTSTRAP_PRIORITY,
-                bodyTemplate: [WORK, CARRY, MOVE],
-                maxEnergy: 200,
-                overlord: this,
-                name: `bootstrap_pioneer_${this.colony.name}_${Game.time}`,
-                memory: { role: "bootstrapper" }
-            });
         } else {
-            // Not enough energy yet — enqueue anyway so Hatchery waits for us
-            // rather than spawning a lower-priority creep first.
-            log.info(`${this.colony.name}: Stockpiling energy for bootstrap pioneer...`);
+            // No pre-processed energy: Omni-Pioneer scaled to current energy.
+            // Even when energy < 200 we still enqueue at maxEnergy:200 so Hatchery
+            // holds the slot while energy accumulates rather than spawning a lower-
+            // priority creep first.
+            const body = generateBootstrapBody(room.energyAvailable);
+            const effectiveMax = Math.max(200, room.energyAvailable);
+            if (body.length > 0) {
+                log.warning(`${this.colony.name}: Enqueuing ${body.length / 3}-triad Pioneer (${effectiveMax}e).`);
+            } else {
+                log.info(`${this.colony.name}: Stockpiling energy for bootstrap pioneer...`);
+            }
             this.colony.hatchery.enqueue({
                 priority: BOOTSTRAP_PRIORITY,
                 bodyTemplate: [WORK, CARRY, MOVE],
-                maxEnergy: 200,
+                maxEnergy: effectiveMax,
                 overlord: this,
                 name: `bootstrap_pioneer_${this.colony.name}_${Game.time}`,
                 memory: { role: "bootstrapper" }
@@ -218,8 +202,7 @@ export class BootstrappingOverlord extends Overlord {
                     continue;
                 }
 
-
-                // 4. Harvest directly — [WORK, CARRY, MOVE] pioneer or [WORK, MOVE] drop-miner bodies only
+                // 5. Harvest directly — [WORK, CARRY, MOVE] pioneer bodies only
                 if (creep.getActiveBodyparts(WORK) > 0) {
                     const source = bootstrapper.pos?.findClosestByRange(FIND_SOURCES_ACTIVE);
                     if (source) {
@@ -234,12 +217,12 @@ export class BootstrappingOverlord extends Overlord {
                         continue;
                     }
                 } else {
-                    // [CARRY, MOVE] Hauler/relay — look for dropped energy near sources
-                    const dropped = bootstrapper.pos?.findClosestByRange(FIND_DROPPED_RESOURCES, {
+                    // [CARRY, MOVE] Hauler — look for dropped energy near sources
+                    const droppedNear = bootstrapper.pos?.findClosestByRange(FIND_DROPPED_RESOURCES, {
                         filter: (r: Resource) => r.resourceType === RESOURCE_ENERGY && r.amount > 10
                     });
-                    if (dropped) {
-                        bootstrapper.setTask(new PickupTask(dropped.id as Id<Resource>));
+                    if (droppedNear) {
+                        bootstrapper.setTask(new PickupTask(droppedNear.id as Id<Resource>));
                         continue;
                     }
                     // Nothing to pick up. If we're carrying something, deposit it now.
@@ -326,7 +309,7 @@ export class BootstrappingOverlord extends Overlord {
         });
         if (tombstones.length > 0) return true;
 
-        // Step 10: Ruins with energy (RCL 3+ only, always check)
+        // Ruins with energy
         const ruins = room.find(FIND_RUINS, {
             filter: (r: Ruin) => r.store.getUsedCapacity(RESOURCE_ENERGY) > 0
         });

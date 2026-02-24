@@ -49,7 +49,8 @@ describe("BootstrappingOverlord", () => {
             hatchery: {
                 spawns: [spawn],
                 enqueue: (_req: any) => { },
-                queue: []
+                queue: [],
+                hasPendingBootstrapper: () => false
             },
             logistics: { requestInput: () => { } },
             zergs: new Map()
@@ -119,6 +120,32 @@ describe("BootstrappingOverlord", () => {
         expect(enqueuedRequest.bodyTemplate).to.deep.equal([WORK, CARRY, MOVE]);
     });
 
+    it("should enqueue scaled [WORK,CARRY,MOVE]x2 Pioneer when energy >= 400 and no buffer", () => {
+        mockColony.state.isCriticalBlackout = true;
+        room.energyAvailable = 400;
+
+        room.find = (type: FindConstant) => {
+            if (type === FIND_MY_SPAWNS) return [spawn];
+            if (type === FIND_MY_STRUCTURES) return [];
+            if (type === FIND_DROPPED_RESOURCES) return [];
+            if (type === FIND_TOMBSTONES) return [];
+            return [];
+        };
+
+        let enqueuedRequest: any = null;
+        mockColony.hatchery.enqueue = (req: any) => { enqueuedRequest = req; };
+
+        const overlord = new BootstrappingOverlord(mockColony);
+        overlord.init();
+
+        expect(enqueuedRequest).to.not.be.null;
+        expect(enqueuedRequest.priority).to.equal(999);
+        // bodyTemplate is always [WORK, CARRY, MOVE]; maxEnergy controls scaling in Hatchery
+        expect(enqueuedRequest.bodyTemplate).to.deep.equal([WORK, CARRY, MOVE]);
+        // maxEnergy should be at least 400 to allow 2-triad body
+        expect(enqueuedRequest.maxEnergy).to.be.at.least(400);
+    });
+
     it("should still enqueue when energy < 200 and no buffer (Hatchery will wait)", () => {
         mockColony.state.isCriticalBlackout = true;
         room.energyAvailable = 50; // Not enough for anything yet
@@ -141,6 +168,8 @@ describe("BootstrappingOverlord", () => {
         expect(enqueuedRequest).to.not.be.null;
         expect(enqueuedRequest.priority).to.equal(999);
         expect(enqueuedRequest.bodyTemplate).to.deep.equal([WORK, CARRY, MOVE]);
+        // maxEnergy must be at least 200 so Hatchery knows what it's waiting for
+        expect(enqueuedRequest.maxEnergy).to.be.at.least(200);
     });
 
     it("should not double-enqueue when a bootstrapper is already alive", () => {
@@ -157,6 +186,19 @@ describe("BootstrappingOverlord", () => {
         ];
         (overlord as any)._zergsTick = Game.time;
 
+        overlord.init();
+
+        expect(enqueuedCount).to.equal(0);
+    });
+
+    it("should not double-enqueue when hasPendingBootstrapper returns true", () => {
+        mockColony.state.isCriticalBlackout = true;
+        mockColony.hatchery.hasPendingBootstrapper = () => true; // committed but not yet spawning
+
+        let enqueuedCount = 0;
+        mockColony.hatchery.enqueue = () => { enqueuedCount++; };
+
+        const overlord = new BootstrappingOverlord(mockColony);
         overlord.init();
 
         expect(enqueuedCount).to.equal(0);
