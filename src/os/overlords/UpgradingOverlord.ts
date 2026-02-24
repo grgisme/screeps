@@ -223,7 +223,9 @@ export class UpgradingOverlord extends Overlord {
         // CORRECT gate: check for STRUCTURAL presence of energy infrastructure
         //   (storage or a controller container), which is persistent across
         //   ticks. A container exists even when empty and waiting to be filled.
-        const hasEnergyInfrastructure = hasStorage || (room ? this.findControllerContainer(room) !== null : false);
+        const hasEnergyInfrastructure = hasStorage
+            || (room ? this.findControllerContainer(room) !== null : false)
+            || hasContainers;  // any logistics offer (drops, containers, ruins)
 
         if (!downgradeImminent && !hasEnergyInfrastructure && !isRCL8) {
             if (this.upgraders.length > 0) {
