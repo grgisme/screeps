@@ -346,6 +346,159 @@ Full architecture documentation lives in `docs/` and is published to GitHub Page
 
 ---
 
+## Planning Docs System (Read This First)
+
+Two files in `docs/` are the **single source of truth** for all current and future work. Read them at the start of any session before touching code.
+
+### `docs/implementation_priority.md` — The Priority List
+
+A **tiered backlog** that controls what to work on next and why. Always work top-to-bottom within a tier.
+
+| Tier | Name | When |
+|------|------|------|
+| **T0** | Fix Now — Live bugs, crashes | Before any feature work |
+| **T1** | RCL 1–3 Critical — This week | Current game state |
+| **T2** | RCL 3–4 Infrastructure — This month | Foundation for RCL 4 |
+| **T3** | RCL 4–6 Expansion — Next 2–3 months | Mid-game economy |
+| **T4** | RCL 6–8 Endgame | Requires T1–T3 done first |
+| **T5** | Future / When Relevant | Skip until condition met |
+
+**Column meanings:**
+- `#` = item code (e.g., `T0.5`) — matches GitHub issue title prefix
+- `§Ref` = section number in `screeps_backlog.md` with full implementation details
+- `RCL` = when the feature becomes active
+- ~~Strikethrough~~ + ✅ = already implemented and deployed
+
+**To update:** Mark items ✅ when deployed. Add new bugs as T0.X continuing from the last numbered entry.
+
+---
+
+### `docs/screeps_backlog.md` — The Implementation Bible
+
+~6,300 line document containing **every planned feature with full design detail**: root causes, code snippets, algorithm pseudocode, and cross-references. It is organized by section numbers (`§1`, `§2`, … `§94`).
+
+**How `§` references work:**
+- `§1` through `§93` = features from the original Architectural Engineering Report
+- `§94` (added 2026-02-24) = Bootstrapping / Respawn Death Spiral Bugs audit
+- Within a section, sub-items use dot notation: `§94.1`, `§94.2`, etc.
+- Adding new research: append a new `## N. Title` section at the bottom, then add corresponding rows to `implementation_priority.md`
+
+**Key sections to know:**
+- `§94` — Bootstrapping death spiral bugs (8 confirmed fatal bugs + 4 improvements)
+- `§93` — Safe Mode automation (implemented v5.18)
+- `§89` — CPU & performance audit (T2 items)
+- `§88` — Season 8 mode flags (implemented v5.20)
+- `§8–§14` — Remote mining defense (implemented v5.19)
+
+---
+
+## GitHub Issues
+
+**Repo:** `grgisme/screeps`  
+**Highest existing issue as of 2026-02-24:** #84
+
+### Issue Naming Convention
+
+Issues use one of two title formats:
+
+```
+T0.5 §94.1 Short title — longer subtitle describing root cause
+T2.6 §89 Sys 2 Short title — subtitle
+```
+
+- **Tier prefix** (e.g., `T0.5`) matches the row code in `implementation_priority.md`
+- **§ reference** (e.g., `§94.1`) links to the backlog section with full details
+
+### Labels in Use
+
+| Label | Meaning |
+|-------|---------|
+| `bug` | Confirmed bug — broken behavior today |
+| `enhancement` | New feature or improvement |
+| `performance` | CPU / memory performance |
+| `defense` | Defense / Military systems |
+| `economy` | Economy / Market / Resources |
+| `logistics` | Logistics network |
+| `expansion` | Room expansion / colonization |
+| `military` | Offensive military operations |
+| `labs` | Labs / Boosts / Chemistry |
+| `season-8` | Must-do before Season 8 |
+| `completed` | Already implemented and deployed |
+| `tier-5` | Tier 5 — Future / When Relevant |
+
+### Issue Number Map (§94 bootstrapping audit, 2026-02-24)
+
+| Issue | Tier | Title |
+|-------|------|-------|
+| #74 | T0.5 | Queue Spam Memory Leak (§94.1) |
+| #75 | T0.6 | Split-Morphology De-Sync (§94.2) |
+| #76 | T0.7 | Zero-Capacity State Machine Freeze (§94.3) |
+| #77 | T0.8 | Task Priority Erasure (§94.4) |
+| #78 | T0.9 | Forever RCL 1 Stall (§94.5) |
+| #79 | T0.10 | One-Energy Buffer Trap (§94.6) |
+| #80 | T0.11 | Hostile Blindness (§94.7) |
+| #81 | T1.11 | Ghost Overlord State Leak (§94.8) |
+| #82 | T1.12 | Parallelized Recovery (§94.9) |
+| #83 | T1.13 | Omni-Pioneer Body Generator (§94.10) |
+| #84 | T1.14 | Emergency Task Bypass (§94.12) |
+
+---
+
+## GitHub CLI — Always Use This for Issue Management
+
+The `gh` CLI is authenticated and works from any terminal in `c:\code\screeps`. **Never use the browser** to create or manage issues — it is slower and sessions frequently require re-login.
+
+### Creating an issue
+
+```powershell
+# Write body to a temp file first (avoids shell escaping issues with inline --body)
+$body = @"
+## Summary
+...full markdown body...
+"@
+$body | Out-File -Encoding utf8 tmp_issue.md
+gh issue create --repo grgisme/screeps `
+    --title "T0.5 §94.1 Short title — subtitle" `
+    --label "bug" `
+    --body-file tmp_issue.md
+Remove-Item tmp_issue.md
+```
+
+> **Critical:** Do NOT use `--body "..."` with multi-line content inline — PowerShell argument quoting causes the CLI to hang indefinitely. Always use `--body-file`.
+
+### Creating multiple issues
+
+```powershell
+$issues = @(
+    @{ title = "T0.5 §94.1 ..."; file = "body1.md"; label = "bug" },
+    @{ title = "T0.6 §94.2 ..."; file = "body2.md"; label = "bug" }
+)
+foreach ($issue in $issues) {
+    gh issue create --repo grgisme/screeps --title $issue.title `
+        --label $issue.label --body-file $issue.file
+    Start-Sleep -Seconds 2  # avoid rate limiting
+}
+```
+
+### Closing / editing an issue
+
+```powershell
+gh issue close 73 --repo grgisme/screeps --reason "duplicate" --comment "Duplicate of #74"
+gh issue edit 74 --repo grgisme/screeps --add-label "performance"
+gh issue list --repo grgisme/screeps --limit 20 --json number,title --state open
+```
+
+### Listing recent issues
+
+```powershell
+# Show newest 15 issues
+gh issue list --repo grgisme/screeps --limit 100 --json number,title --state open `
+    | ConvertFrom-Json | Where-Object { $_.number -ge 70 } `
+    | Format-Table number, title -AutoSize -Wrap
+```
+
+---
+
 ## Dependencies Summary
 
 | Package | Role |
