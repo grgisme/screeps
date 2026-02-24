@@ -6122,3 +6122,240 @@ if (shouldUseSafeMode(room.controller!, room, dangerousHostiles, 'breach')) {
 ```
 
 > **Cross-references:** Safe mode breach detection ties to §77/§78 InvaderCore defense (InvaderCore siege triggers same breach condition). Feature 2 NPC threat inclusion ties to §84 System 7 DefenseOverlord audit. Feature 3 last-charge conservation ties to §87 private server admin (can manually add safe mode charges for testing). Feature 1 HP% trigger ties to §76 rampart HP tiers (if ramparts fall to 30%, safe mode buys time to repair).
+
+---
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- BOOTSTRAPPING AUDIT — Respawn Death Spiral Bugs (2026-02-24 Analysis) -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+## 94. Bootstrapping / Respawn Death Spiral Bugs
+**2026-02-24 Architectural Audit — Critical Blackout Recovery Failures**
+
+> These bugs cause the bot to fail to recover from a total wipe (all creeps dead, one spawn remaining).
+> All 8 bugs must be fixed before the bootstrapping system is considered reliable.
+
+---
+
+### 94.1 Queue Spam Memory Leak (Fatal)
+**Tier 0 — Fix Now**
+
+**Root Cause:** `BootstrappingOverlord.init()` checks `s.spawning` to determine if a bootstrapper is actively being spawned. `hatchery.enqueue()` places the request into `Hatchery.queue` pending energy. On the next tick `s.spawning` is `false` (creep is in the queue, not yet spawning), so another Pioneer is enqueued. This loop fires every tick until Memory is exhausted or CPU crashes the script.
+
+**Fix:**
+```ts
+// Count both actively spawning AND queued bootstrapper requests:
+const pendingInQueue = this.colony.hatchery.queue.filter(
+    req => req.role === 'bootstrapper'
+).length;
+const activelySpawning = this.colony.hatchery.spawns.some(s => s.spawning);
+
+if (this.bootstrappers.length > 0 || pendingInQueue > 0 || activelySpawning) return;
+```
+
+---
+
+### 94.2 Split-Morphology De-Sync (Fatal)
+**Tier 0 — Fix Now**
+
+**Root Cause:** When source distance > 25 tiles and energy == 150, the Drop-Miner is enqueued but the Relay Hauler is skipped. On the next tick `this.bootstrappers.length > 0` returns true (Drop-Miner is in queue or spawning), so the Relay Hauler condition is never evaluated. The Drop-Miner reaches the source, mines onto the ground forever, and the blackout never ends.
+
+**Fix — delete Protocol Layer 2 (split morphology) entirely for bootstrapping:**
+Use only Omni-Pioneers `[WORK, CARRY, MOVE]` scaled to `room.energyAvailable`. Split morphology optimization belongs in steady-state RemoteMiningOverlord, not a death-recovery scenario where partial success = total failure.
+
+---
+
+### 94.3 Zero-Capacity State Machine Freeze (Fatal)
+**Tier 0 — Fix Now**
+
+**Root Cause:** Drop-miners have 0 CARRY capacity. The bootstrapper FSM state machine reads:
+```ts
+if (freeCapacity === 0) mem.collecting = false; // switch to Working Phase
+```
+Because `freeCapacity` is always 0, the creep instantly snaps to Working Phase, attempts `creep.transfer(spawn, RESOURCE_ENERGY)` with 0 energy, and softlocks forever doing nothing productive.
+
+**Fix:** Guard state transitions on role:
+```ts
+// Only flip collecting=false on CARRY-equipped creeps:
+if (creep.store.getCapacity() > 0 && freeCapacity === 0) {
+    mem.collecting = false;
+}
+// Drop-miners: never enter collecting state; go directly to harvest-in-place loop
+```
+
+---
+
+### 94.4 Task Priority Erasure / Layer 4 Failure (Architectural)
+**Tier 0 — Fix Now**
+
+**Root Cause:** `travelTo(source, 1, MovePriority.EMERGENCY)` is called manually, then `setTask(new HarvestTask())` is called. When `Zerg.run()` executes the task later in the same tick, `HarvestTask` internally calls `travelTo` with its default priority (LOW). This silently overwrites the EMERGENCY entry in the TrafficManager bipartite graph, allowing idle creeps to block bootstrappers in corridors.
+
+**Fix — bypass the Task system for emergency creeps:**
+```ts
+// Replace setTask(new HarvestTask()) + travelTo EMERGENCY pattern with raw API calls:
+if (creep.pos.inRangeTo(source, 1)) {
+    creep.harvest(source); // direct API call, no task overhead, no priority clobber
+} else {
+    creep.travelTo(source, { range: 1, priority: MovePriority.EMERGENCY });
+}
+```
+
+---
+
+### 94.5 Forever RCL 1 Stall (Fatal)
+**Tier 0 — Fix Now**
+
+**Root Cause:** In the Working Phase, if spawn + extensions are full, the bootstrapper calls `travelTo(spawn, 3)` and idles. Bootstrappers never call `build()` or `upgradeController()`. The room stalls permanently at RCL 1 while the controller degrades.
+
+**Fix — implement the Waterfall cascade:**
+```ts
+// Working Phase priority waterfall:
+function runWorkingPhase(creep: Creep): void {
+    // 1. Refill spawn
+    if (spawn.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+        return creep.transfer(spawn, RESOURCE_ENERGY);
+    }
+    // 2. Refill extensions
+    const ext = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+    });
+    if (ext) return creep.transfer(ext, RESOURCE_ENERGY);
+    // 3. Build construction sites (extensions, containers)
+    const site = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
+    if (site) return creep.build(site);
+    // 4. Default: upgrade controller to push RCL
+    creep.upgradeController(creep.room.controller!);
+}
+```
+
+---
+
+### 94.6 One-Energy Buffer Trap (Critical)
+**Tier 0 — Fix Now**
+
+**Root Cause:** `_findBufferEnergy()` returns `true` if a tombstone/ruin has `store.getUsedCapacity() > 0`. A decaying tombstone with 1 energy triggers spawning a pure `[CARRY, MOVE]` Hauler. It grabs the 1 energy, deposits it, then goes permanently idle because it lacks `WORK` parts and cannot harvest.
+
+**Fix — add minimum energy threshold and Omni-Pioneer preference:**
+```ts
+// Raise buffer detection threshold:
+const MIN_BUFFER_ENERGY = 50; // Only scavenge if tombstone/ruin has >= 50 energy
+if (tombstone.store.getUsedCapacity(RESOURCE_ENERGY) < MIN_BUFFER_ENERGY) continue;
+
+// During a blackout: always spawn Omni-Pioneer [WORK, CARRY, MOVE] regardless of buffer.
+// Omni-Pioneers can both scavenge AND harvest — they never idle.
+```
+
+---
+
+### 94.7 Hostile Blindness (Feeding Invaders)
+**Tier 0 — Fix Now**
+
+**Root Cause:** Source selection uses `FIND_SOURCES_ACTIVE` without checking for nearby hostiles. If an Invader or Source Keeper is camping the only source, bootstrappers walk into them, die, and waste the last 200 energy. The room enters an unrecoverable death spiral of spawning and dying.
+
+**Fix — hostile-aware source selection:**
+```ts
+const HOSTILE_EXCLUSION_RANGE = 5;
+const hostiles = room.find(FIND_HOSTILE_CREEPS);
+const safeSource = room.find(FIND_SOURCES_ACTIVE).find(source =>
+    !hostiles.some(h => h.pos.inRangeTo(source.pos, HOSTILE_EXCLUSION_RANGE))
+);
+if (!safeSource) {
+    // No safe source: wait at spawn, log warning, do not waste energy spawning
+    log.warning(`[${room.name}] All sources camped by hostiles — halting bootstrap spawning`);
+    return;
+}
+```
+
+---
+
+### 94.8 Ghost Overlord State Leak (Architectural)
+**Tier 1 — Fix This Week**
+
+**Root Cause:** When `isCriticalBlackout` flips to `false`, `BootstrappingOverlord.init()` returns early. However, `run()` still iterates over `this.bootstrappers`. The bootstrapper creeps remain attached to the BootstrappingOverlord forever instead of gracefully handing off to WorkerOverlord. Logic fragments across two overlords for the same creeps.
+
+**Fix — memory rewrite handoff on blackout resolution:**
+```ts
+// In Colony.ts or BootstrappingOverlord, when isCriticalBlackout flips false:
+if (!this.isCriticalBlackout && this.wasBlackout) {
+    for (const pioneer of this.bootstrappers) {
+        pioneer.memory.role = 'worker'; // hand to WorkerOverlord
+        pioneer.memory.overlord = this.colony.workerOverlord.ref;
+        delete (pioneer.memory as any).bootstrapping;
+    }
+    this.bootstrappers = []; // clear local tracking array
+    this.wasBlackout = false;
+}
+```
+
+---
+
+### 94.9 Parallelized Recovery (Improvement: Phase 1)
+**Tier 1 — RCL 0→1 Scaling**
+
+**Root Cause:** `if (this.bootstrappers.length > 0) return;` limits recovery to a single creep. Top codebases (Overmind, TooAngel, Tigga) swarm with 3–4 pioneers to parallelize recovery and drastically reduce blackout duration.
+
+**Implementation:**
+```ts
+const MAX_BOOTSTRAP_PIONEERS = Math.min(4, Math.floor(room.energyAvailable / 200));
+if (this.bootstrappers.length >= MAX_BOOTSTRAP_PIONEERS) return;
+// Spawn dynamic [WORK, CARRY, MOVE] bodies scaled to energyAvailable
+const body = generateBootstrapBody(room.energyAvailable);
+this.colony.hatchery.enqueue({ role: 'bootstrapper', body, priority: Priority.CRITICAL });
+```
+
+---
+
+### 94.10 Omni-Pioneer Over Split-Morphology (Improvement: Phase 1 Strategy)
+**Tier 1 — Architectural Pattern Alignment**
+
+**Research Context:** Elite Screeps codebases (Overmind, TooAngel, Tigga) universally use Omni-Pioneers `[WORK, CARRY, MOVE]` during blackout, not split morphologies (Drop-Miner + Relay Hauler). If one half of a split morphology dies, the other is useless — mathematical deadlock. Omni-Pioneers are slightly less energy-efficient per tick but are **mathematically impossible to deadlock**.
+
+**Implementation:**
+```ts
+function generateBootstrapBody(energy: number): BodyPartConstant[] {
+    // Scale [WORK, CARRY, MOVE] triads up to energy available
+    const triads = Math.min(Math.floor(energy / 200), 16); // 200e per triad, max 16
+    const body: BodyPartConstant[] = [];
+    for (let i = 0; i < triads; i++) body.push(WORK, CARRY, MOVE);
+    return body; // min: [WORK, CARRY, MOVE] = 200e = usable on RCL 1
+}
+```
+Delete all Protocol Layer 2 (25-tile-rule split morphology) code from `BootstrappingOverlord`.
+
+---
+
+### 94.11 Seamless Overlord Handoff (Improvement: Phase 3)
+**Tier 1 — Recovery Lifecycle Completion**
+
+**Context:** Tigga and TooAngel rewrite pioneer memory the exact tick the emergency resolves, so emergency creeps hand themselves to standard Overlords and logic never fragments. This is the counterpart fix to §94.8 (Ghost Overlord State Leak).
+
+**Implementation:**
+```ts
+// In BootstrappingOverlord.run(), before any other logic:
+if (!this.colony.isCriticalBlackout) {
+    // Graceful handoff: rewrite role memory for all bootstrappers
+    for (const creep of this.bootstrappers) {
+        (creep.memory as any).role = 'worker';
+        delete (creep.memory as any).collecting;
+        delete (creep.memory as any).bootstrapping;
+    }
+    this.bootstrappers = [];
+    return; // Stop running bootstrapping logic — WorkerOverlord takes over next tick
+}
+```
+
+---
+
+### 94.12 Emergency Task Bypass Pattern (Improvement: Phase 2)
+**Tier 1 — MovePriority Preservation**
+
+**Context:** Tigga and TooAngel bypass the standard Task queue for emergency creeps, issuing raw `creep.harvest()`, `creep.build()`, `creep.transfer()` calls in the same tick to guarantee absolute control over MovePriority.EMERGENCY. This prevents priority clobbering described in §94.4.
+
+**Implementation:**
+- Remove all `setTask()` calls from `BootstrappingOverlord.run()`.
+- Replace with direct FSM using raw API calls: `creep.harvest()`, `creep.transfer()`, `creep.build()`, `creep.upgradeController()`.
+- Use `creep.travelTo(target, { range: 1, priority: MovePriority.EMERGENCY })` directly.
+- The Task system is designed for steady-state logistics, not emergency recovery.
+
+---
+
+> **Cross-references:** §94.1–94.8 are confirmed bugs in the current `BootstrappingOverlord.ts`. §94.9–94.12 are architectural improvements from elite codebase analysis. The Waterfall pattern (§94.5) prevents the §93 RCL 1 stall. Hostile blindness (§94.7) interacts with §1 Safe Mode and §8–§9 remote defense. Overlord handoff (§94.8, §94.11) interacts with WorkerOverlord lifecycle.

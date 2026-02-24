@@ -24,6 +24,13 @@
 | ~~T0.2~~ ✅ | ~~**`ErrorMapper._traceCache` unbounded**~~ — already had 200-key clear guard; confirmed adequate | §92/Bug F | All | Already fixed |
 | ~~T0.3~~ ✅ | ~~**`Transporter.ts` never instantiated**~~ — deleted `Transporter.ts` and test file | §92/Bug G | All | Done v5.17 |
 | ~~T0.4~~ ✅ | ~~**BunkerLayout road/tower overlap**~~ — `addRoad()` checks `OCCUPIED` set; overlap prevented by design | §92/Concern 2 | RCL 4+ | Non-issue confirmed |
+| **T0.5** 🚨 | **Queue Spam Memory Leak** — `BootstrappingOverlord` enqueues a new Pioneer every tick when spawn is pending in `Hatchery.queue`; Memory bloats until CPU crash | §94.1 | All | **Confirmed fatal** on wipe — causes total OOM/CPU crash |
+| **T0.6** 🚨 | **Split-Morphology De-Sync** — Drop-Miner enqueued at 150e; Highlander check blocks Relay Hauler forever; miner mines into ground, blackout never resolves | §94.2 | All | **Confirmed fatal** — delete Protocol Layer 2 entirely |
+| **T0.7** 🚨 | **Zero-Capacity State Machine Freeze** — Drop-miners have 0 CARRY; FSM flips to Working Phase instantly, `transfer(0e)` softlocks forever | §94.3 | All | **Confirmed fatal** — guard state transitions on store capacity |
+| **T0.8** 🚨 | **Task Priority Erasure** — `setTask(HarvestTask)` overwrites `MovePriority.EMERGENCY` with LOW; bootstrappers blocked by idle creeps | §94.4 | All | Architectural — bypasses emergency traffic priority entirely |
+| **T0.9** 🚨 | **Forever RCL 1 Stall** — Working Phase idles when spawn full; never builds extensions or upgrades controller; room stalls at RCL 1 | §94.5 | All | **Confirmed fatal** — implement Waterfall cascade |
+| **T0.10** 🚨 | **One-Energy Buffer Trap** — `_findBufferEnergy` triggers Hauler spawn from 1e tombstone; creep idles permanently (no WORK parts) | §94.6 | All | Raises `MIN_BUFFER_ENERGY = 50`; prefer Omni-Pioneer |
+| **T0.11** 🚨 | **Hostile Blindness** — `FIND_SOURCES_ACTIVE` ignores camped sources; bootstrappers walk into Invaders, die, waste last 200e | §94.7 | All | **Confirmed fatal** — add 5-tile hostile exclusion zone |
 
 ---
 
@@ -43,6 +50,10 @@
 | ~~T1.8~~ ✅ | ~~**Remote mining energy gate**~~ — already implemented: <50k skip all, 50-75k miner only, ≥75k full ops | §83/§85 | 3 | Already in code |
 | ~~T1.9~~ ✅ | ~~**Upgrader storage floor**~~ — `UPGRADER_STORAGE_FLOOR = 100_000` already in `UpgradingOverlord` | §85 | 3 | Already in code |
 | ~~T1.10~~ ✅ | ~~**WithdrawTask: validate target ID**~~ — `isValid()` checks `store.getUsedCapacity > 0` on every tick | §89 Sys 5 | All | Already in code |
+| **T1.11** | **Ghost Overlord State Leak** — bootstrapper creeps remain attached to `BootstrappingOverlord` after blackout resolves; memory rewrite handoff needed | §94.8 | All | Memory never cleaned up; WorkerOverlord can't claim the creeps |
+| **T1.12** | **Parallelized Recovery** — single-creep limit (`if bootstrappers.length > 0 return`) dramatically extends blackout; swap to dynamic cap of 3–4 pioneers | §94.9 | All | Top bots parallelize 3–4 pioneers; reduces recovery time by ~50% |
+| **T1.13** | **Omni-Pioneer Body Generator** — replace all bootstrap creep spawning with `[WORK,CARRY,MOVE]×N` triads scaled to `energyAvailable`; delete Protocol Layer 2 | §94.10 | All | Foundational fix — required by T0.6 (split morphology removal) |
+| **T1.14** | **Emergency Task Bypass** — remove `setTask()` from `BootstrappingOverlord`; use raw `creep.harvest/build/transfer/upgradeController` to preserve `MovePriority.EMERGENCY` | §94.12 | All | Foundational fix — resolves T0.8 permanently; prevents Task system from clobbering priority |
 
 ---
 
